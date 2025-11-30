@@ -20,9 +20,11 @@ FetchContent_MakeAvailable(JUCE)
 set(SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 set(DSP_DIR ${SOURCE_ROOT}/DSP)
 set(PROCESSORS_DIR ${SOURCE_ROOT}/Processors)
+set(UI_DIR ${SOURCE_ROOT}/UI)
 
 file(GLOB_RECURSE THREADBARE_DSP_SOURCES CONFIGURE_DEPENDS "${DSP_DIR}/*.cpp")
 file(GLOB_RECURSE THREADBARE_PROCESSOR_SOURCES CONFIGURE_DEPENDS "${PROCESSORS_DIR}/*.cpp")
+file(GLOB_RECURSE THREADBARE_UI_SOURCES CONFIGURE_DEPENDS "${UI_DIR}/*.cpp")
 
 if(THREADBARE_DSP_SOURCES STREQUAL "")
     message(FATAL_ERROR "No DSP sources found in ${DSP_DIR}.")
@@ -44,13 +46,13 @@ juce_add_plugin(ThreadbareUnravel
     VST3_CAN_REPLACE_VST2 FALSE
     PLUGIN_MANUFACTURER_CODE TrbR
     PLUGIN_CODE Unrv
-    FORMATS VST3 AU
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "ThreadbareUnravel"
 )
 
 juce_generate_juce_header(ThreadbareUnravel)
 
-target_sources(ThreadbareUnravel PRIVATE ${THREADBARE_PROCESSOR_SOURCES})
+target_sources(ThreadbareUnravel PRIVATE ${THREADBARE_PROCESSOR_SOURCES} ${THREADBARE_UI_SOURCES})
 target_include_directories(ThreadbareUnravel PRIVATE ${SOURCE_ROOT})
 target_compile_features(ThreadbareUnravel PUBLIC cxx_std_20)
 

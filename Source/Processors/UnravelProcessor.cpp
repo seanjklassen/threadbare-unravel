@@ -1,4 +1,5 @@
 #include "UnravelProcessor.h"
+#include "UI/UnravelEditor.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <memory>
@@ -102,7 +103,7 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 //==============================================================================
 juce::AudioProcessorEditor* UnravelProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new UnravelEditor(*this);
 }
 
 bool UnravelProcessor::hasEditor() const { return true; }
