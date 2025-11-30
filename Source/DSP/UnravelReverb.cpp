@@ -71,9 +71,14 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     tailMeter.prepare(sampleRate,
                       threadbare::tuning::Metering::kAttackSec,
                       threadbare::tuning::Metering::kReleaseSec);
+    duckingFollower.prepare(sampleRate,
+                            threadbare::tuning::Ducking::kAttackSec,
+                            threadbare::tuning::Ducking::kReleaseSec);
+    ghostRng.setSeedRandomly();
 
     updateDelayBases(sampleRate);
     prepareEarlyReflections(sampleRate);
+    prepareGhostEngine(sampleRate);
 
     for (std::size_t line = 0; line < kNumLines; ++line)
     {
@@ -120,6 +125,8 @@ void UnravelReverb::reset() noexcept
         erWriteIndex = 0;
     }
 
+    resetGhostEngine();
+
     for (auto& filter : lowPassFilters)
         filter.reset();
 
@@ -129,12 +136,11 @@ void UnravelReverb::reset() noexcept
     std::fill(loopOutputs.begin(), loopOutputs.end(), 0.0f);
     std::fill(feedbackVector.begin(), feedbackVector.end(), 0.0f);
     std::fill(lineInputs.begin(), lineInputs.end(), 0.0f);
-    std::fill(lfoPhases.begin(), lfoPhases.end(), 0.0f);
-
     sizeSmoother.setCurrentAndTargetValue(1.0f);
     inputGainSmoother.setCurrentAndTargetValue(1.0f);
     inputMeter.reset();
     tailMeter.reset();
+    duckingFollower.reset();
 }
 
 void UnravelReverb::process(std::span<float> left,
@@ -154,6 +160,10 @@ void UnravelReverb::process(std::span<float> left,
     inputGainSmoother.setTargetValue(state.freeze ? 0.0f : 1.0f);
     const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
     const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
+    const float ghostControl = juce::jlimit(0.0f, 1.0f, state.ghost);
+    const float ghostBonus = 0.5f * (puckY + 1.0f) * threadbare::tuning::PuckMapping::kGhostYBonus;
+    const float ghostMix = juce::jlimit(0.0f, 1.0f, ghostControl + ghostBonus);
+    const float ghostActiveMix = state.freeze ? 0.0f : ghostMix;
     const float erMix = juce::jmap(puckX,
                                    -1.0f,
                                    1.0f,
@@ -193,13 +203,17 @@ void UnravelReverb::process(std::span<float> left,
         const float inputGain = inputGainSmoother.getNextValue();
         const float monoInput = 0.5f * (inL + inR);
         const float erSample = processEarlyReflections(monoInput * inputGain) * erMix;
+        const float duckEnv = duckingFollower.process(monoInput);
         const float erPerLine = erSample * erInjection;
         const float fdnInputScale = inputGain * fdnMix;
+        writeGhostSample((monoInput * inputGain) + erSample);
+        const float ghostSample = processGhost(ghostActiveMix);
+        const float ghostPerLine = ghostSample / static_cast<float>(kNumLines);
 
         for (std::size_t line = 0; line < kNumLines; ++line)
         {
             const float base = inputMatrix[line][0] * inL + inputMatrix[line][1] * inR;
-            lineInputs[line] = fdnInputScale * base + erPerLine;
+            lineInputs[line] = fdnInputScale * base + erPerLine + ghostPerLine;
         }
 
         for (std::size_t line = 0; line < kNumLines; ++line)
@@ -245,8 +259,11 @@ void UnravelReverb::process(std::span<float> left,
             wetR += outputMatrix[1][idx] * loopOutputs[idx];
         }
 
-        left[sample]  = dry * inL + wet * wetL;
-        right[sample] = dry * inR + wet * wetR;
+        float duckGain = 1.0f - juce::jlimit(0.0f, 1.0f, state.duck) * duckEnv;
+        const float minWet = threadbare::tuning::Ducking::kMinWetFactor;
+        duckGain = juce::jlimit(minWet, 1.0f, duckGain);
+        left[sample]  = dry * inL + wet * (wetL * duckGain);
+        right[sample] = dry * inR + wet * (wetR * duckGain);
 
         const float dryMeter = std::max(std::abs(inL), std::abs(inR));
         const float wetMeter = std::max(std::abs(wetL), std::abs(wetR));
@@ -395,6 +412,138 @@ void UnravelReverb::updateMeters(float dryLevel, float wetLevel, UnravelState& s
 {
     state.inLevel = inputMeter.process(dryLevel);
     state.tailLevel = tailMeter.process(wetLevel);
+}
+
+void UnravelReverb::prepareGhostEngine(double newSampleRate)
+{
+    const auto historySamples = static_cast<std::size_t>(
+        std::ceil(threadbare::tuning::Ghost::kHistorySeconds * newSampleRate)) + 8u;
+    ghostBuffer.assign(juce::jmax<std::size_t>(historySamples, 8u), 0.0f);
+    ghostWriteIndex = 0;
+    resetGhostEngine();
+}
+
+void UnravelReverb::resetGhostEngine() noexcept
+{
+    for (auto& grain : grains)
+        grain.isActive = false;
+
+    if (! ghostBuffer.empty())
+        std::fill(ghostBuffer.begin(), ghostBuffer.end(), 0.0f);
+    ghostWriteIndex = 0;
+}
+
+void UnravelReverb::writeGhostSample(float sample) noexcept
+{
+    if (ghostBuffer.empty())
+        return;
+
+    ghostBuffer[ghostWriteIndex] = sample;
+    ghostWriteIndex = (ghostWriteIndex + 1u) % ghostBuffer.size();
+}
+
+float UnravelReverb::processGhost(float ghostMix) noexcept
+{
+    if (ghostBuffer.empty() || ghostMix <= 0.0f)
+        return 0.0f;
+
+    const float gainDb = juce::jmap(ghostMix,
+                                    0.0f,
+                                    1.0f,
+                                    threadbare::tuning::Ghost::kMinGainDb,
+                                    threadbare::tuning::Ghost::kMaxGainDb);
+    const float ghostGain = juce::Decibels::decibelsToGain(gainDb);
+    float sum = 0.0f;
+
+    for (auto& grain : grains)
+    {
+        if (! grain.isActive)
+            trySpawnGrain(grain, ghostMix);
+
+        if (! grain.isActive)
+            continue;
+
+        const float window = 0.5f * (1.0f - std::cos(kTwoPi * grain.windowPhase));
+        const float sample = readGhostBuffer(grain.position);
+        sum += sample * window;
+
+        grain.position += grain.speed;
+        grain.windowPhase += grain.windowInc;
+
+        if (grain.windowPhase >= 1.0f)
+            grain.isActive = false;
+    }
+
+    return sum * ghostGain;
+}
+
+bool UnravelReverb::trySpawnGrain(Grain& grain, float ghostMix) noexcept
+{
+    if (ghostBuffer.empty())
+        return false;
+
+    const float probability = ghostMix * (kGhostSpawnRate / static_cast<float>(sampleRate));
+    if (ghostRng.nextFloat() > probability)
+        return false;
+
+    const float historyWindowSec = 0.5f;
+    const float offsetSamples = ghostRng.nextFloat() * historyWindowSec * static_cast<float>(sampleRate);
+    float startPosition = static_cast<float>(ghostWriteIndex) - offsetSamples;
+
+    const float durationSec = juce::jmap(ghostRng.nextFloat(),
+                                         0.0f,
+                                         1.0f,
+                                         threadbare::tuning::Ghost::kGrainMinSec,
+                                         threadbare::tuning::Ghost::kGrainMaxSec);
+    const float durationSamples = juce::jmax(16.0f, durationSec * static_cast<float>(sampleRate));
+
+    float detuneSemi = juce::jmap(ghostRng.nextFloat(),
+                                  0.0f,
+                                  1.0f,
+                                  -threadbare::tuning::Ghost::kDetuneSemi,
+                                   threadbare::tuning::Ghost::kDetuneSemi);
+    if (ghostRng.nextFloat() < threadbare::tuning::Ghost::kShimmerProbability)
+        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi;
+
+    const float speed = std::pow(2.0f, detuneSemi / 12.0f);
+
+    grain.isActive = true;
+    grain.position = startPosition;
+    grain.speed = speed;
+    grain.windowPhase = 0.0f;
+    grain.windowInc = 1.0f / durationSamples;
+    return true;
+}
+
+float UnravelReverb::readGhostBuffer(float position) const noexcept
+{
+    if (ghostBuffer.empty())
+        return 0.0f;
+
+    const int bufferSize = static_cast<int>(ghostBuffer.size());
+    float pos = position;
+    while (pos < 0.0f)
+        pos += static_cast<float>(bufferSize);
+    while (pos >= static_cast<float>(bufferSize))
+        pos -= static_cast<float>(bufferSize);
+
+    const int baseIndex = static_cast<int>(pos);
+    const float frac = pos - static_cast<float>(baseIndex);
+
+    const auto sampleAt = [this, bufferSize](int idx) noexcept
+    {
+        idx %= bufferSize;
+        if (idx < 0)
+            idx += bufferSize;
+        return ghostBuffer[static_cast<std::size_t>(idx)];
+    };
+
+    const float y0 = sampleAt(baseIndex - 1);
+    const float y1 = sampleAt(baseIndex);
+    const float y2 = sampleAt(baseIndex + 1);
+    const float y3 = sampleAt(baseIndex + 2);
+
+    return catmull(y0, y1, y2, y3, frac);
 }
 
 float UnravelReverb::readDelaySample(std::size_t lineIndex, float delayInSamples) noexcept

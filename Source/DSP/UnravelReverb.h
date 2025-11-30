@@ -21,6 +21,8 @@ struct UnravelState
     float drift = 0.0f;
     float puckX = 0.0f;
     float puckY = 0.0f;
+    float ghost = 0.0f;
+    float duck = 0.0f;
     float inLevel = 0.0f;
     float tailLevel = 0.0f;
     bool freeze = false;
@@ -40,6 +42,8 @@ private:
     static constexpr float kHadamardNorm = 0.35355339059327379f; // 1 / sqrt(8)
     static constexpr float kSizeSlewSeconds = 0.02f;
     static constexpr std::size_t kNumErTaps = threadbare::tuning::EarlyReflections::kNumTaps;
+    static constexpr std::size_t kNumGhostGrains = 2;
+    static constexpr float kGhostSpawnRate = 0.20f; // grains/sec at full ghost
 
     struct DelayLineState
     {
@@ -62,6 +66,15 @@ private:
         float value = 0.0f;
     };
 
+    struct Grain
+    {
+        bool isActive = false;
+        float position = 0.0f;
+        float speed = 1.0f;
+        float windowPhase = 0.0f;
+        float windowInc = 0.0f;
+    };
+
     void updateDelayBases(double newSampleRate);
     void updateFeedbackGains(float decaySeconds, bool freeze) noexcept;
     void updateDampingFilters(float tone) noexcept;
@@ -72,6 +85,12 @@ private:
     void initialiseLfos();
     float calcModDepth(float drift, float puckY) const noexcept;
     void updateMeters(float dryLevel, float wetLevel, UnravelState& state) noexcept;
+    void prepareGhostEngine(double newSampleRate);
+    void resetGhostEngine() noexcept;
+    void writeGhostSample(float sample) noexcept;
+    float processGhost(float ghostMix) noexcept;
+    bool trySpawnGrain(Grain& grain, float ghostMix) noexcept;
+    float readGhostBuffer(float position) const noexcept;
 
     double sampleRate = 44100.0;
     bool isPrepared = false;
@@ -104,6 +123,12 @@ private:
 
     EnvelopeFollower inputMeter;
     EnvelopeFollower tailMeter;
+    EnvelopeFollower duckingFollower;
+
+    std::vector<float> ghostBuffer;
+    std::size_t ghostWriteIndex = 0;
+    std::array<Grain, kNumGhostGrains> grains{};
+    juce::Random ghostRng;
 
     static const std::array<std::array<float, kNumLines>, kNumLines> feedbackMatrix;
     static const std::array<std::array<float, 2>, kNumLines> inputMatrix;
