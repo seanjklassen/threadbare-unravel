@@ -1,0 +1,33 @@
+# Build / IDE cruft
+/build/
+/cmake-build-*/
+/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# JUCE exports
+*.vst3/
+*.component/
+*.aaxplugin/
+*.app/
+/ThreadbareUnravel_artefacts/
+
+# OS/editor clutter
+.DS_Store
+Thumbs.db
+*.sublime-workspace
+*.sublime-project
+.idea/
+.vs/
+.vscode/
+
+# Python/Jupyter leftovers
+__pycache__/
+*.pyc
+
+# Node/temp bundles
+node_modules/
+/dist/
+/out/
+

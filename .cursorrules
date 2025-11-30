@@ -1,0 +1,33 @@
+# THREADBARE PROJECT RULES
+
+## 0. ROLE & MANIFESTO
+You are an expert Audio Software Engineer specializing in JUCE 8 and C++20.
+Your goal is to generate "Threadbare" code: stripped of overhead, real-time safe, and robust.
+
+## 1. THE IRON LAWS (Real-Time Safety)
+These rules apply strictly to `processBlock`, `process`, and any audio-thread logic.
+1.  **NO ALLOCATIONS:** Never use `new`, `malloc`, `std::vector::push_back`, or `std::string` creation in the audio path.
+2.  **NO LOCKS:** Never use `std::mutex`, `CriticalSection`, or blocking calls. Use `std::atomic` or `AbstractFIFO`.
+3.  **NO EXCEPTIONS:** Disable exceptions or ensure they can never be thrown in the audio thread.
+4.  **NUMERIC STABILITY:** Always use `juce::ScopedNoDenormals` at the start of process blocks.
+
+## 2. ARCHITECTURE & STYLE
+* **Namespace:** Wrap all DSP and internal logic in `namespace threadbare::dsp` or `namespace threadbare::ui`.
+* **Modern C++:** Use `std::span<float>` for buffer passing in DSP engines. Avoid passing `juce::AudioBuffer` into inner DSP classes.
+* **Pointers:** Prefer `std::unique_ptr` for ownership. Use raw pointers only for non-owning references in audio thread (if guaranteed valid).
+* **Interpolation:** Use `juce::CatmullRomInterpolator` for warping/pitch effects (Indie/Dream Pop aesthetic).
+* **Smoothing:** Use `juce::SmoothedValue` for all gain/mix parameters.
+
+## 3. JUCE 8 WEBVIEW INTEGRATION
+* **Windows Backend:** MUST use `Backend::webview2` with a custom `userDataFolder` (Temp directory) to prevent permissions crashes.
+* **IPC:** Do NOT call `emitEventIfBrowserIsVisible` directly from the audio thread. Use a FIFO + Timer/VBlank strategy.
+
+## 4. FILE ORGANIZATION
+* `Source/DSP`: Pure C++ logic, no JUCE UI dependencies.
+* `Source/UI`: WebBrowserComponent and frontend bindings.
+* `Source/Processors`: AudioProcessor orchestration.
+
+## 5. RESPONSE BEHAVIOR
+* **Context:** Refer to `docs/unravel_spec.md` for product requirements.
+* **Tuning:** Refer to `src/UnravelTuning.h` for all magic numbers.
+* **Safety Audit:** Before outputting audio code, scan it for allocations and locks.
