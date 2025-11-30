@@ -345,7 +345,7 @@ void UnravelReverb::updateDampingFilters(float tone) noexcept
 void UnravelReverb::prepareEarlyReflections(double newSampleRate)
 {
     const float maxTapMs = threadbare::tuning::EarlyReflections::kTapTimesMs[kNumErTaps - 1];
-    const auto bufferSamples = juce::jmax<std::size_t>(
+    const auto bufferSamples = std::max<std::size_t>(
         8u,
         static_cast<std::size_t>(std::ceil((maxTapMs * 0.001f + 0.01f) * newSampleRate)) + 4u);
 
@@ -418,7 +418,7 @@ void UnravelReverb::prepareGhostEngine(double newSampleRate)
 {
     const auto historySamples = static_cast<std::size_t>(
         std::ceil(threadbare::tuning::Ghost::kHistorySeconds * newSampleRate)) + 8u;
-    ghostBuffer.assign(juce::jmax<std::size_t>(historySamples, 8u), 0.0f);
+    ghostBuffer.assign(std::max<std::size_t>(historySamples, 8u), 0.0f);
     ghostWriteIndex = 0;
     resetGhostEngine();
 }

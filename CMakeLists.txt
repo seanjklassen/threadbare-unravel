@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ThreadbareUnravel VERSION 0.1.0 LANGUAGES CXX)
+project(ThreadbareUnravel VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,7 @@ juce_add_plugin(ThreadbareUnravel
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD TRUE
+    VST3_CAN_REPLACE_VST2 FALSE
     PLUGIN_MANUFACTURER_CODE TrbR
     PLUGIN_CODE Unrv
     FORMATS VST3 AU
@@ -60,5 +61,10 @@ target_link_libraries(ThreadbareUnravel
         juce::juce_recommended_warning_flags
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
+)
+
+target_compile_definitions(ThreadbareUnravel
+    PRIVATE
+        JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
