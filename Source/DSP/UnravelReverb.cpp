@@ -10,6 +10,7 @@ namespace
 {
 constexpr float kEpsilon = 1.0e-6f;
 constexpr float kParamDelta = 1.0e-4f;
+constexpr float kTwoPi = juce::MathConstants<float>::twoPi;
 
 inline float catmull(float y0, float y1, float y2, float y3, float alpha) noexcept
 {
@@ -64,8 +65,15 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     sizeSmoother.setCurrentAndTargetValue(1.0f);
     inputGainSmoother.reset(sampleRate, 0.05f);
     inputGainSmoother.setCurrentAndTargetValue(1.0f);
+    inputMeter.prepare(sampleRate,
+                       threadbare::tuning::Metering::kAttackSec,
+                       threadbare::tuning::Metering::kReleaseSec);
+    tailMeter.prepare(sampleRate,
+                      threadbare::tuning::Metering::kAttackSec,
+                      threadbare::tuning::Metering::kReleaseSec);
 
     updateDelayBases(sampleRate);
+    prepareEarlyReflections(sampleRate);
 
     for (std::size_t line = 0; line < kNumLines; ++line)
     {
@@ -92,6 +100,7 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     lastDecaySeconds = 3.0f;
     lastFreeze = false;
     lastTone = 0.0f;
+    initialiseLfos();
 
     reset();
     isPrepared = true;
@@ -105,6 +114,12 @@ void UnravelReverb::reset() noexcept
         line.writeIndex = 0;
     }
 
+    if (! erBuffer.empty())
+    {
+        std::fill(erBuffer.begin(), erBuffer.end(), 0.0f);
+        erWriteIndex = 0;
+    }
+
     for (auto& filter : lowPassFilters)
         filter.reset();
 
@@ -114,14 +129,17 @@ void UnravelReverb::reset() noexcept
     std::fill(loopOutputs.begin(), loopOutputs.end(), 0.0f);
     std::fill(feedbackVector.begin(), feedbackVector.end(), 0.0f);
     std::fill(lineInputs.begin(), lineInputs.end(), 0.0f);
+    std::fill(lfoPhases.begin(), lfoPhases.end(), 0.0f);
 
     sizeSmoother.setCurrentAndTargetValue(1.0f);
     inputGainSmoother.setCurrentAndTargetValue(1.0f);
+    inputMeter.reset();
+    tailMeter.reset();
 }
 
 void UnravelReverb::process(std::span<float> left,
                             std::span<float> right,
-                            const UnravelState& state) noexcept
+                            UnravelState& state) noexcept
 {
     if (! isPrepared || left.size() == 0 || left.size() != right.size())
         return;
@@ -134,6 +152,21 @@ void UnravelReverb::process(std::span<float> left,
                                           state.size);
     sizeSmoother.setTargetValue(targetSize);
     inputGainSmoother.setTargetValue(state.freeze ? 0.0f : 1.0f);
+    const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
+    const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
+    const float erMix = juce::jmap(puckX,
+                                   -1.0f,
+                                   1.0f,
+                                   threadbare::tuning::EarlyReflections::kBodyMix,
+                                   threadbare::tuning::EarlyReflections::kAirMix);
+    const float fdnMix = juce::jmap(puckX,
+                                    -1.0f,
+                                    1.0f,
+                                    threadbare::tuning::EarlyReflections::kBodyFdnMix,
+                                    threadbare::tuning::EarlyReflections::kAirFdnMix);
+    const float erInjection = threadbare::tuning::EarlyReflections::kInjectionGain
+                            / static_cast<float>(kNumLines);
+    const float modDepth = calcModDepth(state.drift, puckY);
 
     if (state.freeze != lastFreeze
         || std::abs(state.decaySeconds - lastDecaySeconds) > kParamDelta)
@@ -158,14 +191,26 @@ void UnravelReverb::process(std::span<float> left,
         const float inR = right[sample];
         const float currentSize = sizeSmoother.getNextValue();
         const float inputGain = inputGainSmoother.getNextValue();
+        const float monoInput = 0.5f * (inL + inR);
+        const float erSample = processEarlyReflections(monoInput * inputGain) * erMix;
+        const float erPerLine = erSample * erInjection;
+        const float fdnInputScale = inputGain * fdnMix;
 
         for (std::size_t line = 0; line < kNumLines; ++line)
-            lineInputs[line] = inputGain * (inputMatrix[line][0] * inL + inputMatrix[line][1] * inR);
+        {
+            const float base = inputMatrix[line][0] * inL + inputMatrix[line][1] * inR;
+            lineInputs[line] = fdnInputScale * base + erPerLine;
+        }
 
         for (std::size_t line = 0; line < kNumLines; ++line)
         {
             const auto bufferLimit = static_cast<float>(delayLines[line].buffer.size() - 4u);
             float desiredDelay = baseDelaySamples[line] * currentSize;
+            const float lfoValue = std::sin(lfoPhases[line]);
+            lfoPhases[line] += lfoIncrements[line];
+            if (lfoPhases[line] >= kTwoPi)
+                lfoPhases[line] -= kTwoPi;
+            desiredDelay += lfoValue * modDepth;
             desiredDelay = juce::jlimit(1.0f, bufferLimit, desiredDelay);
 
             float sampleValue = readDelaySample(line, desiredDelay);
@@ -202,6 +247,10 @@ void UnravelReverb::process(std::span<float> left,
 
         left[sample]  = dry * inL + wet * wetL;
         right[sample] = dry * inR + wet * wetR;
+
+        const float dryMeter = std::max(std::abs(inL), std::abs(inR));
+        const float wetMeter = std::max(std::abs(wetL), std::abs(wetR));
+        updateMeters(dryMeter, wetMeter, state);
     }
 }
 
@@ -276,6 +325,78 @@ void UnravelReverb::updateDampingFilters(float tone) noexcept
     }
 }
 
+void UnravelReverb::prepareEarlyReflections(double newSampleRate)
+{
+    const float maxTapMs = threadbare::tuning::EarlyReflections::kTapTimesMs[kNumErTaps - 1];
+    const auto bufferSamples = juce::jmax<std::size_t>(
+        8u,
+        static_cast<std::size_t>(std::ceil((maxTapMs * 0.001f + 0.01f) * newSampleRate)) + 4u);
+
+    erBuffer.assign(bufferSamples, 0.0f);
+    erWriteIndex = 0;
+
+    for (std::size_t tap = 0; tap < kNumErTaps; ++tap)
+    {
+        const float tapSeconds = threadbare::tuning::EarlyReflections::kTapTimesMs[tap] * 0.001f;
+        erTapOffsets[tap] = juce::jmax(1, static_cast<int>(std::round(tapSeconds * newSampleRate)));
+        erTapGains[tap] = threadbare::tuning::EarlyReflections::kTapGains[tap];
+    }
+}
+
+float UnravelReverb::processEarlyReflections(float inputSample) noexcept
+{
+    if (erBuffer.empty())
+        return 0.0f;
+
+    erBuffer[erWriteIndex] = inputSample;
+    float sum = 0.0f;
+    const int bufferSize = static_cast<int>(erBuffer.size());
+
+    for (std::size_t tap = 0; tap < kNumErTaps; ++tap)
+    {
+        int readIndex = static_cast<int>(erWriteIndex) - erTapOffsets[tap];
+        while (readIndex < 0)
+            readIndex += bufferSize;
+
+        sum += erBuffer[static_cast<std::size_t>(readIndex)] * erTapGains[tap];
+    }
+
+    erWriteIndex = (erWriteIndex + 1u) % erBuffer.size();
+    return sum;
+}
+
+void UnravelReverb::initialiseLfos()
+{
+    juce::Random rng(static_cast<juce::int64>(sampleRate) ^ static_cast<juce::int64>(0x5F3759DF));
+
+    for (std::size_t line = 0; line < kNumLines; ++line)
+    {
+        const float rate = juce::jmap(rng.nextFloat(),
+                                      0.0f,
+                                      1.0f,
+                                      threadbare::tuning::Modulation::kMinRateHz,
+                                      threadbare::tuning::Modulation::kMaxRateHz);
+        lfoIncrements[line] = kTwoPi * rate / static_cast<float>(sampleRate);
+        lfoPhases[line] = rng.nextFloat() * kTwoPi;
+    }
+}
+
+float UnravelReverb::calcModDepth(float drift, float puckY) const noexcept
+{
+    const float clampedDrift = juce::jlimit(0.0f, 1.0f, drift);
+    const float clampedY = juce::jlimit(-1.0f, 1.0f, puckY);
+    const float half = threadbare::tuning::Fdn::kSizeMin;
+    const float yContribution = (clampedY + 1.0f) * half * threadbare::tuning::PuckMapping::kDriftYBonus;
+    const float total = juce::jlimit(0.0f, 1.0f, clampedDrift + yContribution);
+    return total * threadbare::tuning::Modulation::kMaxDepthSamples;
+}
+
+void UnravelReverb::updateMeters(float dryLevel, float wetLevel, UnravelState& state) noexcept
+{
+    state.inLevel = inputMeter.process(dryLevel);
+    state.tailLevel = tailMeter.process(wetLevel);
+}
+
 float UnravelReverb::readDelaySample(std::size_t lineIndex, float delayInSamples) noexcept
 {
     auto& state = delayLines[lineIndex];
@@ -314,6 +435,31 @@ void UnravelReverb::writeDelaySample(std::size_t lineIndex, float sample) noexce
 
     state.buffer[state.writeIndex] = sample;
     state.writeIndex = (state.writeIndex + 1u) % state.buffer.size();
+}
+
+void UnravelReverb::EnvelopeFollower::prepare(double sampleRate,
+                                              float attackSeconds,
+                                              float releaseSeconds) noexcept
+{
+    const float sr = static_cast<float>(sampleRate);
+    const float attack = juce::jmax(attackSeconds, 1.0e-5f);
+    const float release = juce::jmax(releaseSeconds, 1.0e-5f);
+    attackCoeff = std::exp(-1.0f / (sr * attack));
+    releaseCoeff = std::exp(-1.0f / (sr * release));
+    value = 0.0f;
+}
+
+void UnravelReverb::EnvelopeFollower::reset() noexcept
+{
+    value = 0.0f;
+}
+
+float UnravelReverb::EnvelopeFollower::process(float input) noexcept
+{
+    const float target = std::abs(input);
+    const float coeff = target > value ? attackCoeff : releaseCoeff;
+    value = target + coeff * (value - target);
+    return value;
 }
 
 } // namespace threadbare::dsp

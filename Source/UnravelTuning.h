@@ -41,6 +41,31 @@ struct Damping {
     static constexpr float kLoopHighPassHz = 100.0f;
 };
 
+struct EarlyReflections {
+    static constexpr int kNumTaps = 6;
+
+    // Tap times in milliseconds, spread between 5 ms and 60 ms.
+    static constexpr float kTapTimesMs[kNumTaps] = {
+        5.0f, 12.5f, 19.0f, 30.0f, 42.0f, 58.0f
+    };
+
+    // Gain per tap, decaying gently to keep ERs natural.
+    static constexpr float kTapGains[kNumTaps] = {
+        0.95f, 0.78f, 0.66f, 0.52f, 0.40f, 0.30f
+    };
+
+    // Body ↔ Air crossfade endpoints for ER loudness.
+    static constexpr float kBodyMix = 1.0f;
+    static constexpr float kAirMix  = 0.25f;
+
+    // Complementary crossfade endpoints for feeding the FDN.
+    static constexpr float kBodyFdnMix = 0.45f;
+    static constexpr float kAirFdnMix  = 1.0f;
+
+    // Normalisation for distributing ER energy into the tank.
+    static constexpr float kInjectionGain = 0.5f;
+};
+
 struct Modulation {
     // LFO frequency range for delay modulation (Hz).
     // Slow rates keep it "alive" without obvious chorus wobble.
@@ -99,6 +124,12 @@ struct PuckMapping {
 
     // Extra drift added at top of pad (0..1).
     static constexpr float kDriftYBonus  = 0.25f;
+};
+
+struct Metering {
+    // Envelope follower times for orb metering.
+    static constexpr float kAttackSec  = 0.01f; // ~10 ms
+    static constexpr float kReleaseSec = 0.10f; // ~100 ms
 };
 
 struct Safety {
