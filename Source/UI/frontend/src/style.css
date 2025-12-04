@@ -3,8 +3,9 @@
   --text: #efdfbd;
   --accent: #afd3e4;
   --orb-line: #E1A6A6;
-  --puck-shadow: 0 35px 49px -3.75px rgba(0, 0, 0, 0.25),
-    0 15.92px 22.289px -3.125px rgba(0, 0, 0, 0.18),
+  --puck-shadow: 
+    /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
+    0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
     0 8.01px 11.21px -2.5px rgba(0, 0, 0, 0.25),
     0 4.23px 5.92px -1.875px rgba(0, 0, 0, 0.25),
     0 2.11px 2.95px -1.25px rgba(0, 0, 0, 0.25),
@@ -84,8 +85,17 @@ body {
   display: grid;
   place-items: center;
   transform: translate(-50%, -50%);
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
   z-index: 2;
   overflow: hidden;
+}
+
+#puck.active,
+.puck.active {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(.97);
 }
 
 #puck::after {
@@ -109,6 +119,13 @@ body {
   box-shadow:
     1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
     0 0 6px rgba(175, 211, 228, 0.4);
+  transition: background-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+#puck.active .puck-pupil,
+.puck.active .puck-pupil {
+  background-color: #A5CF71;
+  box-shadow: 0 0 8px #A5CF71;
 }
 
 .tb-top-bar,
@@ -252,14 +269,6 @@ body {
   .tb-top-bar,
   .tb-bottom-bar {
     padding: 16px;
-  }
-
-  .preset-pill {
-    font-size: 18px;
-  }
-
-  .preset-name {
-    font-size: 18px;
   }
 
   .tb-bottom-bar .readouts {
