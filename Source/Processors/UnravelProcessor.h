@@ -1,6 +1,9 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <array>
+#include <map>
+#include <vector>
 
 #include "../DSP/UnravelReverb.h"
 
@@ -41,14 +44,38 @@ public:
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
     const threadbare::dsp::UnravelState& getCurrentState() const noexcept { return currentState; }
+    bool popVisualState(threadbare::dsp::UnravelState& state) noexcept;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
+    struct Preset
+    {
+        juce::String name;
+        std::map<juce::String, float> parameters;
+    };
+
     threadbare::dsp::UnravelReverb reverbEngine;
     threadbare::dsp::UnravelState currentState;
 
     juce::AudioProcessorValueTreeState apvts;
+
+    struct StateQueue
+    {
+        static constexpr int kCapacity = 16;
+
+        void reset() noexcept;
+        bool push(const threadbare::dsp::UnravelState& state) noexcept;
+        bool pop(threadbare::dsp::UnravelState& state) noexcept;
+
+    private:
+        void discardOldest() noexcept;
+
+        std::array<threadbare::dsp::UnravelState, kCapacity> buffer{};
+        juce::AbstractFifo fifo { kCapacity };
+    };
+
+    StateQueue stateQueue;
 
     juce::AudioParameterFloat* puckXParam = nullptr;
     juce::AudioParameterFloat* puckYParam = nullptr;
@@ -61,6 +88,12 @@ private:
     juce::AudioParameterFloat* duckParam = nullptr;
     juce::AudioParameterBool* freezeParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
+
+    std::vector<Preset> factoryPresets;
+    int currentProgramIndex = 0;
+
+    void initialiseFactoryPresets();
+    void applyPreset(const Preset& preset);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UnravelProcessor)
 };

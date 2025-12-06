@@ -1,9 +1,61 @@
 #include "UnravelProcessor.h"
 #include "UI/UnravelEditor.h"
-
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <memory>
 #include <vector>
+
+namespace
+{
+constexpr int kStateFifoChunk = 1;
+}
+
+void UnravelProcessor::StateQueue::reset() noexcept
+{
+    fifo.reset();
+}
+
+bool UnravelProcessor::StateQueue::push(const threadbare::dsp::UnravelState& state) noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+    {
+        discardOldest();
+        fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
+
+        if (size1 == 0)
+            return false;
+    }
+
+    buffer[static_cast<std::size_t>(start1)] = state;
+    fifo.finishedWrite(kStateFifoChunk);
+    return true;
+}
+
+bool UnravelProcessor::StateQueue::pop(threadbare::dsp::UnravelState& state) noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+        return false;
+
+    state = buffer[static_cast<std::size_t>(start1)];
+    fifo.finishedRead(kStateFifoChunk);
+    return true;
+}
+
+void UnravelProcessor::StateQueue::discardOldest() noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+        return;
+
+    fifo.finishedRead(kStateFifoChunk);
+}
 
 UnravelProcessor::UnravelProcessor()
     : juce::AudioProcessor(BusesProperties()
@@ -11,6 +63,12 @@ UnravelProcessor::UnravelProcessor()
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "Params", createParameterLayout())
 {
+    initialiseFactoryPresets();
+
+    if (!factoryPresets.empty())
+    {
+        setCurrentProgram(0);
+    }
 }
 
 //==============================================================================
@@ -22,6 +80,7 @@ void UnravelProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         static_cast<juce::uint32>(juce::jmax(1, getMainBusNumOutputChannels()))};
 
     reverbEngine.prepare(spec);
+    stateQueue.reset();
 
     const auto getFloat = [this](const juce::String& id)
     {
@@ -46,6 +105,7 @@ void UnravelProcessor::releaseResources() {}
 void UnravelProcessor::reset()
 {
     reverbEngine.reset();
+    stateQueue.reset();
 }
 
 bool UnravelProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -98,6 +158,8 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
     const float outputGain = juce::Decibels::decibelsToGain(readParam(outputParam, 0.0f));
     buffer.applyGain(outputGain);
+
+    stateQueue.push(currentState);
 }
 
 //==============================================================================
@@ -116,10 +178,31 @@ bool UnravelProcessor::isMidiEffect() const { return false; }
 double UnravelProcessor::getTailLengthSeconds() const { return 20.0; }
 
 //==============================================================================
-int UnravelProcessor::getNumPrograms() { return 1; }
-int UnravelProcessor::getCurrentProgram() { return 0; }
-void UnravelProcessor::setCurrentProgram(int) {}
-const juce::String UnravelProcessor::getProgramName(int) { return {}; }
+int UnravelProcessor::getNumPrograms()
+{
+    return static_cast<int>(factoryPresets.size());
+}
+
+int UnravelProcessor::getCurrentProgram() { return currentProgramIndex; }
+
+void UnravelProcessor::setCurrentProgram(int index)
+{
+    if (factoryPresets.empty())
+        return;
+
+    const int safeIndex = juce::jlimit(0, getNumPrograms() - 1, index);
+    currentProgramIndex = safeIndex;
+    applyPreset(factoryPresets[static_cast<size_t>(safeIndex)]);
+}
+
+const juce::String UnravelProcessor::getProgramName(int index)
+{
+    if (index >= 0 && index < getNumPrograms())
+        return factoryPresets[static_cast<size_t>(index)].name;
+
+    return {};
+}
+
 void UnravelProcessor::changeProgramName(int, const juce::String&) {}
 
 //==============================================================================
@@ -135,6 +218,20 @@ void UnravelProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes));
     if (tree.isValid())
         apvts.replaceState(tree);
+}
+
+bool UnravelProcessor::popVisualState(threadbare::dsp::UnravelState& state) noexcept
+{
+    threadbare::dsp::UnravelState latest{};
+    bool popped = false;
+
+    while (stateQueue.pop(latest))
+    {
+        state = latest;
+        popped = true;
+    }
+
+    return popped;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createParameterLayout()
@@ -163,5 +260,69 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createPara
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new UnravelProcessor();
+}
+
+void UnravelProcessor::initialiseFactoryPresets()
+{
+    auto preset = [](juce::String name, std::map<juce::String, float> params)
+    {
+        return Preset{std::move(name), std::move(params)};
+    };
+
+    factoryPresets = {
+        preset("Init - Memory Cloud",
+               {{"decay", 5.0f},
+                {"size", 1.0f},
+                {"ghost", 0.2f},
+                {"mix", 0.5f},
+                {"puckX", 0.0f},
+                {"puckY", 0.0f},
+                {"drift", 0.2f},
+                {"tone", 0.0f},
+                {"freeze", 0.0f}}),
+        preset("Nebula",
+               {{"decay", 12.0f},
+                {"size", 1.5f},
+                {"ghost", 0.6f},
+                {"drift", 0.4f},
+                {"mix", 0.65f},
+                {"puckY", 0.6f}}),
+        preset("Tight Room",
+               {{"decay", 0.8f},
+                {"size", 0.6f},
+                {"tone", -0.5f},
+                {"mix", 0.35f},
+                {"puckX", -0.5f},
+                {"puckY", -0.2f}}),
+        preset("Tape Warble",
+               {{"decay", 3.0f},
+                {"drift", 0.8f},
+                {"tone", -0.8f},
+                {"ghost", 0.0f},
+                {"mix", 0.45f},
+                {"puckX", -0.25f},
+                {"puckY", 0.15f}}),
+        preset("Infinite Freeze",
+               {{"freeze", 1.0f},
+                {"mix", 1.0f},
+                {"drift", 0.5f},
+                {"decay", 20.0f},
+                {"ghost", 0.4f},
+                {"puckX", 0.0f},
+                {"puckY", 0.0f}})};
+}
+
+void UnravelProcessor::applyPreset(const Preset& preset)
+{
+    for (const auto& entry : preset.parameters)
+    {
+        if (auto* parameter = apvts.getParameter(entry.first))
+        {
+            const float normalised = parameter->convertTo0to1(entry.second);
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(normalised);
+            parameter->endChangeGesture();
+        }
+    }
 }
 

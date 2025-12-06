@@ -70,10 +70,10 @@ Everything should lean toward:
     * Right: freeze icon to the left of the sliders icon → activates 2.3.3 Freeze mode.
 
 ### 2.2 Look & Feel
-* **Background:** `#3F353D`
-* **Text and strokes:** `#E5E5D9`
-* **Unravel accent:** `#C6E0C7` (puck center, sliders, active states, Freeze on background).
-* **Lissajous Orb:** `#DD8469` line with soft anti-aliasing; faint “ghost” trail when Ghost > 0.
+* **Background:** `#26332A`
+* **Text and icons:** `#EFDFBD`
+* **Unravel accent:** `#AFD3E4` (puck center, sliders, active states, Freeze on background).
+* **Lissajous Orb:** `#E1A6A6` line with soft anti-aliasing; faint “ghost” trail when Ghost > 0.
 
 ### 2.3 Controls
 
@@ -117,6 +117,13 @@ Everything should lean toward:
 
 **Defaults:** “great ambient guitar pad” right out of the box.
 
+**Drawer Visual Language:**
+* Each parameter uses a single horizontal slider with no numeric readout. The track shows two layers:
+    * A neutral base layer that reflects the stored parameter value.
+    * A secondary gold layer that indicates the puck-applied macro offset (if any) so users can see the effective value at a glance.
+* A small “pupil” indicator to the right of each slider lights up (soft green) whenever the puck is contributing a macro value to that parameter.
+* Sliders must remain keyboard accessible; optionally show a transient tooltip while dragging for precise values. Provide a taller invisible hit area (e.g. 3–4× the visible track height) so the control is easy to grab with mouse or touch.
+
 ### 2.4 Lissajous Orb Behavior
 Orb is visual only. It reflects state.
 
@@ -134,7 +141,7 @@ Orb is visual only. It reflects state.
 * Stroke thickness & opacity follow `tailLevel`.
 
 **Implementation:**
-* ~125–200 points around a center, drawn as a polyline on canvas.
+* ~40 points around a center, drawn as a polyline on canvas.
 * Optionally use PixiJS/WebGL if raw 2D canvas stutters on Retina.
 
 ---

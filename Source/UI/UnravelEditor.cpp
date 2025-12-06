@@ -87,8 +87,18 @@ void UnravelEditor::resized()
 
 void UnravelEditor::handleUpdate()
 {
-    // C++ -> JS: Push the current state (Meters + Params)
-    const auto& state = processorRef.getCurrentState();
+    // C++ -> JS: Pull the latest snapshot from the FIFO and push to the browser
+    threadbare::dsp::UnravelState dequeued{};
+    if (processorRef.popVisualState(dequeued))
+    {
+        cachedVisualState = dequeued;
+        hasCachedVisualState = true;
+    }
+
+    if (! hasCachedVisualState)
+        return;
+
+    const auto& state = cachedVisualState;
 
     auto* obj = new juce::DynamicObject();
     obj->setProperty("puckX", state.puckX);
