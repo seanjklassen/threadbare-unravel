@@ -21,9 +21,9 @@ struct Fdn {
 
 struct Decay {
     // Global T60 bounds (seconds).
-    // 0.4s keeps short settings usable; 20s covers ambient washes.
+    // 0.4s keeps short settings usable; 50s is near-infinite reverb.
     static constexpr float kT60Min = 0.4f;
-    static constexpr float kT60Max = 20.0f;
+    static constexpr float kT60Max = 50.0f;
 
     // Puck Y decay multiplier (~ /3 to *3).
     static constexpr float kPuckYMultiplierMin = 1.0f / 3.0f;
@@ -32,8 +32,8 @@ struct Decay {
 
 struct Damping {
     // Tone control → low-pass cutoff (Hz).
-    // These set the darkest, neutral, and brightest edges.
-    static constexpr float kLowCutoffHz  = 1500.0f;
+    // Lower cutoff for more aggressive darkening (underwater effect).
+    static constexpr float kLowCutoffHz  = 400.0f;
     static constexpr float kMidCutoffHz  = 8000.0f;
     static constexpr float kHighCutoffHz = 16000.0f;
 
@@ -68,33 +68,33 @@ struct EarlyReflections {
 
 struct Modulation {
     // LFO frequency range for delay modulation (Hz).
-    // Slow rates keep it "alive" without obvious chorus wobble.
-    static constexpr float kMinRateHz = 0.05f;
-    static constexpr float kMaxRateHz = 0.4f;
+    // Wider range from slow to fast creates more obvious modulation.
+    static constexpr float kMinRateHz = 0.1f;
+    static constexpr float kMaxRateHz = 3.0f;
 
     // Max modulation depth in samples at drift=1, puckY=1.
-    // Safe range ~2–8; higher = wobblier.
-    static constexpr float kMaxDepthSamples = 8.0f;
+    // 100 samples at 48kHz creates extreme tape warble/detune.
+    static constexpr float kMaxDepthSamples = 100.0f;
 };
 
 struct Ghost {
     // How long the ghost remembers (seconds).
     static constexpr float kHistorySeconds = 0.75f;
 
-    // Grain durations (seconds). Shorter = more granular; longer = smeary.
-    static constexpr float kGrainMinSec = 0.08f;
-    static constexpr float kGrainMaxSec = 0.20f;
+    // Grain durations (seconds). Wider range for more texture variety.
+    static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
+    static constexpr float kGrainMaxSec = 0.30f;  // Long for smooth texture
 
     // Subtle detune range (in semitones) for most grains.
     static constexpr float kDetuneSemi = 0.2f; // ~20 cents
 
-    // Rare shimmer grains at +12 semitones.
+    // Shimmer grains at +12 semitones (octave up).
     static constexpr float kShimmerSemi = 12.0f;
-    static constexpr float kShimmerProbability = 0.05f; // 5%
+    static constexpr float kShimmerProbability = 0.25f; // 25% for obvious sparkle
 
     // Ghost gain bounds relative to FDN input (dB).
-    static constexpr float kMinGainDb = -30.0f; // subtle
-    static constexpr float kMaxGainDb = -12.0f; // strong but not dominating
+    static constexpr float kMinGainDb = -24.0f; // Louder minimum
+    static constexpr float kMaxGainDb = -3.0f;  // Very loud for massive presence
 };
 
 struct Freeze {
