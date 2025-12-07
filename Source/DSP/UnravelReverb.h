@@ -60,6 +60,12 @@ private:
     // Low-pass filter state for damping
     std::array<float, kNumLines> lpState;
     
+    // High-pass filter state (prevents LF bloat)
+    std::array<float, kNumLines> hpState;
+    
+    // DC blocker state (prevents offset buildup)
+    std::array<float, kNumLines> dcBlockerState;
+    
     // Ghost Engine state
     struct Grain
     {

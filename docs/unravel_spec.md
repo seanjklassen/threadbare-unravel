@@ -70,10 +70,10 @@ Everything should lean toward:
     * Right: freeze icon to the left of the sliders icon → activates 2.3.3 Freeze mode.
 
 ### 2.2 Look & Feel
-* **Background:** `#3F353D`
-* **Text and strokes:** `#E5E5D9`
-* **Unravel accent:** `#C6E0C7` (puck center, sliders, active states, Freeze on background).
-* **Lissajous Orb:** `#DD8469` line with soft anti-aliasing; faint “ghost” trail when Ghost > 0.
+* **Background:** `#26332A`
+* **Text and icons:** `#EFDFBD`
+* **Unravel accent:** `#AFD3E4` (puck center, sliders, active states, Freeze on background).
+* **Lissajous Orb:** `#E1A6A6` line with soft anti-aliasing; faint “ghost” trail when Ghost > 0.
 
 ### 2.3 Controls
 
@@ -117,6 +117,13 @@ Everything should lean toward:
 
 **Defaults:** “great ambient guitar pad” right out of the box.
 
+**Drawer Visual Language:**
+* Each parameter uses a single horizontal slider with no numeric readout. The track shows two layers:
+    * A neutral base layer that reflects the stored parameter value.
+    * A secondary gold layer that indicates the puck-applied macro offset (if any) so users can see the effective value at a glance.
+* A small “pupil” indicator to the right of each slider lights up (soft green) whenever the puck is contributing a macro value to that parameter.
+* Sliders must remain keyboard accessible; optionally show a transient tooltip while dragging for precise values. Provide a taller invisible hit area (e.g. 3–4× the visible track height) so the control is easy to grab with mouse or touch.
+
 ### 2.4 Lissajous Orb Behavior
 Orb is visual only. It reflects state.
 
@@ -134,7 +141,7 @@ Orb is visual only. It reflects state.
 * Stroke thickness & opacity follow `tailLevel`.
 
 **Implementation:**
-* ~125–200 points around a center, drawn as a polyline on canvas.
+* ~40 points around a center, drawn as a polyline on canvas.
 * Optionally use PixiJS/WebGL if raw 2D canvas stutters on Retina.
 
 ---
@@ -222,21 +229,90 @@ Orb is visual only. It reflects state.
 * Wet gain = `baseWet` × (1 − `duckAmount` × `env`).
 * Optionally never go below a minimum wet factor so it doesn’t fully vanish.
 
-### 3.9 Puck → Parameter Mapping (Conceptual)
-* **Y (Near/Distant):**
-    * Multiplies Decay (roughly /3 at bottom, ×3 at top).
-    * Adds to Drift.
-    * Adds to Ghost.
-* **X (Body/Air):**
-    * Scales ER gain & FDN input ratio (body vs wash).
-* *In code, the exact multipliers are constants in `UnravelTuning::PuckMapping`.*
+### 3.9 Puck → Parameter Mapping
 
-### 3.10 Smoothing & Denormals
-* **Per-Sample Parameter Updates:** The `Size` and `Delay` parameters must be processed using **Audio-Rate Smoothing**. Do NOT update delay times once per block. Iterate through the buffer sample-by-sample and update the delay line read pointers for every sample. This ensures "tape-style" smooth warping without zipper noise.
-* **Interpolation:** Use **Cubic (Hermite) Interpolation** for all FDN delay lines. Linear interpolation is forbidden for the delay lines as it causes volume drops and dulling during modulation.
-* **Anti-denormal strategy:**
-    * `ScopedNoDenormals`.
-    * Tiny noise added to samples to keep CPU stable in long tails.
+#### **Puck Y (Vertical Axis - Near/Distant):**
+* **Decay Time Multiplier:** 1/3 at bottom, ×3 at top
+  - Maps to `Decay::kPuckYMultiplierMin` and `kPuckYMultiplierMax`
+  - Affects exponential feedback calculation
+  - Result: Bottom = tight/short, Top = long/infinite tails
+* **Drift Boost:** Adds up to +0.25 to drift amount (0-1 range)
+  - Maps to `PuckMapping::kDriftYBonus`
+  - Combined with manual drift knob additively
+  - With PuckX macro: contributes +5 to +20 samples of warble
+
+#### **Puck X (Horizontal Axis - Dark/Stable ↔ Bright/Chaotic):**
+*Multi-parameter macro controlling sonic character:*
+
+* **Tone (Filter Brightness):**
+  - Left (-1.0): Dark tone bias → 400Hz LP cutoff (underwater, warm)
+  - Right (+1.0): Bright tone bias → 18kHz LP cutoff (airy, sparkly)
+  - Blends with manual Tone knob (70% macro weight, 30% manual offset)
+  - Result: Horizontal motion sweeps frequency spectrum
+
+* **Ghost (Granular Density):**
+  - Left (0.0): Silent → No granular clouds
+  - Right (0.7): Full clouds → Dense shimmer texture with octave-up sparkle
+  - Additive blend with manual Ghost knob
+  - Result: Clouds only appear when dragging Right
+
+* **Drift Depth (Tape Warble Intensity):**
+  - Left (20 samples @ 48kHz): Stable → Minimal pitch wobble (~0.4ms)
+  - Right (80 samples @ 48kHz): Seasick → Extreme tape warble/detune (~1.7ms)
+  - Overrides `Modulation::kMaxDepthSamples` (100) for controlled range
+  - Preserves PuckY's +0.25 drift boost as noticeable (+5 to +20 samples)
+  - Result: Increases chaos and detuning as you move Right
+
+**Implementation Notes:**
+- All macro values flow through `juce::SmoothedValue` (50ms ramp) for glitch-free sweeps
+- Manual knobs remain functional as offsets/multipliers to the macro
+- PuckX creates a dramatic "performance" axis for live sound design
+- *Early Reflections not yet implemented. When added, PuckX will also control ER gain vs FDN input ratio (Body ↔ Air character).*
+
+### 3.10 Smoothing, Filtering & Denormals
+
+#### **Per-Sample Parameter Updates:**
+The `Size` and `Delay` parameters must be processed using **Audio-Rate Smoothing**. Do NOT update delay times once per block. Iterate through the buffer sample-by-sample and update the delay line read pointers for every sample. This ensures "tape-style" smooth warping without zipper noise.
+
+#### **Interpolation:**
+Use **Cubic (Hermite) Interpolation** for all FDN delay lines. Linear interpolation is forbidden for the delay lines as it causes volume drops and dulling during modulation.
+
+#### **Anti-Crackling Signal Chain (Per Delay Line):**
+To prevent crackling artifacts, each delay line output undergoes the following processing **in order**:
+
+1. **DC Blocker (1st-order HPF):**
+   - Formula: `y[n] = x[n] - x[n-1] + 0.995 * y[n-1]`
+   - Prevents DC offset buildup in feedback loops
+   - Critical: Without this, offset accumulates and causes crackling when hitting `tanh` clipper
+
+2. **Damping (1-pole LPF):**
+   - Tone-controlled cutoff (400Hz to 18kHz)
+   - Maps `state.tone` to filter coefficient (0.1 to 0.9)
+   - Creates frequency-dependent decay
+
+3. **High-Pass Filter (1-pole, ~30Hz):**
+   - Coefficient: 0.996 @ 48kHz
+   - Prevents low-frequency bloat and pumping
+   - Catches sub-bass buildup that causes instability
+
+4. **Safety Clipper (`std::tanh`):**
+   - Soft limits signal before writing to delay buffer
+   - Prevents runaway feedback
+   - Final safeguard against digital clipping
+
+#### **LFO Phase Management:**
+- Use `std::fmod(phase, 2π)` instead of simple subtraction
+- Eliminates floating-point accumulation error over time
+- Prevents tiny discontinuities that cause clicks
+
+#### **Grain Speed Limits:**
+- Clamp grain playback speed to 0.707 (−5 semitones) to 2.0 (+12 semitones)
+- Prevents extremely slow grains that cause phase correlation issues
+- Shimmer grains at +12 semitones (octave up) are safe and desirable
+
+#### **Anti-Denormal Strategy:**
+- `juce::ScopedNoDenormals` at start of `process()`
+- Sufficient for most systems; tiny noise injection not currently needed
 
 ---
 
@@ -281,9 +357,9 @@ struct Fdn {
 
 struct Decay {
     // Global T60 bounds (seconds).
-    // 0.4s keeps short settings usable; 20s covers ambient washes.
+    // 0.4s keeps short settings usable; 50s is near-infinite reverb.
     static constexpr float kT60Min = 0.4f;
-    static constexpr float kT60Max = 20.0f;
+    static constexpr float kT60Max = 50.0f;
 
     // Puck Y decay multiplier (~ /3 to *3).
     static constexpr float kPuckYMultiplierMin = 1.0f / 3.0f;

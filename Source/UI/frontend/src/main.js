@@ -29,7 +29,7 @@ let currentState = {
   puckY: 0.5,
   drift: 0.2,
   ghost: 0.2,
-  decaySeconds: 0.4,  // Match C++ property name
+  decay: 0.4,
   size: 0.6,
   freeze: false,
 }

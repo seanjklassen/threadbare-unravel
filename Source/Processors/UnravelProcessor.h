@@ -1,6 +1,8 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <map>
+#include <vector>
 
 #include "../DSP/UnravelReverb.h"
 
@@ -45,6 +47,12 @@ public:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
+    struct Preset
+    {
+        juce::String name;
+        std::map<juce::String, float> parameters;
+    };
+
     threadbare::dsp::UnravelReverb reverbEngine;
     threadbare::dsp::UnravelState currentState;
 
@@ -61,6 +69,12 @@ private:
     juce::AudioParameterFloat* duckParam = nullptr;
     juce::AudioParameterBool* freezeParam = nullptr;
     juce::AudioParameterFloat* outputParam = nullptr;
+
+    std::vector<Preset> factoryPresets;
+    int currentProgramIndex = 0;
+
+    void initialiseFactoryPresets();
+    void applyPreset(const Preset& preset);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UnravelProcessor)
 };
