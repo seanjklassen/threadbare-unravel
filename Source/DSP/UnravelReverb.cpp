@@ -350,13 +350,21 @@ void UnravelReverb::process(std::span<float> left,
     const int bufferSize = static_cast<int>(delayLines[0].size());
     
     // Set target values once per block (these will ramp smoothly)
-    const float targetSize = juce::jlimit(threadbare::tuning::Fdn::kSizeMin,
-                                          threadbare::tuning::Fdn::kSizeMax,
-                                          state.size);
+    const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
+    
+    // DOPPLER EFFECT: Map PuckY to Size for pitch-warping tape warp
+    // PuckY Down (-1.0): Small room (0.5x size) → pitch up
+    // PuckY Up (+1.0): Massive void (2.5x size) → pitch down
+    // Manual Size knob acts as offset/multiplier to the puck mapping
+    const float puckYSize = juce::jmap(puckY, -1.0f, 1.0f, 0.5f, 2.5f);
+    const float baseSize = juce::jlimit(threadbare::tuning::Fdn::kSizeMin,
+                                       threadbare::tuning::Fdn::kSizeMax,
+                                       state.size);
+    const float combinedSize = baseSize * puckYSize; // Multiplicative blend
+    const float targetSize = juce::jlimit(0.25f, 5.0f, combinedSize); // Wide range for extreme warp
     sizeSmoother.setTargetValue(targetSize);
     
     // BUG FIX 1 & 2: Calculate feedback based on decay time and puckY multiplier
-    const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
     const float decaySeconds = juce::jlimit(threadbare::tuning::Decay::kT60Min,
                                            threadbare::tuning::Decay::kT60Max,
                                            state.decaySeconds);
