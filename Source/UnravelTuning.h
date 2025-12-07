@@ -42,28 +42,30 @@ struct Damping {
 };
 
 struct EarlyReflections {
-    static constexpr int kNumTaps = 6;
+    static constexpr std::size_t kNumTaps = 6;
+    
+    // Max pre-delay before ER cluster (ms)
+    static constexpr float kMaxPreDelayMs = 100.0f;
 
-    // Tap times in milliseconds, spread between 5 ms and 60 ms.
-    static constexpr float kTapTimesMs[kNumTaps] = {
-        5.0f, 12.5f, 19.0f, 30.0f, 42.0f, 58.0f
+    // Tap times for left channel (ms) - slightly asymmetric for width
+    static constexpr float kTapTimesL[kNumTaps] = {
+        7.0f, 13.0f, 19.0f, 29.0f, 43.0f, 57.0f
     };
-
-    // Gain per tap, decaying gently to keep ERs natural.
+    
+    // Tap times for right channel (ms) - different pattern for stereo
+    static constexpr float kTapTimesR[kNumTaps] = {
+        5.0f, 11.0f, 23.0f, 31.0f, 41.0f, 61.0f
+    };
+    
+    // Tap gains (decreasing over time for natural decay)
     static constexpr float kTapGains[kNumTaps] = {
-        0.95f, 0.78f, 0.66f, 0.52f, 0.40f, 0.30f
+        0.7f, 0.6f, 0.5f, 0.4f, 0.3f, 0.2f
     };
-
-    // Body ↔ Air crossfade endpoints for ER loudness.
-    static constexpr float kBodyMix = 1.0f;
-    static constexpr float kAirMix  = 0.25f;
-
-    // Complementary crossfade endpoints for feeding the FDN.
-    static constexpr float kBodyFdnMix = 0.45f;
-    static constexpr float kAirFdnMix  = 1.0f;
-
-    // Normalisation for distributing ER energy into the tank.
-    static constexpr float kInjectionGain = 0.5f;
+    
+    // PuckX Proximity mapping:
+    // Left (Physical): Strong ERs, weak FDN
+    // Right (Ethereal): Weak ERs, strong FDN
+    static constexpr float kErInjectionGain = 0.5f; // ERs feed into FDN at this level
 };
 
 struct Modulation {

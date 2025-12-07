@@ -113,6 +113,15 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     for (auto& grain : grainPool)
         grain.active = false;
     
+    // Initialize Early Reflections buffers (stereo multi-tap delay)
+    const auto erBufferSize = static_cast<std::size_t>(
+        threadbare::tuning::EarlyReflections::kMaxPreDelayMs * 0.001f * sampleRate + 100);
+    erBufferL.resize(erBufferSize);
+    erBufferR.resize(erBufferSize);
+    std::fill(erBufferL.begin(), erBufferL.end(), 0.0f);
+    std::fill(erBufferR.begin(), erBufferR.end(), 0.0f);
+    erWriteHead = 0;
+    
     ghostRng.setSeedRandomly();
     samplesSinceLastSpawn = 0;
 }
@@ -153,6 +162,11 @@ void UnravelReverb::reset() noexcept
     // Reset DC offset tracking
     dcOffsetL = 0.0f;
     dcOffsetR = 0.0f;
+    
+    // Reset Early Reflections
+    std::fill(erBufferL.begin(), erBufferL.end(), 0.0f);
+    std::fill(erBufferR.begin(), erBufferR.end(), 0.0f);
+    erWriteHead = 0;
 }
 
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
@@ -375,10 +389,10 @@ void UnravelReverb::process(std::span<float> left,
     feedbackSmoother.setTargetValue(targetFeedback);
     
     // ═════════════════════════════════════════════════════════════════════════
-    // PUCK X MACRO: "Dark/Stable → Bright/Chaotic" 
+    // PUCK X MACRO: "Physical/Close → Ethereal/Distant" (Proximity Control)
     // ═════════════════════════════════════════════════════════════════════════
     const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
-    const float normX = (puckX + 1.0f) * 0.5f; // 0.0 (Left) to 1.0 (Right)
+    const float normX = (puckX + 1.0f) * 0.5f; // 0.0 (Left/Physical) to 1.0 (Right/Ethereal)
     
     // 1. TONE (Filter): Dark (400Hz) → Bright (18kHz)
     //    Map normX to tone parameter (-1.0 = dark, +1.0 = bright)
@@ -415,6 +429,12 @@ void UnravelReverb::process(std::span<float> left,
     // Range 20-80 samples preserves PuckY's noticeable impact while creating the Stable→Chaotic macro
     const float targetDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 20.0f, 80.0f);
     driftDepthSmoother.setTargetValue(targetDriftDepth);
+    
+    // 4. EARLY REFLECTIONS (Proximity): Physical/Close → Ethereal/Distant
+    //    ER Gain: Loudest at Left (Physical), silent at Right (Ethereal)
+    //    FDN Send: Weak at Left (ERs dominate), strong at Right (FDN dominates)
+    const float erGain = 1.0f - normX; // 1.0 at Left → 0.0 at Right
+    const float fdnSend = 0.2f + (0.8f * normX); // 0.2 at Left → 1.0 at Right
     
     // Pre-calculate base delay offsets in samples for each line
     std::array<float, kNumLines> baseDelayOffsets;
@@ -453,7 +473,53 @@ void UnravelReverb::process(std::span<float> left,
         // Smoothing prevents clicks when moving puck horizontally!
         const float driftAmount = currentDrift * currentDriftDepth;
         
-        // A. Record input into Ghost History (with input gain applied)
+        // ═════════════════════════════════════════════════════════════════════
+        // A. EARLY REFLECTIONS (Proximity - Physical to Ethereal)
+        // ═════════════════════════════════════════════════════════════════════
+        float erOutputL = 0.0f;
+        float erOutputR = 0.0f;
+        
+        if (!erBufferL.empty() && erGain > 0.001f)
+        {
+            const int erBufSize = static_cast<int>(erBufferL.size());
+            
+            // Write dry input to ER buffers
+            erBufferL[static_cast<std::size_t>(erWriteHead)] = inputL;
+            erBufferR[static_cast<std::size_t>(erWriteHead)] = inputR;
+            
+            // Sum all taps for left and right channels
+            for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
+            {
+                const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
+                const float tapTimeR = threadbare::tuning::EarlyReflections::kTapTimesR[tap];
+                const float tapGain = threadbare::tuning::EarlyReflections::kTapGains[tap];
+                
+                // Calculate tap offsets in samples
+                const int offsetL = static_cast<int>(tapTimeL * 0.001f * sampleRate);
+                const int offsetR = static_cast<int>(tapTimeR * 0.001f * sampleRate);
+                
+                // Read from buffer with wrapping
+                int readIndexL = erWriteHead - offsetL;
+                int readIndexR = erWriteHead - offsetR;
+                
+                while (readIndexL < 0) readIndexL += erBufSize;
+                while (readIndexR < 0) readIndexR += erBufSize;
+                
+                erOutputL += erBufferL[static_cast<std::size_t>(readIndexL)] * tapGain;
+                erOutputR += erBufferR[static_cast<std::size_t>(readIndexR)] * tapGain;
+            }
+            
+            // Apply ER gain (proximity control)
+            erOutputL *= erGain;
+            erOutputR *= erGain;
+            
+            // Advance write head
+            ++erWriteHead;
+            if (erWriteHead >= erBufSize)
+                erWriteHead = 0;
+        }
+        
+        // B. Record input into Ghost History (with input gain applied)
         const float gainedInput = monoInput * inputGain;
         
         if (!ghostHistory.empty())
@@ -464,7 +530,7 @@ void UnravelReverb::process(std::span<float> left,
                 ghostWriteHead = 0;
         }
         
-        // B. Spawn grains at high density for smooth overlap
+        // C. Spawn grains at high density for smooth overlap
         ++samplesSinceLastSpawn;
         const int spawnInterval = static_cast<int>(sampleRate * 0.015f); // Every 15ms for dense texture
         if (samplesSinceLastSpawn >= spawnInterval && currentGhost > 0.01f)
@@ -476,14 +542,19 @@ void UnravelReverb::process(std::span<float> left,
             samplesSinceLastSpawn = 0;
         }
         
-        // C. Process Ghost Engine (stereo output)
+        // D. Process Ghost Engine (stereo output)
         float ghostOutputL = 0.0f;
         float ghostOutputR = 0.0f;
         processGhostEngine(currentGhost, ghostOutputL, ghostOutputR);
         
-        // D. Mix ghost into FDN input (mono sum for now, stereo width comes from grain panning)
+        // E. Mix dry + ghost + ERs into FDN input with proximity control
+        //    fdnSend: 0.2 (Left/Physical) → 1.0 (Right/Ethereal)
+        //    At Left: ERs dominate, less dry signal to FDN
+        //    At Right: Full dry signal + ghost to FDN, no ERs
         const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR);
-        const float fdnInput = gainedInput + (ghostMono * currentGhost);
+        const float erMono = 0.5f * (erOutputL + erOutputR);
+        const float fdnInput = (gainedInput * fdnSend) + (ghostMono * currentGhost) + 
+                               (erMono * threadbare::tuning::EarlyReflections::kErInjectionGain);
         
         // Step A: Read from all 8 delay lines with modulation
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
@@ -567,9 +638,11 @@ void UnravelReverb::process(std::span<float> left,
         wetL *= duckGain;
         wetR *= duckGain;
         
+        // Mix: Dry + Wet FDN + Early Reflections
+        // ERs are added directly (already scaled by erGain/proximity control)
         const float dry = 1.0f - currentMix;
-        float outL = inputL * dry + wetL * currentMix;
-        float outR = inputR * dry + wetR * currentMix;
+        float outL = inputL * dry + wetL * currentMix + erOutputL;
+        float outR = inputR * dry + wetR * currentMix + erOutputR;
         
         // Final safety: soft clip to catch any summation peaks
         float clippedL = std::tanh(outL);

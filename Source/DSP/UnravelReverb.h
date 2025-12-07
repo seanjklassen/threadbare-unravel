@@ -79,6 +79,11 @@ private:
     juce::Random ghostRng;
     int samplesSinceLastSpawn = 0;
     
+    // Early Reflections state (stereo multi-tap delay)
+    std::vector<float> erBufferL;
+    std::vector<float> erBufferR;
+    int erWriteHead = 0;
+    
     // Simple metering state (envelope followers)
     float inputMeterState = 0.0f;
     float tailMeterState = 0.0f;
