@@ -94,8 +94,9 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         lpState[i] = 0.0f;
     }
     
-    // Initialize Ghost Engine
-    const auto historySize = static_cast<std::size_t>(1.0 * sampleRate);
+    // Initialize Ghost Engine using tuning constant
+    const auto historySize = static_cast<std::size_t>(
+        threadbare::tuning::Ghost::kHistorySeconds * sampleRate);
     ghostHistory.resize(historySize);
     std::fill(ghostHistory.begin(), ghostHistory.end(), 0.0f);
     ghostWriteHead = 0;
