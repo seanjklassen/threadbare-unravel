@@ -97,10 +97,8 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         
         lfoInc[i] = kTwoPi * rateHz / static_cast<float>(sampleRate);
         
-        // Reset filter states
+        // Reset filter state
         lpState[i] = 0.0f;
-        hpState[i] = 0.0f;
-        dcBlockerState[i] = 0.0f;
     }
     
     // Initialize Ghost Engine using tuning constant
@@ -132,8 +130,6 @@ void UnravelReverb::reset() noexcept
         std::fill(delayLines[i].begin(), delayLines[i].end(), 0.0f);
         writeIndices[i] = 0;
         lpState[i] = 0.0f;
-        hpState[i] = 0.0f;
-        dcBlockerState[i] = 0.0f;
     }
     
     // Reset Ghost Engine
@@ -151,6 +147,10 @@ void UnravelReverb::reset() noexcept
     inputMeterState = 0.0f;
     tailMeterState = 0.0f;
     duckingEnvelope = 0.0f;
+    
+    // Reset DC offset tracking
+    dcOffsetL = 0.0f;
+    dcOffsetR = 0.0f;
 }
 
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
@@ -256,14 +256,11 @@ void UnravelReverb::trySpawnGrain(float ghostAmount) noexcept
     if (ghostRng.nextFloat() < threadbare::tuning::Ghost::kShimmerProbability)
         detuneSemi = threadbare::tuning::Ghost::kShimmerSemi;
 
-    // 10% chance of octave down for thickness (limited to -5 semitones for stability)
+    // 10% chance of octave down for thickness
     else if (ghostRng.nextFloat() < 0.1f)
-        detuneSemi = -5.0f;
+        detuneSemi = -12.0f;
     
-    // Calculate speed from pitch shift, clamped to safe range
-    // 0.707 = -5 semitones (min), 2.0 = +12 semitones (shimmer OK)
-    // Prevents extreme slow speeds that cause phase correlation issues
-    inactiveGrain->speed = juce::jlimit(0.707f, 2.0f, std::pow(2.0f, detuneSemi / 12.0f));
+    inactiveGrain->speed = std::pow(2.0f, detuneSemi / 12.0f);
     
     // Random stereo pan position
     inactiveGrain->pan = ghostRng.nextFloat();
@@ -488,9 +485,12 @@ void UnravelReverb::process(std::span<float> left,
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
-            // Update LFO phase with proper wrap (eliminates accumulation error)
+            // Update LFO phase with safe wrapping (prevents accumulation drift)
             lfoPhases[i] += lfoInc[i];
-            lfoPhases[i] = std::fmod(lfoPhases[i], kTwoPi);
+            while (lfoPhases[i] >= kTwoPi)
+                lfoPhases[i] -= kTwoPi;
+            while (lfoPhases[i] < 0.0f)
+                lfoPhases[i] += kTwoPi;
             
             // Calculate modulation offset
             const float modOffset = std::sin(lfoPhases[i]) * driftAmount;
@@ -500,15 +500,7 @@ void UnravelReverb::process(std::span<float> left,
             float readPos = static_cast<float>(writeIndices[i]) - (baseDelayOffsets[i] * currentSize) + modOffset;
             
             // Read with cubic interpolation (essential for smooth sliding!)
-            float readSample = readDelayInterpolated(i, readPos);
-            
-            // DC blocker: removes DC offset buildup that causes crackling
-            // Formula: y[n] = x[n] - x[n-1] + 0.995 * y[n-1]
-            const float dcInput = readSample;
-            readSample = dcInput - dcBlockerState[i];
-            dcBlockerState[i] = dcInput - 0.005f * readSample;
-            
-            readOutputs[i] = readSample;
+            readOutputs[i] = readDelayInterpolated(i, readPos);
         }
         
         // Step B: The Matrix - Householder-style mixing
@@ -529,15 +521,8 @@ void UnravelReverb::process(std::span<float> left,
             // 1-pole low-pass filter for damping with smoothed tone
             lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
             
-            // 1-pole high-pass filter to prevent LF bloat (30Hz cutoff @ 48kHz)
-            // Prevents low-frequency buildup that causes pumping/crackling
-            constexpr float hpCoef = 0.996f;
-            hpState[i] = lpState[i] - hpState[i];
-            hpState[i] *= hpCoef;
-            const float filtered = lpState[i] - hpState[i];
-            
             // Write with safety clipping
-            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(filtered);
+            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(lpState[i]);
             
             // Advance write index with wrapping
             ++writeIndices[i];
@@ -583,8 +568,17 @@ void UnravelReverb::process(std::span<float> left,
         float outR = inputR * dry + wetR * currentMix;
         
         // Final safety: soft clip to catch any summation peaks
-        left[sample] = std::tanh(outL);
-        right[sample] = std::tanh(outR);
+        float clippedL = std::tanh(outL);
+        float clippedR = std::tanh(outR);
+        
+        // Remove any DC offset from final output (very gentle 1-pole HPF @ ~3Hz)
+        // This prevents slow DC drift without affecting audio frequency content
+        constexpr float dcCoeff = 0.9999f; // ~3Hz @ 48kHz
+        dcOffsetL = clippedL + dcCoeff * (dcOffsetL - clippedL);
+        dcOffsetR = clippedR + dcCoeff * (dcOffsetR - clippedR);
+        
+        left[sample] = clippedL - dcOffsetL;
+        right[sample] = clippedR - dcOffsetR;
         
         // BUG FIX 3: Calculate metering with simple envelope followers
         const float dryLevel = std::max(std::abs(inputL), std::abs(inputR));
