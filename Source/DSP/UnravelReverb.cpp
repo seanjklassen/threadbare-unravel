@@ -139,6 +139,11 @@ void UnravelReverb::reset() noexcept
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
 {
     const auto& buffer = delayLines[lineIndex];
+    
+    // Critical: Check for empty buffer to prevent infinite loop hang!
+    if (buffer.empty())
+        return 0.0f;
+    
     const int bufferSize = static_cast<int>(buffer.size());
     
     // Wrap read position
