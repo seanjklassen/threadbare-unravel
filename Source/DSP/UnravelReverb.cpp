@@ -390,9 +390,10 @@ void UnravelReverb::process(std::span<float> left,
     const float targetGhost = state.freeze ? 0.0f : juce::jlimit(0.0f, 1.0f, combinedGhost);
     ghostSmoother.setTargetValue(targetGhost);
     
-    // 3. DRIFT (Tape Warble): Stable (2 samples) → Seasick (40 samples)
+    // 3. DRIFT (Tape Warble): Stable (20 samples) → Seasick (80 samples)
     //    Creates increasing chaos as you move Right
     //    PuckX macro overrides the standard depth (kMaxDepthSamples)
+    //    Range preserves PuckY's +0.25 drift boost as noticeable (+5 to +20 samples)
     const float baseDrift = juce::jlimit(0.0f, 1.0f, state.drift); // Manual knob
     const float puckYNorm = (puckY + 1.0f) * 0.5f;
     // Combine: manual drift + puckY boost
@@ -405,7 +406,8 @@ void UnravelReverb::process(std::span<float> left,
     
     // Store PuckX macro drift depth for per-sample modulation calculation
     // This overrides the standard kMaxDepthSamples with a puckX-driven range
-    const float macroDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 2.0f, 40.0f);
+    // Range 20-80 samples preserves PuckY's noticeable impact while creating the Stable→Chaotic macro
+    const float macroDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 20.0f, 80.0f);
     
     // Pre-calculate base delay offsets in samples for each line
     std::array<float, kNumLines> baseDelayOffsets;
