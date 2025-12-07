@@ -82,6 +82,9 @@ private:
     float inputMeterState = 0.0f;
     float tailMeterState = 0.0f;
     
+    // Ducking envelope follower
+    float duckingEnvelope = 0.0f;
+    
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;

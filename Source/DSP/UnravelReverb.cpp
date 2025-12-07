@@ -143,9 +143,10 @@ void UnravelReverb::reset() noexcept
     
     samplesSinceLastSpawn = 0;
     
-    // Reset metering
+    // Reset metering and ducking
     inputMeterState = 0.0f;
     tailMeterState = 0.0f;
+    duckingEnvelope = 0.0f;
 }
 
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
@@ -332,8 +333,27 @@ void UnravelReverb::process(std::span<float> left,
                                           state.size);
     sizeSmoother.setTargetValue(targetSize);
     
-    // BUG FIX 2: Implement freeze functionality
+    // BUG FIX 1 & 2: Calculate feedback based on decay time and puckY multiplier
     const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
+    const float decaySeconds = juce::jlimit(threadbare::tuning::Decay::kT60Min,
+                                           threadbare::tuning::Decay::kT60Max,
+                                           state.decaySeconds);
+    
+    // PuckY modifies decay time (1/3 to 3x multiplier)
+    const float puckYMult = juce::jmap(puckY,
+                                      -1.0f,
+                                      1.0f,
+                                      threadbare::tuning::Decay::kPuckYMultiplierMin,
+                                      threadbare::tuning::Decay::kPuckYMultiplierMax);
+    const float effectiveDecay = decaySeconds * puckYMult;
+    
+    // Calculate average feedback gain for approximate T60
+    // Formula: feedback = exp(-6.9 * avgDelayTime / T60)
+    // Using simplified approach: single feedback gain for all lines
+    constexpr float avgDelayMs = 59.125f; // Average of [31,37,41,53,61,71,83,97]
+    const float avgDelaySec = avgDelayMs * 0.001f;
+    constexpr float sixtyDb = -6.90775527898f; // ln(0.001)
+    
     float targetFeedback;
     if (state.freeze)
     {
@@ -342,12 +362,18 @@ void UnravelReverb::process(std::span<float> left,
     }
     else
     {
-        // Normal: puckY controls feedback
-        targetFeedback = juce::jmap(puckY, -1.0f, 1.0f, 0.0f, 0.85f);
+        // Normal: calculate from decay time
+        targetFeedback = std::exp((sixtyDb * avgDelaySec) / std::max(0.01f, effectiveDecay));
+        targetFeedback = juce::jlimit(0.0f, 0.98f, targetFeedback); // Safety clamp
     }
     feedbackSmoother.setTargetValue(targetFeedback);
     
-    const float targetTone = juce::jlimit(-1.0f, 1.0f, state.tone);
+    // BUG FIX 3: Use puckX to bias the tone control (Body ↔ Air character)
+    // puckX < 0 (Body): Darker bias
+    // puckX > 0 (Air): Brighter bias
+    const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
+    const float toneBias = puckX * 0.3f; // ±30% bias
+    const float targetTone = juce::jlimit(-1.0f, 1.0f, state.tone + toneBias);
     toneSmoother.setTargetValue(targetTone);
     
     const float drift = juce::jlimit(0.0f, 1.0f, state.drift);
@@ -489,10 +515,26 @@ void UnravelReverb::process(std::span<float> left,
                 wetR += readOutputs[i];
         }
         
-        // Scale and apply smoothed dry/wet mix
+        // Scale wet signal
         constexpr float wetScale = 0.5f;
         wetL *= wetScale;
         wetR *= wetScale;
+        
+        // BUG FIX 2: Implement ducking (sidechain-style)
+        // Envelope follower on input signal
+        const float duckTarget = std::abs(monoInput);
+        constexpr float duckAttackCoeff = 0.9990f;  // Fast attack (~10ms)
+        constexpr float duckReleaseCoeff = 0.9995f; // Slower release (~250ms)
+        const float duckCoeff = (duckTarget > duckingEnvelope) ? duckAttackCoeff : duckReleaseCoeff;
+        duckingEnvelope = duckTarget + duckCoeff * (duckingEnvelope - duckTarget);
+        
+        // Apply ducking to wet signal
+        const float duckAmount = juce::jlimit(0.0f, 1.0f, state.duck);
+        float duckGain = 1.0f - (duckAmount * duckingEnvelope);
+        duckGain = juce::jlimit(threadbare::tuning::Ducking::kMinWetFactor, 1.0f, duckGain);
+        
+        wetL *= duckGain;
+        wetR *= duckGain;
         
         const float dry = 1.0f - currentMix;
         float outL = inputL * dry + wetL * currentMix;
