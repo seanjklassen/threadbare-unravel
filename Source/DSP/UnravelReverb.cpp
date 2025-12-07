@@ -59,6 +59,7 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     feedbackSmoother.reset(sampleRate, smoothingTimeSec);
     toneSmoother.reset(sampleRate, smoothingTimeSec);
     driftSmoother.reset(sampleRate, smoothingTimeSec);
+    driftDepthSmoother.reset(sampleRate, smoothingTimeSec);
     mixSmoother.reset(sampleRate, smoothingTimeSec);
     ghostSmoother.reset(sampleRate, smoothingTimeSec);
     
@@ -67,6 +68,7 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     feedbackSmoother.setCurrentAndTargetValue(0.5f);
     toneSmoother.setCurrentAndTargetValue(0.0f);
     driftSmoother.setCurrentAndTargetValue(0.0f);
+    driftDepthSmoother.setCurrentAndTargetValue(50.0f); // Center of 20-80 range
     mixSmoother.setCurrentAndTargetValue(0.5f);
     ghostSmoother.setCurrentAndTargetValue(0.0f);
     
@@ -408,10 +410,11 @@ void UnravelReverb::process(std::span<float> left,
     const float targetMix = juce::jlimit(0.0f, 1.0f, state.mix);
     mixSmoother.setTargetValue(targetMix);
     
-    // Store PuckX macro drift depth for per-sample modulation calculation
+    // PuckX macro drift depth - SMOOTHED to prevent clicks when moving puck horizontally!
     // This overrides the standard kMaxDepthSamples with a puckX-driven range
     // Range 20-80 samples preserves PuckY's noticeable impact while creating the Stable→Chaotic macro
-    const float macroDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 20.0f, 80.0f);
+    const float targetDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 20.0f, 80.0f);
+    driftDepthSmoother.setTargetValue(targetDriftDepth);
     
     // Pre-calculate base delay offsets in samples for each line
     std::array<float, kNumLines> baseDelayOffsets;
@@ -436,6 +439,7 @@ void UnravelReverb::process(std::span<float> left,
         const float currentFeedback = feedbackSmoother.getNextValue();
         const float currentTone = toneSmoother.getNextValue();
         const float currentDrift = driftSmoother.getNextValue();
+        const float currentDriftDepth = driftDepthSmoother.getNextValue(); // Smoothed PuckX macro!
         const float currentMix = mixSmoother.getNextValue();
         const float currentGhost = ghostSmoother.getNextValue();
         
@@ -445,9 +449,9 @@ void UnravelReverb::process(std::span<float> left,
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
         
-        // Calculate drift amount using PuckX macro depth (2-40 samples) instead of fixed kMaxDepthSamples
-        // This creates the "Stable → Seasick" effect as puckX moves Right
-        const float driftAmount = currentDrift * macroDriftDepth;
+        // Calculate drift amount using smoothed PuckX macro depth (20-80 samples)
+        // Smoothing prevents clicks when moving puck horizontally!
+        const float driftAmount = currentDrift * currentDriftDepth;
         
         // A. Record input into Ghost History (with input gain applied)
         const float gainedInput = monoInput * inputGain;

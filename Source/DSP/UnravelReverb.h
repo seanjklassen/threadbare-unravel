@@ -46,6 +46,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> feedbackSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> toneSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> driftSmoother;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> driftDepthSmoother; // PuckX macro depth
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> ghostSmoother;
     
