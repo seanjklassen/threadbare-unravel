@@ -368,26 +368,44 @@ void UnravelReverb::process(std::span<float> left,
     }
     feedbackSmoother.setTargetValue(targetFeedback);
     
-    // BUG FIX 3: Use puckX to bias the tone control (Body ↔ Air character)
-    // puckX < 0 (Body): Darker bias
-    // puckX > 0 (Air): Brighter bias
+    // ═════════════════════════════════════════════════════════════════════════
+    // PUCK X MACRO: "Dark/Stable → Bright/Chaotic" 
+    // ═════════════════════════════════════════════════════════════════════════
     const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
-    const float toneBias = puckX * 0.3f; // ±30% bias
-    const float targetTone = juce::jlimit(-1.0f, 1.0f, state.tone + toneBias);
+    const float normX = (puckX + 1.0f) * 0.5f; // 0.0 (Left) to 1.0 (Right)
+    
+    // 1. TONE (Filter): Dark (400Hz) → Bright (18kHz)
+    //    Map normX to tone parameter (-1.0 = dark, +1.0 = bright)
+    //    Use exponential mapping for perceptually even frequency spread
+    const float macroTone = juce::jmap(normX, 0.0f, 1.0f, -1.0f, 1.0f);
+    const float baseTone = juce::jlimit(-1.0f, 1.0f, state.tone); // Manual knob
+    const float targetTone = juce::jlimit(-1.0f, 1.0f, baseTone + (macroTone * 0.7f)); // Macro dominates
     toneSmoother.setTargetValue(targetTone);
     
-    const float drift = juce::jlimit(0.0f, 1.0f, state.drift);
+    // 2. GHOST (Granular Clouds): None (0.0) → Full (0.7)
+    //    Clouds only appear when dragging Right
+    const float macroGhost = juce::jmap(normX, 0.0f, 1.0f, 0.0f, 0.7f);
+    const float baseGhost = juce::jlimit(0.0f, 1.0f, state.ghost); // Manual knob
+    const float combinedGhost = baseGhost * (1.0f - normX * 0.3f) + macroGhost; // Blend
+    const float targetGhost = state.freeze ? 0.0f : juce::jlimit(0.0f, 1.0f, combinedGhost);
+    ghostSmoother.setTargetValue(targetGhost);
+    
+    // 3. DRIFT (Tape Warble): Stable (2 samples) → Seasick (40 samples)
+    //    Creates increasing chaos as you move Right
+    //    PuckX macro overrides the standard depth (kMaxDepthSamples)
+    const float baseDrift = juce::jlimit(0.0f, 1.0f, state.drift); // Manual knob
     const float puckYNorm = (puckY + 1.0f) * 0.5f;
-    const float driftContribution = drift + (puckYNorm * threadbare::tuning::PuckMapping::kDriftYBonus);
-    const float targetDrift = juce::jlimit(0.0f, 1.0f, driftContribution);
+    // Combine: manual drift + puckY boost
+    const float totalDrift = baseDrift + (puckYNorm * threadbare::tuning::PuckMapping::kDriftYBonus);
+    const float targetDrift = juce::jlimit(0.0f, 1.0f, totalDrift);
     driftSmoother.setTargetValue(targetDrift);
     
     const float targetMix = juce::jlimit(0.0f, 1.0f, state.mix);
     mixSmoother.setTargetValue(targetMix);
     
-    // BUG FIX 2: Disable ghost when frozen (no new input)
-    const float targetGhost = state.freeze ? 0.0f : juce::jlimit(0.0f, 1.0f, state.ghost);
-    ghostSmoother.setTargetValue(targetGhost);
+    // Store PuckX macro drift depth for per-sample modulation calculation
+    // This overrides the standard kMaxDepthSamples with a puckX-driven range
+    const float macroDriftDepth = juce::jmap(normX, 0.0f, 1.0f, 2.0f, 40.0f);
     
     // Pre-calculate base delay offsets in samples for each line
     std::array<float, kNumLines> baseDelayOffsets;
@@ -421,8 +439,9 @@ void UnravelReverb::process(std::span<float> left,
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
         
-        // Calculate drift amount from smoothed value
-        const float driftAmount = currentDrift * threadbare::tuning::Modulation::kMaxDepthSamples;
+        // Calculate drift amount using PuckX macro depth (2-40 samples) instead of fixed kMaxDepthSamples
+        // This creates the "Stable → Seasick" effect as puckX moves Right
+        const float driftAmount = currentDrift * macroDriftDepth;
         
         // A. Record input into Ghost History (with input gain applied)
         const float gainedInput = monoInput * inputGain;
