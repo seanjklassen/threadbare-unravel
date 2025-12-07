@@ -44,6 +44,13 @@ namespace
 
 void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
 {
+    // BUG FIX 1: Validate sample rate to prevent division by zero
+    if (spec.sampleRate <= 0.0)
+    {
+        jassertfalse; // Alert in debug builds
+        return; // Gracefully fail in release
+    }
+    
     sampleRate = static_cast<int>(spec.sampleRate);
     
     // Initialize parameter smoothers with 50ms ramp time for "weighty" feel
@@ -135,6 +142,10 @@ void UnravelReverb::reset() noexcept
         grain.active = false;
     
     samplesSinceLastSpawn = 0;
+    
+    // Reset metering
+    inputMeterState = 0.0f;
+    tailMeterState = 0.0f;
 }
 
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
@@ -321,8 +332,19 @@ void UnravelReverb::process(std::span<float> left,
                                           state.size);
     sizeSmoother.setTargetValue(targetSize);
     
+    // BUG FIX 2: Implement freeze functionality
     const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
-    const float targetFeedback = juce::jmap(puckY, -1.0f, 1.0f, 0.0f, 0.85f);
+    float targetFeedback;
+    if (state.freeze)
+    {
+        // Frozen: near-unity feedback for infinite sustain
+        targetFeedback = threadbare::tuning::Freeze::kFrozenFeedback;
+    }
+    else
+    {
+        // Normal: puckY controls feedback
+        targetFeedback = juce::jmap(puckY, -1.0f, 1.0f, 0.0f, 0.85f);
+    }
     feedbackSmoother.setTargetValue(targetFeedback);
     
     const float targetTone = juce::jlimit(-1.0f, 1.0f, state.tone);
@@ -337,7 +359,8 @@ void UnravelReverb::process(std::span<float> left,
     const float targetMix = juce::jlimit(0.0f, 1.0f, state.mix);
     mixSmoother.setTargetValue(targetMix);
     
-    const float targetGhost = juce::jlimit(0.0f, 1.0f, state.ghost);
+    // BUG FIX 2: Disable ghost when frozen (no new input)
+    const float targetGhost = state.freeze ? 0.0f : juce::jlimit(0.0f, 1.0f, state.ghost);
     ghostSmoother.setTargetValue(targetGhost);
     
     // Pre-calculate base delay offsets in samples for each line
@@ -366,16 +389,21 @@ void UnravelReverb::process(std::span<float> left,
         const float currentMix = mixSmoother.getNextValue();
         const float currentGhost = ghostSmoother.getNextValue();
         
+        // BUG FIX 2: Input gain = 0 when frozen (no new signal enters)
+        const float inputGain = state.freeze ? 0.0f : 1.0f;
+        
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
         
         // Calculate drift amount from smoothed value
         const float driftAmount = currentDrift * threadbare::tuning::Modulation::kMaxDepthSamples;
         
-        // A. Record input into Ghost History
+        // A. Record input into Ghost History (with input gain applied)
+        const float gainedInput = monoInput * inputGain;
+        
         if (!ghostHistory.empty())
         {
-            ghostHistory[static_cast<std::size_t>(ghostWriteHead)] = monoInput;
+            ghostHistory[static_cast<std::size_t>(ghostWriteHead)] = gainedInput;
             ++ghostWriteHead;
             if (ghostWriteHead >= static_cast<int>(ghostHistory.size()))
                 ghostWriteHead = 0;
@@ -400,7 +428,7 @@ void UnravelReverb::process(std::span<float> left,
         
         // D. Mix ghost into FDN input (mono sum for now, stereo width comes from grain panning)
         const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR);
-        const float fdnInput = monoInput + (ghostMono * currentGhost);
+        const float fdnInput = gainedInput + (ghostMono * currentGhost);
         
         // Step A: Read from all 8 delay lines with modulation
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
@@ -473,11 +501,23 @@ void UnravelReverb::process(std::span<float> left,
         // Final safety: soft clip to catch any summation peaks
         left[sample] = std::tanh(outL);
         right[sample] = std::tanh(outR);
+        
+        // BUG FIX 3: Calculate metering with simple envelope followers
+        const float dryLevel = std::max(std::abs(inputL), std::abs(inputR));
+        const float wetLevel = std::max(std::abs(wetL), std::abs(wetR));
+        
+        // Simple 1-pole envelope followers (attack/release ~10ms at 48kHz)
+        constexpr float meterCoeff = 0.9995f;
+        const float inputTarget = dryLevel;
+        const float tailTarget = wetLevel;
+        
+        inputMeterState = inputTarget + meterCoeff * (inputMeterState - inputTarget);
+        tailMeterState = tailTarget + meterCoeff * (tailMeterState - tailTarget);
     }
     
-    // Simple metering
-    state.inLevel = 0.0f;
-    state.tailLevel = 0.0f;
+    // Update metering state from envelope followers
+    state.inLevel = inputMeterState;
+    state.tailLevel = tailMeterState;
 }
 
 } // namespace threadbare::dsp

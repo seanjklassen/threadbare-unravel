@@ -78,6 +78,10 @@ private:
     juce::Random ghostRng;
     int samplesSinceLastSpawn = 0;
     
+    // Simple metering state (envelope followers)
+    float inputMeterState = 0.0f;
+    float tailMeterState = 0.0f;
+    
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;
