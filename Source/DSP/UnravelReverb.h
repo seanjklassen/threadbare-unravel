@@ -1,9 +1,11 @@
 #pragma once
 
+#include <array>
 #include <span>
 #include <vector>
 
 #include <juce_dsp/juce_dsp.h>
+#include "../UnravelTuning.h"
 
 namespace threadbare::dsp
 {
@@ -34,11 +36,13 @@ public:
     void process(std::span<float> left, std::span<float> right, UnravelState& state) noexcept;
 
 private:
-    int sampleRate = 48000;
-    int writeIndex = 0;
+    static constexpr std::size_t kNumLines = threadbare::tuning::Fdn::kNumLines;
     
-    std::vector<float> delayBufferL;
-    std::vector<float> delayBufferR;
+    int sampleRate = 48000;
+    
+    // 8 delay lines for the FDN
+    std::array<std::vector<float>, kNumLines> delayLines;
+    std::array<int, kNumLines> writeIndices;
 };
 
 } // namespace threadbare::dsp

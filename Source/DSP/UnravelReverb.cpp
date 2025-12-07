@@ -1,7 +1,7 @@
 #include "UnravelReverb.h"
 
 #include <algorithm>
-#include <juce_dsp/juce_dsp.h>
+#include <cmath>
 
 namespace threadbare::dsp
 {
@@ -10,82 +10,115 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
 {
     sampleRate = static_cast<int>(spec.sampleRate);
     
-    // Allocate 2 seconds of buffer space
+    // Allocate 2 seconds of buffer space for each delay line
     const auto bufferSize = static_cast<std::size_t>(2.0 * sampleRate);
     
-    delayBufferL.resize(bufferSize);
-    delayBufferR.resize(bufferSize);
-    
-    // Zero the buffers
-    std::fill(delayBufferL.begin(), delayBufferL.end(), 0.0f);
-    std::fill(delayBufferR.begin(), delayBufferR.end(), 0.0f);
-    
-    writeIndex = 0;
+    for (std::size_t i = 0; i < kNumLines; ++i)
+    {
+        delayLines[i].resize(bufferSize);
+        std::fill(delayLines[i].begin(), delayLines[i].end(), 0.0f);
+        writeIndices[i] = 0;
+    }
 }
 
 void UnravelReverb::reset() noexcept
 {
-    std::fill(delayBufferL.begin(), delayBufferL.end(), 0.0f);
-    std::fill(delayBufferR.begin(), delayBufferR.end(), 0.0f);
-    writeIndex = 0;
+    for (std::size_t i = 0; i < kNumLines; ++i)
+    {
+        std::fill(delayLines[i].begin(), delayLines[i].end(), 0.0f);
+        writeIndices[i] = 0;
+    }
 }
 
 void UnravelReverb::process(std::span<float> left, 
                             std::span<float> right, 
                             UnravelState& state) noexcept
 {
-    if (delayBufferL.empty() || left.size() != right.size())
+    if (delayLines[0].empty() || left.size() != right.size())
         return;
     
     juce::ScopedNoDenormals noDenormals;
     
     const auto numSamples = left.size();
-    const int bufferSize = static_cast<int>(delayBufferL.size());
+    const int bufferSize = static_cast<int>(delayLines[0].size());
     
-    // Fixed delay time: 500ms = 24000 samples at 48kHz
-    constexpr int delayTimeSamples = 24000;
-    
-    // Map puckY (-1.0 to 1.0) to feedback gain (0.0 to 0.9)
+    // Map puckY (-1.0 to 1.0) to feedback gain (0.0 to 0.85)
     const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
-    const float feedback = juce::jmap(puckY, -1.0f, 1.0f, 0.0f, 0.9f);
+    const float feedback = juce::jmap(puckY, -1.0f, 1.0f, 0.0f, 0.85f);
     
-    for (std::size_t i = 0; i < numSamples; ++i)
+    // Pre-calculate delay offsets in samples for each line
+    std::array<int, kNumLines> delayOffsets;
+    for (std::size_t i = 0; i < kNumLines; ++i)
     {
-        const float inputL = left[i];
-        const float inputR = right[i];
-        
-        // Calculate read index with wrapping
-        int readIndex = writeIndex - delayTimeSamples;
-        if (readIndex < 0)
-            readIndex += bufferSize;
-        
-        // Read delayed samples
-        const float delayedL = delayBufferL[static_cast<std::size_t>(readIndex)];
-        const float delayedR = delayBufferR[static_cast<std::size_t>(readIndex)];
-        
-        // Feedback loop: mix input with delayed signal
-        float newL = inputL + (delayedL * feedback);
-        float newR = inputR + (delayedR * feedback);
-        
-        // Soft clipping to prevent runaway feedback (The Iron Law: No Explosions)
-        newL = std::tanh(newL);
-        newR = std::tanh(newR);
-        
-        // Write to buffer
-        delayBufferL[static_cast<std::size_t>(writeIndex)] = newL;
-        delayBufferR[static_cast<std::size_t>(writeIndex)] = newR;
-        
-        // Output: input + (delayed * 0.5)
-        left[i] = inputL + (delayedL * 0.5f);
-        right[i] = inputR + (delayedR * 0.5f);
-        
-        // Advance write index with wrapping
-        ++writeIndex;
-        if (writeIndex >= bufferSize)
-            writeIndex = 0;
+        const float delayMs = threadbare::tuning::Fdn::kBaseDelaysMs[i];
+        delayOffsets[i] = static_cast<int>(delayMs * 0.001f * sampleRate);
     }
     
-    // Simple metering (optional, keeps state updated)
+    // Temporary storage for FDN processing
+    std::array<float, kNumLines> readOutputs;
+    std::array<float, kNumLines> nextInputs;
+    
+    for (std::size_t sample = 0; sample < numSamples; ++sample)
+    {
+        const float inputL = left[sample];
+        const float inputR = right[sample];
+        const float monoInput = 0.5f * (inputL + inputR);
+        
+        // Step A: Read from all 8 delay lines
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            int readIndex = writeIndices[i] - delayOffsets[i];
+            if (readIndex < 0)
+                readIndex += bufferSize;
+            
+            readOutputs[i] = delayLines[i][static_cast<std::size_t>(readIndex)];
+        }
+        
+        // Step B: The Matrix - Simple mixing approach
+        // Calculate sum of all reads for cross-mixing
+        float sumOfReads = 0.0f;
+        for (std::size_t i = 0; i < kNumLines; ++i)
+            sumOfReads += readOutputs[i];
+        
+        // Mix with input and apply feedback matrix
+        // Using a simple Householder-style reflection: mix in inverted sum + self
+        constexpr float mixCoeff = -0.2f;
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            const float crossMix = sumOfReads * mixCoeff + readOutputs[i];
+            nextInputs[i] = monoInput + (crossMix * feedback);
+        }
+        
+        // Step C: Write with safety clipping
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(nextInputs[i]);
+            
+            // Advance write index with wrapping
+            ++writeIndices[i];
+            if (writeIndices[i] >= bufferSize)
+                writeIndices[i] = 0;
+        }
+        
+        // Step D: Output - odd lines to L, even lines to R
+        float outputL = 0.0f;
+        float outputR = 0.0f;
+        
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            if (i % 2 == 0)
+                outputL += readOutputs[i];
+            else
+                outputR += readOutputs[i];
+        }
+        
+        // Scale output and mix with dry signal
+        constexpr float outputScale = 0.5f;
+        left[sample] = inputL + (outputL * outputScale);
+        right[sample] = inputR + (outputR * outputScale);
+    }
+    
+    // Simple metering
     state.inLevel = 0.0f;
     state.tailLevel = 0.0f;
 }
