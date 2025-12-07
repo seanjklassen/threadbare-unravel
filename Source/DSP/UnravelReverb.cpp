@@ -16,6 +16,10 @@ namespace
     {
         const int size = static_cast<int>(buffer.size());
         
+        // Critical: Check for empty buffer to prevent infinite loop hang!
+        if (size == 0)
+            return 0.0f;
+        
         // Handle negative wrapping
         while (index < 0)
             index += size;
