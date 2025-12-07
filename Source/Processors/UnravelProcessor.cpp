@@ -44,6 +44,7 @@ void UnravelProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     driftParam = getFloat("drift");
     ghostParam = getFloat("ghost");
     duckParam = getFloat("duck");
+    erPreDelayParam = getFloat("erPreDelay");
     freezeParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("freeze"));
     outputParam = getFloat("output");
 }
@@ -103,6 +104,9 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     currentState.drift = clamp(readParam(driftParam, 0.2f), 0.0f, 1.0f);
     currentState.ghost = clamp(readParam(ghostParam, 0.0f), 0.0f, 1.0f);
     currentState.duck = clamp(readParam(duckParam, 0.0f), 0.0f, 1.0f);
+    currentState.erPreDelay = clamp(readParam(erPreDelayParam, 0.0f), 
+                                   0.0f, 
+                                   threadbare::tuning::EarlyReflections::kMaxPreDelayMs);
     currentState.freeze = freezeParam != nullptr ? freezeParam->get() : false;
 
     reverbEngine.process(leftSpan, rightSpan, currentState);
@@ -190,6 +194,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createPara
     params.push_back(std::make_unique<juce::AudioParameterFloat>("drift", "Drift", 0.0f, 1.0f, 0.2f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("ghost", "Ghost", 0.0f, 1.0f, 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("duck", "Duck", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("erPreDelay", "ER Pre-Delay", 
+                                                                  0.0f, 
+                                                                  threadbare::tuning::EarlyReflections::kMaxPreDelayMs, 
+                                                                  0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("freeze", "Freeze", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", -24.0f, 12.0f, 0.0f));
 

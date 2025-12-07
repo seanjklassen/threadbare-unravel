@@ -21,6 +21,7 @@ struct UnravelState
     float puckY = 0.0f;
     float ghost = 0.0f;
     float duck = 0.0f;
+    float erPreDelay = 0.0f; // Early Reflections pre-delay (0-100ms)
     float inLevel = 0.0f;
     float tailLevel = 0.0f;
     bool freeze = false;
