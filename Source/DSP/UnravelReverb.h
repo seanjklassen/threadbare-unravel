@@ -59,8 +59,11 @@ private:
     std::array<float, kNumLines> lfoPhases;
     std::array<float, kNumLines> lfoInc;
     
-    // Low-pass filter state for damping
+    // Low-pass filter state for damping (tone control)
     std::array<float, kNumLines> lpState;
+    
+    // High-pass filter state for LF cleanup (prevents mud buildup)
+    std::array<float, kNumLines> hpState;
     
     // Ghost Engine state
     struct Grain

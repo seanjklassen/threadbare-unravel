@@ -99,8 +99,9 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         
         lfoInc[i] = kTwoPi * rateHz / static_cast<float>(sampleRate);
         
-        // Reset filter state
+        // Reset filter states
         lpState[i] = 0.0f;
+        hpState[i] = 0.0f;
     }
     
     // Initialize Ghost Engine using tuning constant
@@ -141,6 +142,7 @@ void UnravelReverb::reset() noexcept
         std::fill(delayLines[i].begin(), delayLines[i].end(), 0.0f);
         writeIndices[i] = 0;
         lpState[i] = 0.0f;
+        hpState[i] = 0.0f;
     }
     
     // Reset Ghost Engine
@@ -335,15 +337,15 @@ void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& ou
     }
 }
 
-void UnravelReverb::process(std::span<float> left, 
-                            std::span<float> right, 
+void UnravelReverb::process(std::span<float> left,
+                            std::span<float> right,
                             UnravelState& state) noexcept
 {
     if (delayLines[0].empty() || left.size() != right.size())
         return;
-    
+
     juce::ScopedNoDenormals noDenormals;
-    
+
     const auto numSamples = left.size();
     const int bufferSize = static_cast<int>(delayLines[0].size());
     
@@ -361,8 +363,8 @@ void UnravelReverb::process(std::span<float> left,
     
     // PuckY modifies decay time (1/3 to 3x multiplier)
     const float puckYMult = juce::jmap(puckY,
-                                      -1.0f,
-                                      1.0f,
+                                   -1.0f,
+                                   1.0f,
                                       threadbare::tuning::Decay::kPuckYMultiplierMin,
                                       threadbare::tuning::Decay::kPuckYMultiplierMax);
     const float effectiveDecay = decaySeconds * puckYMult;
@@ -447,7 +449,7 @@ void UnravelReverb::process(std::span<float> left,
     // Temporary storage for FDN processing
     std::array<float, kNumLines> readOutputs;
     std::array<float, kNumLines> nextInputs;
-    
+
     for (std::size_t sample = 0; sample < numSamples; ++sample)
     {
         const float inputL = left[sample];
@@ -581,26 +583,45 @@ void UnravelReverb::process(std::span<float> left,
             readOutputs[i] = readDelayInterpolated(i, readPos);
         }
         
-        // Step B: The Matrix - Householder-style mixing
+        // Step B: The Matrix - Householder-style mixing with per-line feedback
         float sumOfReads = 0.0f;
-        for (std::size_t i = 0; i < kNumLines; ++i)
+    for (std::size_t i = 0; i < kNumLines; ++i)
             sumOfReads += readOutputs[i];
         
         constexpr float mixCoeff = -0.2f;
-        for (std::size_t i = 0; i < kNumLines; ++i)
-        {
+        constexpr float sixtyDb = -6.90775527898f; // ln(0.001) for -60dB
+
+    for (std::size_t i = 0; i < kNumLines; ++i)
+    {
+            // PHASE 8: Calculate per-line feedback for even decay across all lines
+            // Formula: g = exp(-6.9 * delayTime / T60)
+            const float delaySec = threadbare::tuning::Fdn::kBaseDelaysMs[i] * 0.001f;
+            float lineFeedback = std::exp((sixtyDb * delaySec) / std::max(0.01f, effectiveDecay));
+            lineFeedback = juce::jlimit(0.0f, 0.98f, lineFeedback);
+            
+            // Override with freeze feedback if frozen
+            if (state.freeze)
+                lineFeedback = threadbare::tuning::Freeze::kFrozenFeedback;
+            
             const float crossMix = sumOfReads * mixCoeff + readOutputs[i];
-            nextInputs[i] = fdnInput + (crossMix * currentFeedback);
+            nextInputs[i] = fdnInput + (crossMix * lineFeedback);
         }
         
-        // Step C: Apply damping and write with safety clipping
+        // Step C: Apply damping, HPF, and write with safety clipping
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
-            // 1-pole low-pass filter for damping with smoothed tone
+            // 1-pole low-pass filter for damping with smoothed tone (removes highs)
             lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
             
+            // PHASE 8: 1-pole high-pass filter to prevent LF mud buildup (removes lows)
+            // HPF = Input - LowPass(Input)
+            // Cutoff ~150Hz @ 48kHz
+            constexpr float hpCoef = 0.006f; // ~150Hz cutoff
+            hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
+            const float hpfSample = lpState[i] - hpState[i];
+            
             // Write with safety clipping
-            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(lpState[i]);
+            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(hpfSample);
             
             // Advance write index with wrapping
             ++writeIndices[i];
