@@ -352,16 +352,16 @@ void UnravelReverb::process(std::span<float> left,
     // Set target values once per block (these will ramp smoothly)
     const float puckY = juce::jlimit(-1.0f, 1.0f, state.puckY);
     
-    // DOPPLER EFFECT: Map PuckY to Size for pitch-warping tape warp
-    // PuckY Down (-1.0): Small room (0.5x size) → pitch up
-    // PuckY Up (+1.0): Massive void (2.5x size) → pitch down
-    // Manual Size knob acts as offset/multiplier to the puck mapping
-    const float puckYSize = juce::jmap(puckY, -1.0f, 1.0f, 0.5f, 2.5f);
+    // SUBTLE DOPPLER: Map PuckY to Size for gentle pitch warp (adds "life" without overwhelming)
+    // PuckY Down (-1.0): Slightly smaller (0.92x) → subtle pitch up
+    // PuckY Up (+1.0): Slightly larger (1.08x) → subtle pitch down
+    // Manual Size knob remains the primary size control
+    const float puckYSize = juce::jmap(puckY, -1.0f, 1.0f, 0.92f, 1.08f); // ±8% range
     const float baseSize = juce::jlimit(threadbare::tuning::Fdn::kSizeMin,
                                        threadbare::tuning::Fdn::kSizeMax,
                                        state.size);
-    const float combinedSize = baseSize * puckYSize; // Multiplicative blend
-    const float targetSize = juce::jlimit(0.25f, 5.0f, combinedSize); // Wide range for extreme warp
+    const float combinedSize = baseSize * puckYSize; // Subtle multiplicative blend
+    const float targetSize = juce::jlimit(0.25f, 5.0f, combinedSize);
     sizeSmoother.setTargetValue(targetSize);
     
     // BUG FIX 1 & 2: Calculate feedback based on decay time and puckY multiplier
