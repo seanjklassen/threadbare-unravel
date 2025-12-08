@@ -1,18 +1,39 @@
+// Helper to get native functions via our polyfill
+const getNativeFn = (name) => {
+  if (typeof window.__getNativeFunction === 'function') {
+    return window.__getNativeFunction(name)
+  }
+  return null
+}
+
 export class Presets {
   constructor() {
     this.presetSelect = document.getElementById('preset-select')
     this.presetName = document.querySelector('.preset-name')
     this.currentPresetIndex = 0
     this.presetList = []
+    this.initialized = false
     
-    this.init()
+    // Delay init to allow main.js to set up window.__getNativeFunction
+    setTimeout(() => this.init(), 0)
   }
   
   async init() {
+    // If native functions aren't ready yet, retry
+    if (typeof window.__getNativeFunction !== 'function') {
+      setTimeout(() => this.init(), 100)
+      return
+    }
+    
+    if (this.initialized) return
+    this.initialized = true
+    
+    const getPresetListFn = getNativeFn('getPresetList')
+    
     // Get preset list from backend
-    if (typeof window.getPresetList === 'function') {
+    if (typeof getPresetListFn === 'function') {
       try {
-        const presets = await window.getPresetList()
+        const presets = await getPresetListFn()
         this.presetList = presets || []
         this.populatePresets()
         console.log('Presets loaded:', this.presetList)
@@ -20,7 +41,7 @@ export class Presets {
         console.error('Failed to load presets:', error)
       }
     } else {
-      console.warn('window.getPresetList not available')
+      console.warn('Native getPresetList not available')
       // Fallback preset list for testing
       this.presetList = ['unravel']
       this.populatePresets()
@@ -54,9 +75,11 @@ export class Presets {
   }
   
   async loadPreset(index) {
-    if (typeof window.loadPreset === 'function') {
+    const loadPresetFn = getNativeFn('loadPreset')
+    
+    if (typeof loadPresetFn === 'function') {
       try {
-        const success = await window.loadPreset(index)
+        const success = await loadPresetFn(index)
         if (success) {
           this.currentPresetIndex = index
           this.updatePresetName()
@@ -68,7 +91,7 @@ export class Presets {
         console.error('Error loading preset:', error)
       }
     } else {
-      console.warn('window.loadPreset not available')
+      console.warn('Native loadPreset not available')
     }
   }
   

@@ -18,14 +18,19 @@ const rangeToNorm = (value, range) => {
 const to11Scale = (value = 0, range = { min: 0, max: 1 }) =>
   (rangeToNorm(value, range) * 11).toFixed(2)
 
+// Cache the native function reference
+let nativeSetParameter = null
+
 const sendParam = (id, val) => {
-  console.log('sendParam called:', id, val, typeof window.setParameter)
-  if (typeof window.setParameter === 'function') {
-    window.setParameter(id, val)
-    console.log('setParameter called successfully')
-  } else {
-    console.error('window.setParameter is not a function!')
+  // Lazily get the native function using our polyfill
+  if (!nativeSetParameter && window.__getNativeFunction) {
+    nativeSetParameter = window.__getNativeFunction('setParameter')
   }
+  
+  if (typeof nativeSetParameter === 'function') {
+    nativeSetParameter(id, val)
+  }
+  // Silently skip if not available - reduces console spam
 }
 
 const getBounds = (el) => el?.getBoundingClientRect()

@@ -33,57 +33,118 @@ namespace
         return "application/octet-stream";
     }
 
+    // Helper to convert a path to JUCE binary resource name format
+    juce::String toResourceName(const juce::String& path)
+    {
+        // JUCE mangles: replace all non-alphanumeric chars with underscore
+        juce::String result;
+        for (int i = 0; i < path.length(); ++i)
+        {
+            auto c = path[i];
+            if (juce::CharacterFunctions::isLetterOrDigit(c))
+                result += c;
+            else
+                result += '_';
+        }
+        return result;
+    }
+
     // Helper to get resource with proper path normalization and MIME types
     std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url)
     {
-        // 1. Strip protocol
+        // 1. Clean the URL path
         juce::String path = url;
-        if (path.startsWith("juce-resource://UnravelResources/"))
-            path = path.substring(juce::String("juce-resource://UnravelResources/").length());
-        else if (path.startsWith("juce-resource://"))
-            path = path.substring(juce::String("juce-resource://").length());
         
-        // 2. Clean path (remove leading slash and query params)
-        if (path.startsWith("/"))
+        // Strip any protocol prefixes
+        if (path.startsWith("juce-resource://"))
+        {
+            path = path.substring(juce::String("juce-resource://").length());
+            if (path.startsWith("UnravelResources/"))
+                path = path.substring(juce::String("UnravelResources/").length());
+        }
+        
+        // Remove leading slashes and query params
+        while (path.startsWith("/"))
             path = path.substring(1);
         
         int queryIndex = path.indexOfChar('?');
         if (queryIndex > -1)
             path = path.substring(0, queryIndex);
         
-        juce::Logger::writeToLog("Looking for resource: " + path);
+        // Default to index.html for empty path
+        if (path.isEmpty())
+            path = "index.html";
         
-        // 3. Find in UnravelResources
+        // 2. Find in UnravelResources
         int dataSize = 0;
         const char* data = nullptr;
+        juce::String originalPath = path;
         
-        // Try exact match first
-        data = UnravelResources::getNamedResource(path.toRawUTF8(), dataSize);
+        // Build list of mangled names to try
+        juce::StringArray namesToTry;
         
-        // Try fallback with underscore mangling if exact fails
-        if (data == nullptr)
+        // Primary: simple underscore mangling (JUCE's format)
+        juce::String mangled = path.replaceCharacter('.', '_')
+                                   .replaceCharacter('-', '_')
+                                   .replaceCharacter('/', '_');
+        namesToTry.add(mangled);
+        
+        // Full alphanumeric mangling
+        namesToTry.add(toResourceName(path));
+        
+        // With "dist_" prefix
+        namesToTry.add("dist_" + mangled);
+        
+        // Filename only if path has slashes
+        if (path.contains("/"))
         {
-            juce::String mangled = path.replaceCharacter('.', '_')
-                                      .replaceCharacter('-', '_')
-                                      .replaceCharacter('/', '_');
-            juce::Logger::writeToLog("Trying mangled name: " + mangled);
-            data = UnravelResources::getNamedResource(mangled.toRawUTF8(), dataSize);
+            juce::String filename = path.fromLastOccurrenceOf("/", false, false);
+            namesToTry.add(filename.replaceCharacter('.', '_').replaceCharacter('-', '_'));
         }
         
-        // 4. Return Resource with data and MIME type
+        namesToTry.removeDuplicates(false);
+        
+        // Try each name
+        for (const auto& name : namesToTry)
+        {
+            data = UnravelResources::getNamedResource(name.toRawUTF8(), dataSize);
+            if (data != nullptr && dataSize > 0)
+                break;
+        }
+        
+        // Fallback: search by original filename
+        if (data == nullptr)
+        {
+            for (int i = 0; i < UnravelResources::namedResourceListSize; ++i)
+            {
+                const char* resName = UnravelResources::namedResourceList[i];
+                const char* origFilename = UnravelResources::getNamedResourceOriginalFilename(resName);
+                
+                if (origFilename != nullptr)
+                {
+                    juce::String origStr(origFilename);
+                    if (origStr.endsWithIgnoreCase(path) || path.endsWithIgnoreCase(origStr))
+                    {
+                        data = UnravelResources::getNamedResource(resName, dataSize);
+                        if (data != nullptr && dataSize > 0)
+                            break;
+                    }
+                }
+            }
+        }
+        
+        // Return resource
         if (data != nullptr && dataSize > 0)
         {
-            juce::String mime = getMimeType(path);
-            juce::Logger::writeToLog("Found resource: " + path + " (" + juce::String(dataSize) + " bytes, " + mime + ")");
-            
             return juce::WebBrowserComponent::Resource {
                 std::vector<std::byte>(reinterpret_cast<const std::byte*>(data), 
                                       reinterpret_cast<const std::byte*>(data) + dataSize),
-                mime
+                getMimeType(originalPath)
             };
         }
         
-        juce::Logger::writeToLog("Resource not found: " + path);
+        // Log failure for debugging
+        DBG("UnravelEditor: Resource not found: " << url);
         return std::nullopt;
     }
 
@@ -243,10 +304,10 @@ void UnravelEditor::handleUpdate()
 
 void UnravelEditor::loadInitialURL()
 {
-    // Load from juce-resource:// URL with resource provider
-    // This enables native integration with embedded resources
-    const auto resourceUrl = "juce-resource://UnravelResources/index.html";
+    // Use JUCE's resource provider root URL - this triggers the resource provider callback
+    // Note: Using "juce-resource://..." does NOT work on macOS; must use getResourceProviderRoot()
+    const auto resourceUrl = juce::WebBrowserComponent::getResourceProviderRoot() + "index.html";
     
+    DBG("UnravelEditor: Loading UI from " << resourceUrl);
     webView.goToURL(resourceUrl);
-    juce::Logger::writeToLog("Loading UI from: " + juce::String(resourceUrl));
 }
