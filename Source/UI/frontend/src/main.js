@@ -70,9 +70,20 @@ window.updateState = (payload) => {
 
   if (typeof parsed !== 'object') return
 
+  // Debug: log state updates
+  console.log('State update received:', parsed)
+
   currentState = { ...currentState, ...parsed }
   orb.update(currentState)
   controls.update(currentState)
+}
+
+// Debug: Check if setParameter is available
+console.log('window.setParameter available:', typeof window.setParameter === 'function')
+
+// Debug: Test setParameter call
+if (typeof window.setParameter === 'function') {
+  console.log('Testing setParameter...')
 }
 
 resizeCanvas()

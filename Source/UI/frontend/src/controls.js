@@ -19,8 +19,12 @@ const to11Scale = (value = 0, range = { min: 0, max: 1 }) =>
   (rangeToNorm(value, range) * 11).toFixed(2)
 
 const sendParam = (id, val) => {
+  console.log('sendParam called:', id, val, typeof window.setParameter)
   if (typeof window.setParameter === 'function') {
     window.setParameter(id, val)
+    console.log('setParameter called successfully')
+  } else {
+    console.error('window.setParameter is not a function!')
   }
 }
 
