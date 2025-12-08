@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <array>
 #include <map>
 #include <vector>
 
@@ -43,6 +44,7 @@ public:
 
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
     const threadbare::dsp::UnravelState& getCurrentState() const noexcept { return currentState; }
+    bool popVisualState(threadbare::dsp::UnravelState& state) noexcept;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -57,6 +59,23 @@ private:
     threadbare::dsp::UnravelState currentState;
 
     juce::AudioProcessorValueTreeState apvts;
+
+    struct StateQueue
+    {
+        static constexpr int kCapacity = 16;
+
+        void reset() noexcept;
+        bool push(const threadbare::dsp::UnravelState& state) noexcept;
+        bool pop(threadbare::dsp::UnravelState& state) noexcept;
+
+    private:
+        void discardOldest() noexcept;
+
+        std::array<threadbare::dsp::UnravelState, kCapacity> buffer{};
+        juce::AbstractFifo fifo { kCapacity };
+    };
+
+    StateQueue stateQueue;
 
     juce::AudioParameterFloat* puckXParam = nullptr;
     juce::AudioParameterFloat* puckYParam = nullptr;

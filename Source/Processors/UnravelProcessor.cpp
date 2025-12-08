@@ -6,6 +6,59 @@
 #include <memory>
 #include <vector>
 
+namespace
+{
+constexpr int kStateFifoChunk = 1;
+}
+
+void UnravelProcessor::StateQueue::reset() noexcept
+{
+    fifo.reset();
+}
+
+bool UnravelProcessor::StateQueue::push(const threadbare::dsp::UnravelState& state) noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+    {
+        discardOldest();
+        fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
+
+        if (size1 == 0)
+            return false;
+    }
+
+    buffer[static_cast<std::size_t>(start1)] = state;
+    fifo.finishedWrite(kStateFifoChunk);
+    return true;
+}
+
+bool UnravelProcessor::StateQueue::pop(threadbare::dsp::UnravelState& state) noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+        return false;
+
+    state = buffer[static_cast<std::size_t>(start1)];
+    fifo.finishedRead(kStateFifoChunk);
+    return true;
+}
+
+void UnravelProcessor::StateQueue::discardOldest() noexcept
+{
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
+
+    if (size1 == 0)
+        return;
+
+    fifo.finishedRead(kStateFifoChunk);
+}
+
 UnravelProcessor::UnravelProcessor()
     : juce::AudioProcessor(BusesProperties()
                                .withInput("Input", juce::AudioChannelSet::stereo(), true)
@@ -29,6 +82,7 @@ void UnravelProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         static_cast<juce::uint32>(juce::jmax(1, getMainBusNumOutputChannels()))};
 
     reverbEngine.prepare(spec);
+    stateQueue.reset();
 
     const auto getFloat = [this](const juce::String& id)
     {
@@ -54,6 +108,7 @@ void UnravelProcessor::releaseResources() {}
 void UnravelProcessor::reset()
 {
     reverbEngine.reset();
+    stateQueue.reset();
 }
 
 bool UnravelProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -113,6 +168,8 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
 
     const float outputGain = juce::Decibels::decibelsToGain(readParam(outputParam, 0.0f));
     buffer.applyGain(outputGain);
+
+    stateQueue.push(currentState);
 }
 
 //==============================================================================
@@ -171,6 +228,20 @@ void UnravelProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes));
     if (tree.isValid())
         apvts.replaceState(tree);
+}
+
+bool UnravelProcessor::popVisualState(threadbare::dsp::UnravelState& state) noexcept
+{
+    threadbare::dsp::UnravelState latest{};
+    bool popped = false;
+
+    while (stateQueue.pop(latest))
+    {
+        state = latest;
+        popped = true;
+    }
+
+    return popped;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createParameterLayout()
@@ -396,6 +467,7 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"mix", 0.35f},
                 {"output", 0.0f},
                 {"freeze", 0.0f}})};
+
 }
 
 void UnravelProcessor::applyPreset(const Preset& preset)
