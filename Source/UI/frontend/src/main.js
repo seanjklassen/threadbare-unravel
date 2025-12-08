@@ -81,9 +81,31 @@ window.updateState = (payload) => {
 // Debug: Check if setParameter is available
 console.log('window.setParameter available:', typeof window.setParameter === 'function')
 
-// Debug: Test setParameter call
-if (typeof window.setParameter === 'function') {
-  console.log('Testing setParameter...')
+// Wait for native integration to be ready
+let nativeIntegrationReady = typeof window.setParameter === 'function'
+
+if (!nativeIntegrationReady) {
+  console.warn('Native integration not ready immediately, polling...')
+  
+  // Poll for native function availability
+  const checkInterval = setInterval(() => {
+    if (typeof window.setParameter === 'function') {
+      console.log('Native integration NOW available!')
+      nativeIntegrationReady = true
+      clearInterval(checkInterval)
+    } else {
+      console.log('Still waiting for native integration...')
+    }
+  }, 100)
+  
+  // Give up after 5 seconds
+  setTimeout(() => {
+    clearInterval(checkInterval)
+    if (!nativeIntegrationReady) {
+      console.error('Native integration failed to initialize after 5 seconds')
+      console.log('Available window properties:', Object.keys(window).filter(k => k.includes('set') || k.includes('update')))
+    }
+  }, 5000)
 }
 
 resizeCanvas()
