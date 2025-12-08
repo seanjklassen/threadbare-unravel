@@ -125,9 +125,23 @@ void UnravelEditor::handleUpdate()
 
 void UnravelEditor::loadInitialURL()
 {
-#if JUCE_DEBUG
-    webView.goToURL("http://localhost:3000");
-#else
-    webView.goToURL("file:///index.html"); // Placeholder for packaged UI
-#endif
+    // Get the path to the frontend dist folder
+    // In development, load from the source tree's dist folder
+    auto sourceDir = juce::File(__FILE__).getParentDirectory(); // UI folder
+    auto frontendDir = sourceDir.getChildFile("frontend");
+    auto distDir = frontendDir.getChildFile("dist");
+    auto indexFile = distDir.getChildFile("index.html");
+    
+    if (indexFile.existsAsFile())
+    {
+        auto url = "file://" + indexFile.getFullPathName();
+        webView.goToURL(url);
+        juce::Logger::writeToLog("Loading UI from: " + url);
+    }
+    else
+    {
+        juce::Logger::writeToLog("ERROR: Frontend index.html not found at: " + indexFile.getFullPathName());
+        // Fallback to dev server
+        webView.goToURL("http://localhost:3000");
+    }
 }
