@@ -1,18 +1,21 @@
 import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig({
-  // Use relative paths for assets so they work with file:// URLs
-  base: './',
+  plugins: [viteSingleFile()],
   
   build: {
     // Output to dist folder
     outDir: 'dist',
     
     // Generate sourcemaps for debugging
-    sourcemap: true,
+    sourcemap: false,
     
-    // Don't minify in development for easier debugging
-    minify: false
+    // Don't minify for easier debugging
+    minify: false,
+    
+    // Inline CSS
+    cssCodeSplit: false
   }
 })
 
