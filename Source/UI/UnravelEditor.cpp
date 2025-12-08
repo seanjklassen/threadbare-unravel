@@ -22,36 +22,6 @@ namespace
     }
 #endif
 
-    // Helper function to create resource from embedded data
-    std::optional<juce::WebBrowserComponent::Resource> createResource(const juce::String& filePath)
-    {
-        int dataSize = 0;
-        const char* data = nullptr;
-        
-        // Map file paths to resource names
-        if (filePath == "index.html" || filePath.contains("index.html"))
-        {
-            data = UnravelResources::index_html;
-            dataSize = UnravelResources::index_htmlSize;
-        }
-        else if (filePath.contains("vite.svg"))
-        {
-            data = UnravelResources::vite_svg;
-            dataSize = UnravelResources::vite_svgSize;
-        }
-        
-        if (data != nullptr && dataSize > 0)
-        {
-            juce::WebBrowserComponent::Resource resource;
-            // Convert const char* to vector<std::byte>
-            const auto* byteData = reinterpret_cast<const std::byte*>(data);
-            resource.data.assign(byteData, byteData + dataSize);
-            return resource;
-        }
-        
-        return std::nullopt;
-    }
-
     juce::WebBrowserComponent::Options makeBrowserOptions(UnravelProcessor& processor)
     {
         auto options = juce::WebBrowserComponent::Options{}
@@ -130,15 +100,6 @@ namespace
                 }
             });
         
-        // Resource provider for embedded UI files
-        options = options.withResourceProvider(
-            [](const juce::String& url) -> std::optional<juce::WebBrowserComponent::Resource>
-            {
-                // Extract file path from juce-resource:// URL
-                juce::String filePath = url.fromFirstOccurrenceOf("juce-resource://", false, false);
-                return createResource(filePath);
-            });
-
         return options;
     }
 } // namespace
@@ -210,9 +171,14 @@ void UnravelEditor::handleUpdate()
 
 void UnravelEditor::loadInitialURL()
 {
-    // Always load from embedded binary resources for native integration to work
-    webView.goToURL("juce-resource://index.html");
-    juce::Logger::writeToLog("Loading UI from embedded resources");
+    // Load HTML directly from embedded binary data as a data URL
+    // This enables native integration while avoiding file:// CORS issues
     
-    // Note: Frontend changes require rebuilding with 'npm run build' + cmake rebuild
+    juce::String htmlContent(UnravelResources::index_html, UnravelResources::index_htmlSize);
+    
+    // Encode as data URL
+    juce::String dataUrl = "data:text/html;charset=utf-8;base64," + juce::Base64::toBase64(htmlContent);
+    
+    webView.goToURL(dataUrl);
+    juce::Logger::writeToLog("Loading UI from embedded data URL");
 }
