@@ -4,14 +4,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_data_structures/juce_data_structures.h>
 
-// Forward declare binary resources namespace
-namespace UnravelResources
-{
-    extern const char* index_html;
-    extern const int index_htmlSize;
-    extern const char* vite_svg;
-    extern const int vite_svgSize;
-}
+// Include generated binary resources
+#include "BinaryData.h"
 
 namespace
 {
@@ -28,34 +22,35 @@ namespace
     }
 #endif
 
-    // Resource provider for embedded UI
-    struct UnravelResourceProvider : public juce::WebBrowserComponent::Resource
+    // Helper function to create resource from embedded data
+    std::optional<juce::WebBrowserComponent::Resource> createResource(const juce::String& filePath)
     {
-        UnravelResourceProvider(const juce::String& filePath)
+        int dataSize = 0;
+        const char* data = nullptr;
+        
+        // Map file paths to resource names
+        if (filePath == "index.html" || filePath.contains("index.html"))
         {
-            int dataSize = 0;
-            const char* data = nullptr;
-            
-            // Map file paths to resource names
-            if (filePath == "index.html" || filePath.contains("index.html"))
-            {
-                data = UnravelResources::index_html;
-                dataSize = UnravelResources::index_htmlSize;
-            }
-            else if (filePath.contains("vite.svg"))
-            {
-                data = UnravelResources::vite_svg;
-                dataSize = UnravelResources::vite_svgSize;
-            }
-            
-            if (data != nullptr && dataSize > 0)
-            {
-                resourceData = juce::MemoryBlock(data, static_cast<size_t>(dataSize));
-            }
+            data = UnravelResources::index_html;
+            dataSize = UnravelResources::index_htmlSize;
+        }
+        else if (filePath.contains("vite.svg"))
+        {
+            data = UnravelResources::vite_svg;
+            dataSize = UnravelResources::vite_svgSize;
         }
         
-        juce::MemoryBlock resourceData;
-    };
+        if (data != nullptr && dataSize > 0)
+        {
+            juce::WebBrowserComponent::Resource resource;
+            // Convert const char* to vector<std::byte>
+            const auto* byteData = reinterpret_cast<const std::byte*>(data);
+            resource.data.assign(byteData, byteData + dataSize);
+            return resource;
+        }
+        
+        return std::nullopt;
+    }
 
     juce::WebBrowserComponent::Options makeBrowserOptions(UnravelProcessor& processor)
     {
@@ -136,15 +131,13 @@ namespace
             });
         
         // Resource provider for embedded UI files
-#ifndef JUCE_DEBUG
         options = options.withResourceProvider(
-            [](const juce::String& url) -> std::unique_ptr<juce::WebBrowserComponent::Resource>
+            [](const juce::String& url) -> std::optional<juce::WebBrowserComponent::Resource>
             {
                 // Extract file path from juce-resource:// URL
                 juce::String filePath = url.fromFirstOccurrenceOf("juce-resource://", false, false);
-                return std::make_unique<UnravelResourceProvider>(filePath);
+                return createResource(filePath);
             });
-#endif
 
         return options;
     }
@@ -217,26 +210,9 @@ void UnravelEditor::handleUpdate()
 
 void UnravelEditor::loadInitialURL()
 {
-#ifdef JUCE_DEBUG
-    // In debug mode, load from file system for faster iteration
-    auto sourceDir = juce::File(__FILE__).getParentDirectory(); // UI folder
-    auto frontendDir = sourceDir.getChildFile("frontend");
-    auto distDir = frontendDir.getChildFile("dist");
-    auto indexFile = distDir.getChildFile("index.html");
-    
-    if (indexFile.existsAsFile())
-    {
-        auto url = "file://" + indexFile.getFullPathName();
-        webView.goToURL(url);
-        juce::Logger::writeToLog("Loading UI from: " + url);
-    }
-    else
-    {
-        juce::Logger::writeToLog("ERROR: Frontend index.html not found at: " + indexFile.getFullPathName());
-    }
-#else
-    // In release mode, load from embedded binary resources
+    // Always load from embedded binary resources for native integration to work
     webView.goToURL("juce-resource://index.html");
     juce::Logger::writeToLog("Loading UI from embedded resources");
-#endif
+    
+    // Note: Frontend changes require rebuilding with 'npm run build' + cmake rebuild
 }
