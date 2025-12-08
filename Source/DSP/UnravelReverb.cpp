@@ -115,8 +115,13 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         grain.active = false;
     
     // Initialize Early Reflections buffers (stereo multi-tap delay)
+    // Buffer must accommodate pre-delay + longest tap time to prevent overflow
+    // Max tap times: L=57ms, R=61ms → use 61ms
+    // At max settings: (100ms pre-delay + 61ms tap) * 48kHz = 7,728 samples
+    const float maxTapTimeMs = 61.0f; // From kTapTimesR[5]
     const auto erBufferSize = static_cast<std::size_t>(
-        threadbare::tuning::EarlyReflections::kMaxPreDelayMs * 0.001f * sampleRate + 100);
+        (threadbare::tuning::EarlyReflections::kMaxPreDelayMs + maxTapTimeMs) 
+        * 0.001f * sampleRate + 100);
     erBufferL.resize(erBufferSize);
     erBufferR.resize(erBufferSize);
     std::fill(erBufferL.begin(), erBufferL.end(), 0.0f);
@@ -226,7 +231,7 @@ float UnravelReverb::readGhostHistory(float readPosition) const noexcept
     return cubicInterp(y0, y1, y2, y3, frac);
 }
 
-void UnravelReverb::trySpawnGrain(float ghostAmount) noexcept
+void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
 {
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
@@ -248,10 +253,54 @@ void UnravelReverb::trySpawnGrain(float ghostAmount) noexcept
     // Activate the grain
     inactiveGrain->active = true;
     
-    // Random read position: 0.1 to 0.5 seconds behind write head
-    const float historyWindowSec = 0.5f;
-    const float offsetSamples = ghostRng.nextFloat() * historyWindowSec * static_cast<float>(sampleRate);
-    inactiveGrain->pos = static_cast<float>(ghostWriteHead) - offsetSamples;
+    // Calculate puckX bias once (used for both proximity and stereo width)
+    // distantBias: 0.0 at left (body/recent), 1.0 at right (air/distant)
+    const float distantBias = (1.0f + puckX) * 0.5f;
+    
+    // === SPECTRAL FREEZE / MEMORY PROXIMITY (Phase 3 & 4) ===
+    // If frozen: use locked positions; otherwise: use proximity-based spawn
+    const int historyLength = static_cast<int>(ghostHistory.size());
+    
+    if (ghostFreezeActive && numFrozenPositions > 0)
+    {
+        // FROZEN MODE: Pick from frozen positions using weighted random
+        // This creates organic variation without audible patterns
+        const std::size_t randomIndex = static_cast<std::size_t>(
+            ghostRng.nextFloat() * static_cast<float>(numFrozenPositions));
+        const std::size_t safeIndex = std::min(randomIndex, numFrozenPositions - 1);
+        
+        inactiveGrain->pos = frozenSpawnPositions[safeIndex];
+        
+        // Ensure position is still valid within current buffer
+        while (inactiveGrain->pos < 0.0f)
+            inactiveGrain->pos += static_cast<float>(historyLength);
+        while (inactiveGrain->pos >= static_cast<float>(historyLength))
+            inactiveGrain->pos -= static_cast<float>(historyLength);
+    }
+    else
+    {
+        // NORMAL MODE: Use proximity-based position (Phase 3)
+        // Interpolate between min and max lookback time based on puckX
+        // puckX = -1.0 (Body): maxLookback = 150ms (recent)
+        // puckX =  0.0 (Center): maxLookback = 450ms (medium)
+        // puckX = +1.0 (Air): maxLookback = 750ms (distant)
+        const float maxLookbackMs = threadbare::tuning::Ghost::kMinLookbackMs + 
+                                    (distantBias * (threadbare::tuning::Ghost::kMaxLookbackMs - 
+                                                    threadbare::tuning::Ghost::kMinLookbackMs));
+        
+        // Random position within [0, maxLookback]
+        const float spawnPosMs = ghostRng.nextFloat() * maxLookbackMs;
+        const float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
+        
+        // Set spawn position relative to write head
+        inactiveGrain->pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+        
+        // Wrap within buffer bounds
+        while (inactiveGrain->pos < 0.0f)
+            inactiveGrain->pos += static_cast<float>(historyLength);
+        while (inactiveGrain->pos >= static_cast<float>(historyLength))
+            inactiveGrain->pos -= static_cast<float>(historyLength);
+    }
 
     // Grain duration: random between min and max (80-300ms for smooth overlap)
     const float durationSec = juce::jmap(ghostRng.nextFloat(),
@@ -270,18 +319,56 @@ void UnravelReverb::trySpawnGrain(float ghostAmount) noexcept
                                   -threadbare::tuning::Ghost::kDetuneSemi,
                                    threadbare::tuning::Ghost::kDetuneSemi);
     
-    // 25% chance of shimmer (octave up) for obvious sparkle!
-    if (ghostRng.nextFloat() < threadbare::tuning::Ghost::kShimmerProbability)
-        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi;
+    // === SPECTRAL FREEZE SHIMMER ENHANCEMENT (Phase 4) ===
+    // Increase shimmer probability when frozen to add variation from limited source material
+    const float shimmerProb = ghostFreezeActive 
+                              ? threadbare::tuning::Ghost::kFreezeShimmerProbability 
+                              : threadbare::tuning::Ghost::kShimmerProbability;
+    
+    if (ghostRng.nextFloat() < shimmerProb)
+        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Octave up
 
     // 10% chance of octave down for thickness
     else if (ghostRng.nextFloat() < 0.1f)
         detuneSemi = -12.0f;
     
-    inactiveGrain->speed = std::pow(2.0f, detuneSemi / 12.0f);
+    // Calculate speed ratio from detune
+    float speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
     
-    // Random stereo pan position
-    inactiveGrain->pan = ghostRng.nextFloat();
+    // === REVERSE MEMORY PLAYBACK (Phase 1) ===
+    // Determine if this grain should play backwards through memory
+    bool isReverse = false;
+    if (ghostAmount > 0.5f) // Only consider reverse at moderate-to-high ghost
+    {
+        // Probability scales with ghost² for gentle onset
+        const float reverseProb = threadbare::tuning::Ghost::kReverseProbability 
+                                  * ghostAmount * ghostAmount;
+        if (ghostRng.nextFloat() < reverseProb)
+        {
+            isReverse = true;
+            speedRatio = -speedRatio; // Negative speed = backward playback
+        }
+    }
+    
+    inactiveGrain->speed = speedRatio;
+    
+    // === ENHANCED STEREO POSITIONING (Phase 2) ===
+    // Calculate dynamic pan width based on ghost amount and puckX position
+    // Recent memories (left puck) = narrower, distant memories (right puck) = wider
+    const float panWidth = threadbare::tuning::Ghost::kMinPanWidth + 
+                          (ghostAmount * distantBias * 
+                           (threadbare::tuning::Ghost::kMaxPanWidth - threadbare::tuning::Ghost::kMinPanWidth));
+    
+    // Randomize pan within calculated width, centered at 0.5
+    const float panOffset = (ghostRng.nextFloat() - 0.5f) * panWidth; // -width/2 to +width/2
+    inactiveGrain->pan = 0.5f + panOffset; // Center ± offset
+    inactiveGrain->pan = juce::jlimit(0.0f, 1.0f, inactiveGrain->pan);
+    
+    // Mirror reverse grains in stereo field for spatial separation
+    if (isReverse && threadbare::tuning::Ghost::kMirrorReverseGrains)
+    {
+        inactiveGrain->pan = 1.0f - inactiveGrain->pan;
+    }
     
     // Amplitude based on ghost amount (louder range for presence)
     const float gainDb = juce::jmap(ghostAmount,
@@ -289,7 +376,13 @@ void UnravelReverb::trySpawnGrain(float ghostAmount) noexcept
                                     1.0f,
                                     threadbare::tuning::Ghost::kMinGainDb,
                                     threadbare::tuning::Ghost::kMaxGainDb);
-    inactiveGrain->amp = juce::Decibels::decibelsToGain(gainDb);
+    float grainAmp = juce::Decibels::decibelsToGain(gainDb);
+    
+    // Apply gain reduction to reverse grains (helps them sit "behind" forward grains)
+    if (isReverse)
+        grainAmp *= threadbare::tuning::Ghost::kReverseGainReduction;
+    
+    inactiveGrain->amp = grainAmp;
 }
 
 void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept
@@ -397,6 +490,52 @@ void UnravelReverb::process(std::span<float> left,
         targetFeedback = juce::jlimit(0.0f, 0.98f, targetFeedback); // Safety clamp
     }
     feedbackSmoother.setTargetValue(targetFeedback);
+    
+    // ═════════════════════════════════════════════════════════════════════════
+    // SPECTRAL FREEZE (Phase 4): Lock grain spawn positions when freeze activates
+    // ═════════════════════════════════════════════════════════════════════════
+    const bool freezeTransition = (state.freeze != ghostFreezeActive);
+    const bool freezeActivating = (!ghostFreezeActive && state.freeze);
+    const bool freezeDeactivating = (ghostFreezeActive && !state.freeze);
+    
+    if (freezeActivating)
+    {
+        // Snapshot current grain positions as frozen spawn points
+        numFrozenPositions = 0;
+        
+        // Capture positions of currently active grains
+        for (const auto& grain : grainPool)
+        {
+            if (grain.active && numFrozenPositions < frozenSpawnPositions.size())
+            {
+                frozenSpawnPositions[numFrozenPositions++] = grain.pos;
+            }
+        }
+        
+        // If fewer than 4 positions captured, add random recent positions
+        while (numFrozenPositions < 4 && numFrozenPositions < frozenSpawnPositions.size())
+        {
+            const float recentMs = ghostRng.nextFloat() * 500.0f; // Random within last 500ms
+            const float sampleOffset = (recentMs * static_cast<float>(sampleRate)) / 1000.0f;
+            float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+            
+            // Wrap within buffer bounds
+            const int historyLength = static_cast<int>(ghostHistory.size());
+            while (pos < 0.0f) pos += static_cast<float>(historyLength);
+            while (pos >= static_cast<float>(historyLength)) pos -= static_cast<float>(historyLength);
+            
+            frozenSpawnPositions[numFrozenPositions++] = pos;
+        }
+        
+        ghostFreezeActive = true;
+    }
+    
+    if (freezeDeactivating)
+    {
+        // Clear frozen state
+        numFrozenPositions = 0;
+        ghostFreezeActive = false;
+    }
     
     // ═════════════════════════════════════════════════════════════════════════
     // PUCK X MACRO: "Physical/Close → Ethereal/Distant" (Proximity Control)
@@ -550,7 +689,7 @@ void UnravelReverb::process(std::span<float> left,
         {
             // Probabilistic spawning based on ghost amount
             if (ghostRng.nextFloat() < (currentGhost * 0.9f)) // Higher ghost = more grains
-                trySpawnGrain(currentGhost);
+                trySpawnGrain(currentGhost, puckX);
             
             samplesSinceLastSpawn = 0;
         }

@@ -97,6 +97,36 @@ struct Ghost {
     // Ghost gain bounds relative to FDN input (dB).
     static constexpr float kMinGainDb = -24.0f; // Louder minimum
     static constexpr float kMaxGainDb = -3.0f;  // Very loud for massive presence
+    
+    // === REVERSE MEMORY PLAYBACK ===
+    // Probability of reverse grains at ghost=1.0 (squared scaling).
+    // At ghost=0.5, actual probability = 0.25 × 0.25 = 6.25%
+    // At ghost=1.0, actual probability = 25%
+    // Evokes memories playing backwards through time.
+    static constexpr float kReverseProbability = 0.25f;
+    
+    // Gain reduction for reverse grains (to reduce muddiness on percussive sources).
+    // 0.75 = -2.5dB, helps reverse grains sit "behind" forward grains.
+    static constexpr float kReverseGainReduction = 0.75f;
+    
+    // === MEMORY PROXIMITY (Puck X Mapping - Continuous Range) ===
+    // Minimum lookback time at puckX=-1 (body/recent memories).
+    static constexpr float kMinLookbackMs = 150.0f;
+    // Maximum lookback time at puckX=+1 (air/distant memories).
+    static constexpr float kMaxLookbackMs = 750.0f;
+    // Uses continuous interpolation for smooth, predictable behavior.
+    
+    // === ENHANCED STEREO POSITIONING ===
+    // Stereo pan width at ghost=0 (narrower = more focused).
+    static constexpr float kMinPanWidth = 0.3f;
+    // Stereo pan width at ghost=1 (capped at 85% for mono compatibility).
+    static constexpr float kMaxPanWidth = 0.85f;
+    // Whether to mirror reverse grains in stereo field.
+    static constexpr bool kMirrorReverseGrains = true;
+    
+    // === SPECTRAL FREEZE ENHANCEMENTS ===
+    // Shimmer probability when frozen (higher for more variation from limited material).
+    static constexpr float kFreezeShimmerProbability = 0.40f; // vs 0.25f normally
 };
 
 struct Freeze {

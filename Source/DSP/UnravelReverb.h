@@ -83,6 +83,12 @@ private:
     juce::Random ghostRng;
     int samplesSinceLastSpawn = 0;
     
+    // Spectral freeze state - locks grain spawn positions when freeze is active
+    bool ghostFreezeActive = false;
+    std::array<float, 8> frozenSpawnPositions;
+    std::size_t numFrozenPositions = 0;
+    std::size_t frozenSpawnIndex = 0; // Round-robin selector for frozen positions
+    
     // Early Reflections state (stereo multi-tap delay)
     std::vector<float> erBufferL;
     std::vector<float> erBufferR;
@@ -102,7 +108,7 @@ private:
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;
-    void trySpawnGrain(float ghostAmount) noexcept;
+    void trySpawnGrain(float ghostAmount, float puckX) noexcept;
     void processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept;
 };
 
