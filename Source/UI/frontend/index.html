@@ -14,7 +14,7 @@
   <body>
     <div id="app" class="tb-app">
       <header class="tb-top-bar">
-        <button class="preset-pill" type="button" aria-label="Change preset">
+        <div class="preset-pill">
           <span class="chevron" aria-hidden="true">
             <svg
               width="11"
@@ -30,7 +30,8 @@
             </svg>
           </span>
           <span class="preset-name">unravel</span>
-        </button>
+          <select id="preset-select" aria-label="Select preset"></select>
+        </div>
         <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
           <svg
             width="24"

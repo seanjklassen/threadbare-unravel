@@ -1,6 +1,7 @@
 import './style.css'
 import { Orb } from './orb.js'
 import { Controls } from './controls.js'
+import { Presets } from './presets.js'
 
 const canvas = document.getElementById('orb')
 const shell = document.querySelector('.tb-canvas-shell')
@@ -16,6 +17,8 @@ const controls = new Controls({
     currentState = { ...currentState, freeze: isFrozen }
   },
 })
+
+const presets = new Presets()
 
 const uiState = {
   frozen: false,
@@ -76,6 +79,7 @@ window.updateState = (payload) => {
   currentState = { ...currentState, ...parsed }
   orb.update(currentState)
   controls.update(currentState)
+  presets.update(currentState)
 }
 
 // Debug: Check if setParameter is available

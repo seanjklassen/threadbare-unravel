@@ -149,6 +149,7 @@ body {
 }
 
 .preset-pill {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -160,6 +161,17 @@ body {
   cursor: pointer;
   pointer-events: auto;
   padding: 4px 8px;
+}
+
+#preset-select {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 21px;
 }
 
 .preset-pill .chevron {
@@ -276,7 +288,6 @@ body {
   z-index: 100;
   transform: translateX(100%);
   transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
 }

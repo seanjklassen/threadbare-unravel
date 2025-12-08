@@ -35,6 +35,18 @@ target_include_directories(threadbare_dsp PUBLIC ${SOURCE_ROOT})
 target_compile_features(threadbare_dsp PUBLIC cxx_std_20)
 target_link_libraries(threadbare_dsp PUBLIC juce::juce_dsp)
 
+# Add frontend resources as binary data
+file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS "${UI_DIR}/frontend/dist/*")
+juce_add_binary_data(UnravelResources
+    NAMESPACE UnravelResources
+    SOURCES ${UI_RESOURCES}
+)
+
+# Preserve folder structure for resources
+set_source_files_properties(${UI_RESOURCES} PROPERTIES
+    HEADER_FILE_ONLY FALSE
+)
+
 juce_add_plugin(ThreadbareUnravel
     COMPANY_NAME "Threadbare"
     IS_SYNTH FALSE
@@ -59,6 +71,7 @@ target_compile_features(ThreadbareUnravel PUBLIC cxx_std_20)
 target_link_libraries(ThreadbareUnravel
     PRIVATE
         threadbare_dsp
+        UnravelResources
         juce::juce_audio_utils
         juce::juce_recommended_warning_flags
         juce::juce_recommended_config_flags
