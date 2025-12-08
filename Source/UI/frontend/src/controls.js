@@ -93,6 +93,9 @@ export class Controls {
 
     this.initDrawerControls()
     this.attachEvents()
+    
+    // Initialize puck position immediately
+    this.refreshBounds()
   }
 
   initDrawerControls() {

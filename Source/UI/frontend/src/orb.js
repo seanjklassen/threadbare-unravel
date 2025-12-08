@@ -28,6 +28,8 @@ export class Orb {
       puckY: 0.5,
       drift: 0.2,
       ghost: 0.2,
+      decay: 0.4,
+      size: 0.6,
     }
 
     this.resize()
@@ -72,11 +74,27 @@ export class Orb {
     const puckY = clamp(this.state.puckY, 0, 1)
     const drift = clamp(this.state.drift, 0, 1)
     const ghost = clamp(this.state.ghost, 0, 1)
+    const decay = clamp(this.state.decay, 0, 1)
+    const size = clamp(this.state.size, 0, 1)
 
-    const radiusBase = minDim * (0.24 + tailLevel * 0.28 + inLevel * 0.08)
+    // Spec: "Orb radius grows with puckY and tailLevel"
+    // Size acts as an overall scale multiplier (0.85 to 1.15)
+    const sizeMultiplier = 0.85 + size * 0.3
+    // Base radius ensures orb is always visible, then grows with parameters
+    const radiusBase = minDim * (0.22 + puckY * 0.12 + tailLevel * 0.18 + inLevel * 0.08) * sizeMultiplier
+    
+    // Spec: "Stroke thickness & opacity follow tailLevel"
+    // Scale stroke with canvas size for consistent appearance
+    const strokeScale = minDim / 400  // Normalize to ~400px reference
+    const strokeWidth = (2 + tailLevel * 3) * strokeScale   // Range: 2 to 5, scaled
+    const strokeAlpha = 0.7 + tailLevel * 0.3   // Range: 0.7 to 1.0
+    
+    // More decay = longer ghost trail (4 to 16 frames)
+    this.maxHistory = Math.floor(4 + decay * 12)
+    
     const freqX = 0.85 + puckX * 2.4
     const freqY = 0.9 + puckY * 2
-    const jitterAmp = ghost * minDim * 0.006
+    const jitterAmp = ghost * minDim * 0.012  // Increased from 0.006 for more visible wobble
     const smoothing = 0.68 + 0.2 * (1 - ghost)
 
     this.phase += 0.0018 + drift * 0.018
@@ -105,13 +123,13 @@ export class Orb {
       this.history.shift()
     }
 
-    const drawPath = (points, strokeStyle, alpha = 1) => {
+    const drawPath = (points, strokeStyle, alpha = 1, lineWidth = strokeWidth) => {
       if (!points.length) {
         return
       }
 
       ctx.beginPath()
-      ctx.lineWidth = 2
+      ctx.lineWidth = lineWidth
       ctx.lineJoin = 'round'
       ctx.lineCap = 'round'
       ctx.strokeStyle = strokeStyle
@@ -131,12 +149,15 @@ export class Orb {
       ctx.stroke()
     }
 
+    // Draw ghost trail history (thinner lines)
     for (let i = 0; i < this.history.length; i += 1) {
-      const alpha = (i + 1) / (this.maxHistory + 1)
-      drawPath(this.history[i], `rgba(225, 166, 166, ${alpha * 0.2})`, 1)
+      const historyAlpha = (i + 1) / (this.maxHistory + 1)
+      const trailWidth = strokeWidth * 0.6  // Thinner trail
+      drawPath(this.history[i], `rgba(225, 166, 166, ${historyAlpha * 0.25})`, 1, trailWidth)
     }
 
-    drawPath(this.points, LINE_COLOR, 1)
+    // Draw main orb line with dynamic stroke width and alpha
+    drawPath(this.points, LINE_COLOR, strokeAlpha, strokeWidth)
     ctx.globalAlpha = 1
   }
 }
