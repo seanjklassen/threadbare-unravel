@@ -67,13 +67,13 @@ export class Controls {
     this.pupilEnabled = {}
     this.paramMetadata = {
       decay: { min: 0.4, max: 50.0, format: this.formatDecay.bind(this) },
-      predelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
+      erPreDelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
       size: { min: 0.5, max: 2.0, format: this.formatSize.bind(this) },
       tone: { min: -1.0, max: 1.0, format: this.formatTone.bind(this) },
       drift: { min: 0, max: 1, format: this.formatPercent.bind(this) },
       ghost: { min: 0, max: 1, format: this.formatPercent.bind(this) },
       duck: { min: 0, max: 1, format: this.formatPercent.bind(this) },
-      blend: { min: 0, max: 1, format: this.formatPercent.bind(this) },
+      mix: { min: 0, max: 1, format: this.formatPercent.bind(this) },
       output: { min: -24, max: 12, format: this.formatDb.bind(this) }
     }
 
@@ -88,7 +88,7 @@ export class Controls {
 
   initDrawerControls() {
     // Initialize all slider and pupil references
-    const paramIds = ['decay', 'predelay', 'size', 'tone', 'drift', 'ghost', 'duck', 'blend', 'output']
+    const paramIds = ['decay', 'erPreDelay', 'size', 'tone', 'drift', 'ghost', 'duck', 'mix', 'output']
     
     paramIds.forEach(id => {
       const row = document.querySelector(`.control-row[data-param="${id}"]`)
@@ -166,8 +166,8 @@ export class Controls {
         const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
         valueDisplay.textContent = metadata.format(actualValue)
         
-        // Send to backend
-        sendParam(id, normValue)
+        // Send to backend (backend expects actual parameter value, not normalized)
+        sendParam(id, actualValue)
       })
     })
 
@@ -337,19 +337,34 @@ export class Controls {
       this.setFreezeVisual(Boolean(state.freeze))
     }
 
+    // Map backend state property names to frontend parameter IDs
+    const stateMapping = {
+      'decay': 'decaySeconds',  // Backend sends decaySeconds
+      'erPreDelay': 'erPreDelay',
+      'size': 'size',
+      'tone': 'tone',
+      'drift': 'drift',
+      'ghost': 'ghost',
+      'duck': 'duck',
+      'mix': 'mix',
+      'output': 'output'
+    }
+
     // Update drawer parameters from state
     Object.keys(this.sliders).forEach(id => {
-      if (typeof state[id] !== 'undefined') {
-        const normValue = clamp(state[id])
-        const slider = this.sliders[id]
+      const stateKey = stateMapping[id] || id
+      
+      if (typeof state[stateKey] !== 'undefined') {
+        const metadata = this.paramMetadata[id]
+        const actualValue = state[stateKey]
         
+        // Convert actual value to normalized (0-1)
+        const normValue = clamp((actualValue - metadata.min) / (metadata.max - metadata.min))
+        
+        const slider = this.sliders[id]
         slider.currentValue = normValue
         slider.slider.value = normValue
         slider.baseTrack.style.width = `${normValue * 100}%`
-        
-        // Update value display
-        const metadata = this.paramMetadata[id]
-        const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
         slider.valueDisplay.textContent = metadata.format(actualValue)
       }
 
