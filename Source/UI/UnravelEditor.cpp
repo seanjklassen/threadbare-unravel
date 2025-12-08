@@ -22,6 +22,44 @@ namespace
     }
 #endif
 
+    // Helper to get binary data for a juce-resource:// URL
+    std::optional<juce::WebBrowserComponent::Resource> getBinaryDataForURL(const juce::String& url)
+    {
+        // Strip "juce-resource://UnravelResources/" prefix
+        juce::String resourcePath = url.fromFirstOccurrenceOf("juce-resource://UnravelResources/", false, false);
+        
+        if (resourcePath.isEmpty())
+            resourcePath = url.fromFirstOccurrenceOf("juce-resource://", false, false);
+        
+        juce::Logger::writeToLog("Looking for resource: " + resourcePath);
+        
+        // Map URLs to binary data
+        const char* data = nullptr;
+        int dataSize = 0;
+        
+        if (resourcePath == "index.html" || resourcePath.isEmpty())
+        {
+            data = UnravelResources::index_html;
+            dataSize = UnravelResources::index_htmlSize;
+        }
+        else if (resourcePath.contains("vite.svg"))
+        {
+            data = UnravelResources::vite_svg;
+            dataSize = UnravelResources::vite_svgSize;
+        }
+        
+        if (data != nullptr && dataSize > 0)
+        {
+            juce::WebBrowserComponent::Resource resource;
+            const auto* byteData = reinterpret_cast<const std::byte*>(data);
+            resource.data.assign(byteData, byteData + dataSize);
+            return resource;
+        }
+        
+        juce::Logger::writeToLog("Resource not found: " + resourcePath);
+        return std::nullopt;
+    }
+
     juce::WebBrowserComponent::Options makeBrowserOptions(UnravelProcessor& processor)
     {
         auto options = juce::WebBrowserComponent::Options{}
@@ -100,6 +138,13 @@ namespace
                 }
             });
         
+        // Resource provider for juce-resource:// URLs
+        options = options.withResourceProvider(
+            [](const juce::String& url)
+            {
+                return getBinaryDataForURL(url);
+            });
+
         return options;
     }
 } // namespace
@@ -171,14 +216,10 @@ void UnravelEditor::handleUpdate()
 
 void UnravelEditor::loadInitialURL()
 {
-    // Load HTML directly from embedded binary data as a data URL
-    // This enables native integration while avoiding file:// CORS issues
+    // Load from juce-resource:// URL with resource provider
+    // This enables native integration with embedded resources
+    const auto resourceUrl = "juce-resource://UnravelResources/index.html";
     
-    juce::String htmlContent(UnravelResources::index_html, UnravelResources::index_htmlSize);
-    
-    // Encode as data URL
-    juce::String dataUrl = "data:text/html;charset=utf-8;base64," + juce::Base64::toBase64(htmlContent);
-    
-    webView.goToURL(dataUrl);
-    juce::Logger::writeToLog("Loading UI from embedded data URL");
+    webView.goToURL(resourceUrl);
+    juce::Logger::writeToLog("Loading UI from: " + juce::String(resourceUrl));
 }
