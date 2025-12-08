@@ -22,41 +22,68 @@ namespace
     }
 #endif
 
-    // Helper to get binary data for a juce-resource:// URL
-    std::optional<juce::WebBrowserComponent::Resource> getBinaryDataForURL(const juce::String& url)
+    // Helper to get MIME type from file extension
+    juce::String getMimeType(const juce::String& path)
     {
-        // Strip "juce-resource://UnravelResources/" prefix
-        juce::String resourcePath = url.fromFirstOccurrenceOf("juce-resource://UnravelResources/", false, false);
+        if (path.endsWithIgnoreCase(".html")) return "text/html";
+        if (path.endsWithIgnoreCase(".js"))   return "text/javascript";
+        if (path.endsWithIgnoreCase(".css"))  return "text/css";
+        if (path.endsWithIgnoreCase(".png"))  return "image/png";
+        if (path.endsWithIgnoreCase(".svg"))  return "image/svg+xml";
+        return "application/octet-stream";
+    }
+
+    // Helper to get resource with proper path normalization and MIME types
+    std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::String& url)
+    {
+        // 1. Strip protocol
+        juce::String path = url;
+        if (path.startsWith("juce-resource://UnravelResources/"))
+            path = path.substring(juce::String("juce-resource://UnravelResources/").length());
+        else if (path.startsWith("juce-resource://"))
+            path = path.substring(juce::String("juce-resource://").length());
         
-        if (resourcePath.isEmpty())
-            resourcePath = url.fromFirstOccurrenceOf("juce-resource://", false, false);
+        // 2. Clean path (remove leading slash and query params)
+        if (path.startsWith("/"))
+            path = path.substring(1);
         
-        juce::Logger::writeToLog("Looking for resource: " + resourcePath);
+        int queryIndex = path.indexOfChar('?');
+        if (queryIndex > -1)
+            path = path.substring(0, queryIndex);
         
-        // Map URLs to binary data
-        const char* data = nullptr;
+        juce::Logger::writeToLog("Looking for resource: " + path);
+        
+        // 3. Find in UnravelResources
         int dataSize = 0;
+        const char* data = nullptr;
         
-        if (resourcePath == "index.html" || resourcePath.isEmpty())
+        // Try exact match first
+        data = UnravelResources::getNamedResource(path.toRawUTF8(), dataSize);
+        
+        // Try fallback with underscore mangling if exact fails
+        if (data == nullptr)
         {
-            data = UnravelResources::index_html;
-            dataSize = UnravelResources::index_htmlSize;
-        }
-        else if (resourcePath.contains("vite.svg"))
-        {
-            data = UnravelResources::vite_svg;
-            dataSize = UnravelResources::vite_svgSize;
+            juce::String mangled = path.replaceCharacter('.', '_')
+                                      .replaceCharacter('-', '_')
+                                      .replaceCharacter('/', '_');
+            juce::Logger::writeToLog("Trying mangled name: " + mangled);
+            data = UnravelResources::getNamedResource(mangled.toRawUTF8(), dataSize);
         }
         
+        // 4. Return Resource with data and MIME type
         if (data != nullptr && dataSize > 0)
         {
-            juce::WebBrowserComponent::Resource resource;
-            const auto* byteData = reinterpret_cast<const std::byte*>(data);
-            resource.data.assign(byteData, byteData + dataSize);
-            return resource;
+            juce::String mime = getMimeType(path);
+            juce::Logger::writeToLog("Found resource: " + path + " (" + juce::String(dataSize) + " bytes, " + mime + ")");
+            
+            return juce::WebBrowserComponent::Resource {
+                std::vector<std::byte>(reinterpret_cast<const std::byte*>(data), 
+                                      reinterpret_cast<const std::byte*>(data) + dataSize),
+                mime
+            };
         }
         
-        juce::Logger::writeToLog("Resource not found: " + resourcePath);
+        juce::Logger::writeToLog("Resource not found: " + path);
         return std::nullopt;
     }
 
@@ -138,11 +165,11 @@ namespace
                 }
             });
         
-        // Resource provider for juce-resource:// URLs
+        // Resource provider for juce-resource:// URLs with proper path normalization
         options = options.withResourceProvider(
-            [](const juce::String& url)
+            [](const juce::String& url) -> std::optional<juce::WebBrowserComponent::Resource>
             {
-                return getBinaryDataForURL(url);
+                return getResource(url);
             });
 
         return options;
