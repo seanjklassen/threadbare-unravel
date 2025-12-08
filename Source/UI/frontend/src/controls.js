@@ -48,6 +48,7 @@ export class Controls {
     this.freezeBtn = document.querySelector('.btn-freeze')
     this.settingsBtn = document.querySelector('.btn-settings')
     this.drawer = document.querySelector('.settings-drawer')
+    this.closeDrawerBtn = document.querySelector('.btn-close-drawer')
 
     this.bounds = getBounds(this.surface)
     this.dimensions = null
@@ -60,12 +61,57 @@ export class Controls {
     this.puckRadius = 24
     this.inertiaFrame = null
 
+    // Settings drawer state
+    this.sliders = {}
+    this.pupils = {}
+    this.pupilEnabled = {}
+    this.paramMetadata = {
+      decay: { min: 0.4, max: 50.0, format: this.formatDecay.bind(this) },
+      predelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
+      size: { min: 0.5, max: 2.0, format: this.formatSize.bind(this) },
+      tone: { min: -1.0, max: 1.0, format: this.formatTone.bind(this) },
+      drift: { min: 0, max: 1, format: this.formatPercent.bind(this) },
+      ghost: { min: 0, max: 1, format: this.formatPercent.bind(this) },
+      duck: { min: 0, max: 1, format: this.formatPercent.bind(this) },
+      blend: { min: 0, max: 1, format: this.formatPercent.bind(this) },
+      output: { min: -24, max: 12, format: this.formatDb.bind(this) }
+    }
+
     this.handlePointerDown = this.handlePointerDown.bind(this)
     this.handlePointerMove = this.handlePointerMove.bind(this)
     this.handlePointerUp = this.handlePointerUp.bind(this)
     this.applyInertiaStep = this.applyInertiaStep.bind(this)
 
+    this.initDrawerControls()
     this.attachEvents()
+  }
+
+  initDrawerControls() {
+    // Initialize all slider and pupil references
+    const paramIds = ['decay', 'predelay', 'size', 'tone', 'drift', 'ghost', 'duck', 'blend', 'output']
+    
+    paramIds.forEach(id => {
+      const row = document.querySelector(`.control-row[data-param="${id}"]`)
+      if (!row) return
+
+      const slider = row.querySelector('.param-slider')
+      const valueDisplay = row.querySelector('.param-value')
+      const pupil = row.querySelector('.pupil-toggle')
+      const baseTrack = row.querySelector('.slider-track-base')
+      const macroTrack = row.querySelector('.slider-track-macro')
+
+      if (slider && valueDisplay && pupil && baseTrack && macroTrack) {
+        this.sliders[id] = { 
+          slider, 
+          valueDisplay, 
+          baseTrack, 
+          macroTrack,
+          currentValue: parseFloat(slider.value)
+        }
+        this.pupils[id] = pupil
+        this.pupilEnabled[id] = pupil.getAttribute('aria-pressed') === 'true'
+      }
+    })
   }
 
   attachEvents() {
@@ -91,13 +137,48 @@ export class Controls {
       })
     }
 
-    if (this.settingsBtn) {
+    // Drawer toggle
+    if (this.settingsBtn && this.drawer) {
       this.settingsBtn.addEventListener('click', () => {
-        if (this.drawer) {
-          this.drawer.classList.toggle('hidden')
-        }
+        this.drawer.classList.toggle('open')
       })
     }
+
+    if (this.closeDrawerBtn && this.drawer) {
+      this.closeDrawerBtn.addEventListener('click', () => {
+        this.drawer.classList.remove('open')
+      })
+    }
+
+    // Attach slider listeners
+    Object.keys(this.sliders).forEach(id => {
+      const { slider, valueDisplay, baseTrack } = this.sliders[id]
+      
+      slider.addEventListener('input', (e) => {
+        const normValue = parseFloat(e.target.value)
+        this.sliders[id].currentValue = normValue
+        
+        // Update base track width
+        baseTrack.style.width = `${normValue * 100}%`
+        
+        // Update value display
+        const metadata = this.paramMetadata[id]
+        const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
+        valueDisplay.textContent = metadata.format(actualValue)
+        
+        // Send to backend
+        sendParam(id, normValue)
+      })
+    })
+
+    // Attach pupil toggle listeners
+    Object.keys(this.pupils).forEach(id => {
+      const pupil = this.pupils[id]
+      
+      pupil.addEventListener('click', () => {
+        this.togglePupil(id)
+      })
+    })
 
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
@@ -256,6 +337,48 @@ export class Controls {
       this.setFreezeVisual(Boolean(state.freeze))
     }
 
+    // Update drawer parameters from state
+    Object.keys(this.sliders).forEach(id => {
+      if (typeof state[id] !== 'undefined') {
+        const normValue = clamp(state[id])
+        const slider = this.sliders[id]
+        
+        slider.currentValue = normValue
+        slider.slider.value = normValue
+        slider.baseTrack.style.width = `${normValue * 100}%`
+        
+        // Update value display
+        const metadata = this.paramMetadata[id]
+        const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
+        slider.valueDisplay.textContent = metadata.format(actualValue)
+      }
+
+      // Update macro layer if there's a macro offset in state
+      if (typeof state[`${id}Macro`] !== 'undefined') {
+        this.updateMacroLayer(id, state[`${id}Macro`])
+      }
+    })
+
+    // Update pupil states from state
+    Object.keys(this.pupils).forEach(id => {
+      if (typeof state[`${id}Enabled`] !== 'undefined') {
+        const shouldBeEnabled = Boolean(state[`${id}Enabled`])
+        if (this.pupilEnabled[id] !== shouldBeEnabled) {
+          this.pupilEnabled[id] = shouldBeEnabled
+          this.pupils[id].setAttribute('aria-pressed', String(shouldBeEnabled))
+          
+          const macroTrack = this.sliders[id]?.macroTrack
+          if (macroTrack) {
+            if (shouldBeEnabled) {
+              macroTrack.classList.remove('hidden')
+            } else {
+              macroTrack.classList.add('hidden')
+            }
+          }
+        }
+      }
+    })
+
     this.renderReadoutsFromNorm(nextX, nextY)
   }
 
@@ -332,6 +455,91 @@ export class Controls {
     this.renderReadoutsFromNorm(nextX, nextY)
 
     this.inertiaFrame = requestAnimationFrame(this.applyInertiaStep)
+  }
+
+  // === PUPIL TOGGLE LOGIC ===
+  togglePupil(id) {
+    const pupil = this.pupils[id]
+    if (!pupil) return
+
+    // Toggle enabled state
+    this.pupilEnabled[id] = !this.pupilEnabled[id]
+    const isEnabled = this.pupilEnabled[id]
+
+    // Update ARIA state
+    pupil.setAttribute('aria-pressed', String(isEnabled))
+
+    // Add pulse animation
+    pupil.classList.add('pulse')
+    setTimeout(() => pupil.classList.remove('pulse'), 300)
+
+    // Update macro track visibility
+    const macroTrack = this.sliders[id]?.macroTrack
+    if (macroTrack) {
+      if (isEnabled) {
+        macroTrack.classList.remove('hidden')
+      } else {
+        macroTrack.classList.add('hidden')
+      }
+    }
+
+    // Send to backend (for future preset storage)
+    if (typeof window.setParameterEnabled === 'function') {
+      window.setParameterEnabled(id, isEnabled)
+    }
+  }
+
+  updateMacroLayer(id, macroOffset) {
+    if (!this.sliders[id]) return
+    
+    const { macroTrack, currentValue } = this.sliders[id]
+    const isEnabled = this.pupilEnabled[id]
+
+    if (isEnabled && macroOffset !== 0) {
+      // Calculate effective value with macro offset
+      const effectiveValue = clamp(currentValue + macroOffset)
+      macroTrack.style.width = `${effectiveValue * 100}%`
+      macroTrack.classList.remove('hidden')
+    } else {
+      // Just show base value
+      macroTrack.style.width = `${currentValue * 100}%`
+      if (!isEnabled) {
+        macroTrack.classList.add('hidden')
+      }
+    }
+  }
+
+  // === VALUE FORMATTING HELPERS ===
+  formatDecay(seconds) {
+    if (seconds < 1) {
+      return `${(seconds * 1000).toFixed(0)}ms`
+    }
+    return `${seconds.toFixed(1)}s`
+  }
+
+  formatPredelay(ms) {
+    return `${Math.round(ms)}ms`
+  }
+
+  formatSize(scalar) {
+    return scalar.toFixed(1)
+  }
+
+  formatTone(bipolar) {
+    // Map -1..1 to 0..11 scale for display
+    const scaled = (bipolar + 1) / 2 * 11
+    return scaled.toFixed(2)
+  }
+
+  formatPercent(normalized) {
+    // Map 0..1 to 0..11 scale for display
+    const scaled = normalized * 11
+    return scaled.toFixed(2)
+  }
+
+  formatDb(db) {
+    const rounded = Math.round(db)
+    return rounded >= 0 ? `+${rounded}dB` : `${rounded}dB`
   }
 }
 

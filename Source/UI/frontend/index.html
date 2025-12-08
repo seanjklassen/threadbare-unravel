@@ -99,6 +99,145 @@
           </button>
         </div>
       </footer>
+
+      <aside class="settings-drawer">
+        <header class="drawer-header">
+          <h2 class="drawer-title">settings</h2>
+          <button class="btn-close-drawer" type="button" aria-label="Close settings">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13.7 1.7L12.3 0.3L7 5.6L1.7 0.3L0.3 1.7L5.6 7L0.3 12.3L1.7 13.7L7 8.4L12.3 13.7L13.7 12.3L8.4 7L13.7 1.7Z" fill="currentColor"/>
+            </svg>
+          </button>
+        </header>
+
+        <div class="drawer-content">
+          <div class="control-row" data-param="decay">
+            <label class="param-label">decay</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.5" />
+            </div>
+            <span class="param-value">5.0s</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for decay" aria-pressed="true" data-param="decay">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="predelay">
+            <label class="param-label">pre-delay</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.25" />
+            </div>
+            <span class="param-value">25ms</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for pre-delay" aria-pressed="true" data-param="predelay">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="size">
+            <label class="param-label">size</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.4" />
+            </div>
+            <span class="param-value">1.1</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for size" aria-pressed="true" data-param="size">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="tone">
+            <label class="param-label">tone</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.4" />
+            </div>
+            <span class="param-value">4.40</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for tone" aria-pressed="true" data-param="tone">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="drift">
+            <label class="param-label">drift</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.35" />
+            </div>
+            <span class="param-value">3.85</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for drift" aria-pressed="true" data-param="drift">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="ghost">
+            <label class="param-label">ghost</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.4" />
+            </div>
+            <span class="param-value">4.40</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for ghost" aria-pressed="true" data-param="ghost">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="duck">
+            <label class="param-label">duck</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0" />
+            </div>
+            <span class="param-value">0.00</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for duck" aria-pressed="true" data-param="duck">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="blend">
+            <label class="param-label">blend</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.45" />
+            </div>
+            <span class="param-value">45%</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for blend" aria-pressed="true" data-param="blend">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+
+          <div class="control-row" data-param="output">
+            <label class="param-label">output</label>
+            <div class="slider-container">
+              <div class="slider-track-bg"></div>
+              <div class="slider-track-base"></div>
+              <div class="slider-track-macro"></div>
+              <input type="range" class="param-slider" min="0" max="1" step="0.001" value="0.667" />
+            </div>
+            <span class="param-value">0dB</span>
+            <button class="pupil-toggle" type="button" aria-label="Enable puck control for output" aria-pressed="true" data-param="output">
+              <span class="pupil-dot"></span>
+            </button>
+          </div>
+        </div>
+      </aside>
     </div>
 
     <script type="module" src="/src/main.js"></script>
