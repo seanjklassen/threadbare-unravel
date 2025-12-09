@@ -8,7 +8,7 @@ const CONFIG = {
   curveWraps: 3,  // How many TWO_PI rotations the curve spans
 
   // Colors
-  lineColor: '#E1A6A6',
+  lineColor: '#A6CEE1',
   trailColor: { r: 225, g: 166, b: 166 },
 
   // Stroke
@@ -35,9 +35,9 @@ const CONFIG = {
     xMin: 2,      // Min X frequency
     xRange: 4,    // X frequency range based on puckX
     yMin: 2.5,    // Min Y frequency
-    yRange: 3.5,  // Y frequency range based on puckY
-    yPhaseRatio: 0.35, // Y phase offset ratio
-    ySquash: 0.9,      // Vertical squash factor
+    yRange: 3.9,  // Y frequency range based on puckY
+    yPhaseRatio: 0.75, // Y phase offset ratio
+    ySquash: 0.8,      // Vertical squash factor
   },
 
   // Ghost trail

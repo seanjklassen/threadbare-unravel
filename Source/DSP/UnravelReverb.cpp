@@ -628,44 +628,48 @@ void UnravelReverb::process(std::span<float> left,
         float erOutputL = 0.0f;
         float erOutputR = 0.0f;
         
-        if (!erBufferL.empty() && erGain > 0.001f)
+        if (!erBufferL.empty())
         {
             const int erBufSize = static_cast<int>(erBufferL.size());
             
-            // Write dry input to ER buffers
+            // ALWAYS write dry input to ER buffers (ring buffer must advance unconditionally)
             erBufferL[static_cast<std::size_t>(erWriteHead)] = inputL;
             erBufferR[static_cast<std::size_t>(erWriteHead)] = inputR;
             
-            // Sum all taps for left and right channels
-            // Pre-delay shifts entire ER cluster later in time
-            const float preDelaySamples = state.erPreDelay * 0.001f * sampleRate;
-            
-            for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
+            // Only process taps when ER gain is significant (optimization)
+            if (erGain > 0.001f)
             {
-                const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
-                const float tapTimeR = threadbare::tuning::EarlyReflections::kTapTimesR[tap];
-                const float tapGain = threadbare::tuning::EarlyReflections::kTapGains[tap];
+                // Sum all taps for left and right channels
+                // Pre-delay shifts entire ER cluster later in time
+                const float preDelaySamples = state.erPreDelay * 0.001f * sampleRate;
                 
-                // Calculate tap offsets in samples (tap time + pre-delay)
-                const int offsetL = static_cast<int>((tapTimeL * 0.001f * sampleRate) + preDelaySamples);
-                const int offsetR = static_cast<int>((tapTimeR * 0.001f * sampleRate) + preDelaySamples);
+                for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
+                {
+                    const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
+                    const float tapTimeR = threadbare::tuning::EarlyReflections::kTapTimesR[tap];
+                    const float tapGain = threadbare::tuning::EarlyReflections::kTapGains[tap];
+                    
+                    // Calculate tap offsets in samples (tap time + pre-delay)
+                    const int offsetL = static_cast<int>((tapTimeL * 0.001f * sampleRate) + preDelaySamples);
+                    const int offsetR = static_cast<int>((tapTimeR * 0.001f * sampleRate) + preDelaySamples);
+                    
+                    // Read from buffer with wrapping
+                    int readIndexL = erWriteHead - offsetL;
+                    int readIndexR = erWriteHead - offsetR;
+                    
+                    while (readIndexL < 0) readIndexL += erBufSize;
+                    while (readIndexR < 0) readIndexR += erBufSize;
+                    
+                    erOutputL += erBufferL[static_cast<std::size_t>(readIndexL)] * tapGain;
+                    erOutputR += erBufferR[static_cast<std::size_t>(readIndexR)] * tapGain;
+                }
                 
-                // Read from buffer with wrapping
-                int readIndexL = erWriteHead - offsetL;
-                int readIndexR = erWriteHead - offsetR;
-                
-                while (readIndexL < 0) readIndexL += erBufSize;
-                while (readIndexR < 0) readIndexR += erBufSize;
-                
-                erOutputL += erBufferL[static_cast<std::size_t>(readIndexL)] * tapGain;
-                erOutputR += erBufferR[static_cast<std::size_t>(readIndexR)] * tapGain;
+                // Apply ER gain (proximity control)
+                erOutputL *= erGain;
+                erOutputR *= erGain;
             }
             
-            // Apply ER gain (proximity control)
-            erOutputL *= erGain;
-            erOutputR *= erGain;
-            
-            // Advance write head
+            // ALWAYS advance write head (ring buffer semantics)
             ++erWriteHead;
             if (erWriteHead >= erBufSize)
                 erWriteHead = 0;
