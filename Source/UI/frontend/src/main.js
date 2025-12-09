@@ -174,6 +174,16 @@ window.updateState = (payload) => {
   orb.update(currentState)
   controls.update(currentState)
   presets.update(currentState)
+  
+  // Modulate grain overlay intensity based on ghost parameter
+  // Ghost 0→1 maps to opacity 0.025→0.07 (grain becomes more visible with ghost)
+  if (parsed.ghost !== undefined) {
+    const grainSvg = document.querySelector('.grain-svg')
+    if (grainSvg) {
+      const grainOpacity = 0.025 + parsed.ghost * 0.045
+      grainSvg.style.opacity = grainOpacity
+    }
+  }
 }
 
 // Wait for DOM to be ready before initializing
