@@ -45,6 +45,7 @@ public:
     juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
     const threadbare::dsp::UnravelState& getCurrentState() const noexcept { return currentState; }
     bool popVisualState(threadbare::dsp::UnravelState& state) noexcept;
+    void pushCurrentState() noexcept;  // Force immediate state update (for preset changes)
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

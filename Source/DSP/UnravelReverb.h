@@ -25,6 +25,7 @@ struct UnravelState
     float inLevel = 0.0f;
     float tailLevel = 0.0f;
     bool freeze = false;
+    float tempo = 120.0f;  // BPM from DAW host
 };
 
 class UnravelReverb

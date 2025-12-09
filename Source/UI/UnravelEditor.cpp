@@ -218,6 +218,7 @@ namespace
                 if (index >= 0 && index < processorPtr->getNumPrograms())
                 {
                     processorPtr->setCurrentProgram(index);
+                    // Note: pushCurrentState() is now called inside setCurrentProgram()
                     completion(true);
                 }
                 else
@@ -291,6 +292,9 @@ void UnravelEditor::handleUpdate()
     // Metering
     obj->setProperty("inLevel", state.inLevel);
     obj->setProperty("tailLevel", state.tailLevel);
+    
+    // Tempo from DAW
+    obj->setProperty("tempo", state.tempo);
     
     // Current preset
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());

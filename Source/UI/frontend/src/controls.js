@@ -70,6 +70,12 @@ export class Controls {
     this.puckRadius = 24
     this.inertiaFrame = null
 
+    // Smooth puck animation state
+    this.targetPuckX = 0.5
+    this.targetPuckY = 0.5
+    this.puckAnimationFrame = null
+    this.lerpSpeed = 0.12  // Smoothing factor (0-1, lower = smoother)
+
     // Settings drawer state
     this.sliders = {}
     this.pupils = {}
@@ -90,12 +96,41 @@ export class Controls {
     this.handlePointerMove = this.handlePointerMove.bind(this)
     this.handlePointerUp = this.handlePointerUp.bind(this)
     this.applyInertiaStep = this.applyInertiaStep.bind(this)
+    this.animatePuck = this.animatePuck.bind(this)
 
     this.initDrawerControls()
     this.attachEvents()
     
-    // Initialize puck position immediately
-    this.refreshBounds()
+    // Initialize puck position with retry logic for slow DAW WebViews
+    this.initPuckPosition()
+  }
+
+  initPuckPosition() {
+    const tryPosition = () => {
+      this.bounds = getBounds(this.surface)
+      if (this.bounds && this.bounds.width > 0 && this.bounds.height > 0) {
+        this.cacheDimensions()
+        this.setPuckPositionImmediate(this.state.puckX, this.state.puckY)
+        return true
+      }
+      return false
+    }
+
+    // Try immediately
+    if (tryPosition()) return
+
+    // Retry with requestAnimationFrame (next frame after layout)
+    requestAnimationFrame(() => {
+      if (tryPosition()) return
+
+      // Second retry after a short delay (for slow DAW WebViews)
+      setTimeout(() => {
+        if (tryPosition()) return
+        
+        // Final retry after longer delay
+        setTimeout(() => tryPosition(), 200)
+      }, 50)
+    })
   }
 
   initDrawerControls() {
@@ -132,7 +167,8 @@ export class Controls {
       this.puck.addEventListener('dblclick', (event) => {
         event.preventDefault()
         this.stopInertia()
-        this.setPuckPosition(0.5, 0.5)
+        this.stopPuckAnimation()
+        this.setPuckPositionImmediate(0.5, 0.5)
         sendParam('puckX', toDsp(0.5))
         sendParam('puckY', toDsp(1 - 0.5))
         this.onPuckChange({ puckX: 0.5, puckY: 0.5 })
@@ -200,28 +236,37 @@ export class Controls {
   refreshBounds() {
     this.bounds = getBounds(this.surface)
     this.cacheDimensions()
-    this.setPuckPosition(this.state.puckX, this.state.puckY)
+    this.setPuckPositionImmediate(this.state.puckX, this.state.puckY)
   }
 
   handlePointerDown(event) {
     if (!this.puck) return
     this.cacheBounds()
     this.stopInertia()
+    this.stopPuckAnimation()
     this.isDragging = true
     this.pointerId = event.pointerId
     this.puck.classList.add('active')
     this.puck.setPointerCapture?.(event.pointerId)
+    
     const bounds = this.bounds
-    if (bounds) {
-      const centerX = bounds.left + bounds.width * this.state.puckX
-      const centerY = bounds.top + bounds.height * this.state.puckY
+    const dims = this.dimensions
+    if (bounds && dims) {
+      // Calculate the puck's actual center position in screen coordinates
+      // (must match the formula used in setPuckPositionImmediate)
+      const puckCenterX = bounds.left + dims.minPxX + this.state.puckX * dims.spanX
+      const puckCenterY = bounds.top + dims.minPxY + this.state.puckY * dims.spanY
+      
+      // Store the offset from click point to puck center (in pixels)
+      // This ensures the puck stays under the same part of the finger/cursor
       this.dragOffset = {
-        x: event.clientX - centerX,
-        y: event.clientY - centerY,
+        x: event.clientX - puckCenterX,
+        y: event.clientY - puckCenterY,
       }
     } else {
       this.dragOffset = { x: 0, y: 0 }
     }
+    
     this.lastPointerNorm = { x: this.state.puckX, y: this.state.puckY }
     this.velocity = { x: 0, y: 0 }
     window.addEventListener('pointermove', this.handlePointerMove)
@@ -299,14 +344,15 @@ export class Controls {
       y: nextY - this.lastPointerNorm.y,
     }
     this.lastPointerNorm = { x: nextX, y: nextY }
-    this.setPuckPosition(nextX, nextY)
+    this.setPuckPositionImmediate(nextX, nextY)
     sendParam('puckX', toDsp(nextX))
     sendParam('puckY', toDsp(1 - nextY))
     this.onPuckChange({ puckX: nextX, puckY: nextY })
     this.renderReadoutsFromNorm(nextX, nextY)
   }
 
-  setPuckPosition(x = this.state.puckX, y = this.state.puckY) {
+  // Immediately set puck position without animation
+  setPuckPositionImmediate(x = this.state.puckX, y = this.state.puckY) {
     if (!this.puck) return
     this.cacheBounds()
     const dims = this.dimensions
@@ -319,6 +365,55 @@ export class Controls {
     const visualY = dims.minPxY + clampedY * dims.spanY
     this.puck.style.left = `${visualX}px`
     this.puck.style.top = `${visualY}px`
+  }
+
+  // Set puck position with smooth animation (used for preset changes)
+  setPuckPosition(x = this.state.puckX, y = this.state.puckY) {
+    this.setPuckPositionImmediate(x, y)
+  }
+
+  // Animate puck to target position
+  animatePuckTo(targetX, targetY) {
+    this.targetPuckX = clamp(targetX)
+    this.targetPuckY = clamp(targetY)
+    
+    // Start animation if not already running
+    if (!this.puckAnimationFrame) {
+      this.animatePuck()
+    }
+  }
+
+  // Animation loop using lerp
+  animatePuck() {
+    const dx = this.targetPuckX - this.state.puckX
+    const dy = this.targetPuckY - this.state.puckY
+    
+    // If close enough, snap to target and stop animation
+    if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
+      this.setPuckPositionImmediate(this.targetPuckX, this.targetPuckY)
+      this.puckAnimationFrame = null
+      this.renderReadoutsFromNorm(this.targetPuckX, this.targetPuckY)
+      return
+    }
+    
+    // Lerp toward target
+    const nextX = this.state.puckX + dx * this.lerpSpeed
+    const nextY = this.state.puckY + dy * this.lerpSpeed
+    this.setPuckPositionImmediate(nextX, nextY)
+    this.renderReadoutsFromNorm(nextX, nextY)
+    
+    // Notify orb of position change during animation
+    this.onPuckChange({ puckX: nextX, puckY: nextY })
+    
+    this.puckAnimationFrame = requestAnimationFrame(() => this.animatePuck())
+  }
+
+  // Stop puck animation
+  stopPuckAnimation() {
+    if (this.puckAnimationFrame) {
+      cancelAnimationFrame(this.puckAnimationFrame)
+      this.puckAnimationFrame = null
+    }
   }
 
   setFreezeVisual(isActive) {
@@ -338,7 +433,18 @@ export class Controls {
     if (incomingY !== null) nextY = incomingY
 
     if (!this.isDragging) {
-      this.setPuckPosition(nextX, nextY)
+      // Check if position changed significantly (likely a preset change)
+      const dx = Math.abs(nextX - this.state.puckX)
+      const dy = Math.abs(nextY - this.state.puckY)
+      const significantChange = dx > 0.05 || dy > 0.05
+      
+      if (significantChange && !this.inertiaFrame) {
+        // Animate to new position smoothly (preset change)
+        this.animatePuckTo(nextX, nextY)
+      } else if (!this.puckAnimationFrame) {
+        // Small change or no animation running - set immediately
+        this.setPuckPositionImmediate(nextX, nextY)
+      }
     }
 
     if (!this.isDragging) {
@@ -475,7 +581,7 @@ export class Controls {
       this.velocity.y *= -0.4
     }
 
-    this.setPuckPosition(nextX, nextY)
+    this.setPuckPositionImmediate(nextX, nextY)
     sendParam('puckX', toDsp(nextX))
     sendParam('puckY', toDsp(1 - nextY))
     this.onPuckChange({ puckX: nextX, puckY: nextY })

@@ -90,6 +90,9 @@ body {
   -webkit-tap-highlight-color: transparent;
   z-index: 2;
   overflow: hidden;
+  /* CSS fallback: center puck before JS positions it */
+  left: 50%;
+  top: 50%;
 }
 
 #puck.active,

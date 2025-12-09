@@ -164,6 +164,16 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                                    threadbare::tuning::EarlyReflections::kMaxPreDelayMs);
     currentState.freeze = freezeParam != nullptr ? freezeParam->get() : false;
 
+    // Get tempo from DAW host
+    if (auto* playhead = getPlayHead())
+    {
+        if (auto posInfo = playhead->getPosition())
+        {
+            if (posInfo->getBpm().hasValue())
+                currentState.tempo = static_cast<float>(*posInfo->getBpm());
+        }
+    }
+
     reverbEngine.process(leftSpan, rightSpan, currentState);
 
     const float outputGain = juce::Decibels::decibelsToGain(readParam(outputParam, 0.0f));
@@ -203,6 +213,9 @@ void UnravelProcessor::setCurrentProgram(int index)
     const int safeIndex = juce::jlimit(0, getNumPrograms() - 1, index);
     currentProgramIndex = safeIndex;
     applyPreset(factoryPresets[static_cast<size_t>(safeIndex)]);
+    
+    // Force immediate UI update (for both DAW native and frontend preset changes)
+    pushCurrentState();
 }
 
 const juce::String UnravelProcessor::getProgramName(int index)
@@ -242,6 +255,40 @@ bool UnravelProcessor::popVisualState(threadbare::dsp::UnravelState& state) noex
     }
 
     return popped;
+}
+
+void UnravelProcessor::pushCurrentState() noexcept
+{
+    // Read current parameter values and push to state queue
+    // This forces an immediate UI update (e.g., after preset load)
+    const auto readParam = [](auto* param, float fallback) -> float
+    {
+        return param != nullptr ? param->get() : fallback;
+    };
+
+    const auto clamp = [](float value, float lo, float hi) { return juce::jlimit(lo, hi, value); };
+
+    threadbare::dsp::UnravelState state{};
+    state.puckX = clamp(readParam(puckXParam, 0.0f), -1.0f, 1.0f);
+    state.puckY = clamp(readParam(puckYParam, 0.0f), -1.0f, 1.0f);
+    state.mix = clamp(readParam(mixParam, 0.5f), 0.0f, 1.0f);
+    state.size = clamp(readParam(sizeParam, 1.0f), 
+                       threadbare::tuning::Fdn::kSizeMin, 
+                       threadbare::tuning::Fdn::kSizeMax);
+    state.decaySeconds = clamp(readParam(decayParam, 5.0f), 
+                               threadbare::tuning::Decay::kT60Min, 
+                               threadbare::tuning::Decay::kT60Max);
+    state.tone = clamp(readParam(toneParam, 0.0f), -1.0f, 1.0f);
+    state.drift = clamp(readParam(driftParam, 0.2f), 0.0f, 1.0f);
+    state.ghost = clamp(readParam(ghostParam, 0.0f), 0.0f, 1.0f);
+    state.duck = clamp(readParam(duckParam, 0.0f), 0.0f, 1.0f);
+    state.erPreDelay = clamp(readParam(erPreDelayParam, 0.0f), 
+                             0.0f, 
+                             threadbare::tuning::EarlyReflections::kMaxPreDelayMs);
+    state.freeze = freezeParam != nullptr ? freezeParam->get() : false;
+    state.tempo = currentState.tempo;  // Keep current tempo from audio thread
+
+    stateQueue.push(state);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createParameterLayout()

@@ -63,6 +63,17 @@ const getNativeFunction = (name) => {
 // Make it globally available IMMEDIATELY
 window.__getNativeFunction = getNativeFunction
 
+// Listen for state updates from C++ backend
+// CRITICAL: JUCE 8 uses event-based communication, NOT global function calls
+if (window.__JUCE__?.backend?.addEventListener) {
+  window.__JUCE__.backend.addEventListener('updateState', (payload) => {
+    // Forward to the updateState handler (defined below)
+    if (typeof window.updateState === 'function') {
+      window.updateState(payload)
+    }
+  })
+}
+
 
 // =============================================================================
 // Application Code - Wait for DOM to be ready
