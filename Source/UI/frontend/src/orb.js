@@ -4,16 +4,16 @@
 // =============================================================================
 const CONFIG = {
   // Curve geometry
-  pointCount: 40,
-  curveWraps: 3,  // How many TWO_PI rotations the curve spans
+  pointCount: 60,
+  curveWraps: 1.0618,  // How many TWO_PI rotations the curve spans
 
   // Colors
   lineColor: '#A6CEE1',
-  trailColor: { r: 225, g: 166, b: 166 },
+  trailColor: { r: 166, g: 206, b: 225 },
 
   // Stroke
   stroke: {
-    baseWidth: 2,       // Minimum stroke width
+    baseWidth: 1,       // Minimum stroke width
     widthRange: 3,      // How much tailLevel adds (so max = base + range)
     baseAlpha: 0.7,     // Minimum opacity
     alphaRange: 0.3,    // How much tailLevel adds
@@ -22,7 +22,7 @@ const CONFIG = {
 
   // Radius
   radius: {
-    base: 0.22,              // Base radius as fraction of minDim
+    base: 0.27,              // Base radius as fraction of minDim
     puckYInfluence: 0.12,    // How much puckY adds
     tailLevelInfluence: 0.18, // How much tailLevel adds
     inLevelInfluence: 0.08,  // How much inLevel adds
@@ -32,32 +32,32 @@ const CONFIG = {
 
   // Lissajous frequencies (control curve complexity)
   frequency: {
-    xMin: 2,      // Min X frequency
-    xRange: 4,    // X frequency range based on puckX
-    yMin: 2.5,    // Min Y frequency
-    yRange: 3.9,  // Y frequency range based on puckY
-    yPhaseRatio: 0.75, // Y phase offset ratio
-    ySquash: 0.8,      // Vertical squash factor
+    xMin: Math.PI,                    // 3.14159... (transcendental)
+    xRange: Math.E * 2,               // 5.43656... (2e)
+    yMin: Math.sqrt(5) * 2.5,         // 5.59017... (2.5√5)
+    yRange: Math.PI * 1.5,            // 4.71239... (1.5π)
+    yPhaseRatio: 1 / ((1 + Math.sqrt(5)) / 2), // 0.618... (1/φ)
+    ySquash: Math.sqrt(2) / 2 + 0.1,  // 0.807... (√2/2 + 0.1)
   },
 
   // Ghost trail
   trail: {
-    minHistory: 4,       // Min frames of history
-    historyRange: 12,    // Range based on decay (so max = min + range)
-    widthRatio: 0.6,     // Trail stroke width as ratio of main stroke
-    alphaMultiplier: 0.25, // Trail alpha multiplier
+    minHistory: 2,       // Min frames of history
+    historyRange: 2,    // Range based on decay (so max = min + range)
+    widthRatio: 0.5,     // Trail stroke width as ratio of main stroke
+    alphaMultiplier: 0.2, // Trail alpha multiplier
   },
 
   // Animation / Tempo sync
   tempo: {
-    division: 0.25,   // Tempo division (0.25 = 1/4 speed, 0.125 = 1/8)
+    division: 0.125,   // Tempo division (0.25 = 1/4 speed, 0.125 = 1/8)
     driftMin: 0.5,    // Min phase multiplier
     driftRange: 1.5,  // Phase multiplier range based on drift param
   },
 
   // Jitter/smoothing (ghost wobble)
   jitter: {
-    coefficient: 0.012,    // Jitter amplitude as fraction of minDim
+    coefficient: 0.018,    // Jitter amplitude as fraction of minDim
     smoothingBase: 0.68,   // Base smoothing factor
     smoothingRange: 0.2,   // Smoothing range (less ghost = more smoothing)
     noiseSeedRate: 0.22,   // How fast noise seed evolves with phase

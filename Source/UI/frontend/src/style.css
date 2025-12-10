@@ -1,8 +1,8 @@
 :root {
-  --bg: #26332A;
-  --text: #efdfbd;
-  --accent: #afd3e4;
-  --orb-line: #E1A6A6;
+  --bg: #262620;
+  --text: #F3E0DC;
+  --accent: #E1B689;
+  --orb-line: #A6CEE1;
   --puck-shadow: 
     /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
     0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
@@ -40,16 +40,6 @@ body {
   min-height: 100vh;
   overflow: hidden;
   isolation: isolate;
-}
-
-.tb-app::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-color: var(--bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23noiseFilter)' opacity='0.1'/%3E%3C/svg%3E");
-  pointer-events: none;
 }
 
 .tb-canvas-shell {
@@ -543,7 +533,7 @@ body {
   height: 200%;
   pointer-events: none;
   z-index: 1000;
-  opacity: 0.035;
+  opacity: 0.85;
   mix-blend-mode: overlay;
   animation: grain-drift 0.5s steps(8) infinite;
   will-change: transform;
