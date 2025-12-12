@@ -55,6 +55,7 @@ private:
     // 8 delay lines for the FDN
     std::array<std::vector<float>, kNumLines> delayLines;
     std::array<int, kNumLines> writeIndices;
+    std::array<float, kNumLines> baseDelayOffsetsSamples; // Cached delay offsets in samples (calculated in prepare())
     
     // LFO state for modulation
     std::array<float, kNumLines> lfoPhases;

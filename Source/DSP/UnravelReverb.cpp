@@ -80,6 +80,10 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         delayLines[i].resize(bufferSize);
         std::fill(delayLines[i].begin(), delayLines[i].end(), 0.0f);
         writeIndices[i] = 0;
+        
+        // Pre-calculate base delay offsets in samples (cached to avoid per-block recalculation)
+        const float delayMs = threadbare::tuning::Fdn::kBaseDelaysMs[i];
+        baseDelayOffsetsSamples[i] = delayMs * 0.001f * static_cast<float>(sampleRate);
     }
     
     // Initialize LFOs with random phases and rates
@@ -585,14 +589,6 @@ void UnravelReverb::process(std::span<float> left,
     const float erGain = 1.0f - normX; // 1.0 at Left → 0.0 at Right
     const float fdnSend = 0.2f + (0.8f * normX); // 0.2 at Left → 1.0 at Right
     
-    // Pre-calculate base delay offsets in samples for each line
-    std::array<float, kNumLines> baseDelayOffsets;
-    for (std::size_t i = 0; i < kNumLines; ++i)
-    {
-        const float delayMs = threadbare::tuning::Fdn::kBaseDelaysMs[i];
-        baseDelayOffsets[i] = delayMs * 0.001f * static_cast<float>(sampleRate);
-    }
-    
     // Temporary storage for FDN processing
     std::array<float, kNumLines> readOutputs;
     std::array<float, kNumLines> nextInputs;
@@ -728,7 +724,7 @@ void UnravelReverb::process(std::span<float> left,
             
             // Calculate read position with smoothly changing size (creates pitch shift!)
             // As currentSize changes, this read position slides, creating Doppler effect
-            float readPos = static_cast<float>(writeIndices[i]) - (baseDelayOffsets[i] * currentSize) + modOffset;
+            float readPos = static_cast<float>(writeIndices[i]) - (baseDelayOffsetsSamples[i] * currentSize) + modOffset;
             
             // Read with cubic interpolation (essential for smooth sliding!)
             readOutputs[i] = readDelayInterpolated(i, readPos);
