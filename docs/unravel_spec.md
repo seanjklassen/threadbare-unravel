@@ -179,7 +179,8 @@ Orb is visual only. It reflects state.
 ### 3.3 Decay & Damping
 * Decay slider (with puck Y offset) defines a target RT60.
 * **Per delay line:**
-    * Compute feedback gains from RT60 formula.
+    * Compute feedback gains from RT60 formula: `g = exp(-6.9 * delayTime / T60)`
+    * Each delay line gets its own feedback gain based on its individual delay time for accurate, even decay across all lines.
     * Run through damping filters:
         * LPF (Tone mapped to cutoff).
         * HPF to prevent LF bloat.
@@ -190,14 +191,15 @@ Orb is visual only. It reflects state.
 * Tap times 5–60 ms.
 * Per-tap gains decreasing.
 * Slight stereo asymmetry.
+* **Pre-delay:** Adjustable parameter (0–100 ms) that shifts the entire ER cluster later in time. This is a user-facing control separate from the main pre-delay.
 * **Body/Air macro (puck X) controls:**
     * ER gain.
     * FDN input contribution (slightly counter-scaled).
 
 ### 3.5 Modulation (“Drift”)
-* Each FDN line has a slow sine LFO:
-    * Rate: 0.05–0.4 Hz (random per line).
-    * Depth in samples scaled by Drift & puck Y (few samples max).
+* Each FDN line has a sine LFO:
+    * Rate: 0.1–3.0 Hz (random per line, wider range for more obvious modulation).
+    * Depth in samples scaled by Drift & puck Y, with PuckX macro override (20–80 samples range).
     * Modulate delay read position (fractional delay with interpolation).
 * This breaks up static modes → smoother tails.
 
@@ -436,8 +438,16 @@ static constexpr bool kMirrorReverseGrains = true;
     * Multiplies Decay (roughly /3 at bottom, ×3 at top).
     * Adds to Drift.
     * Adds to Ghost.
+    * **Size Modulation (Doppler Effect):** Subtle pitch warp via size multiplier:
+        * PuckY Down (-1.0): Size = 0.92x → subtle pitch up
+        * PuckY Up (+1.0): Size = 1.08x → subtle pitch down
+        * Adds "life" and movement without overwhelming the sound
 * **X (Body/Air):**
     * Scales ER gain & FDN input ratio (body vs wash).
+    * **Drift Depth Override:** PuckX macro overrides standard `kMaxDepthSamples` with a dynamic range:
+        * Left (Physical/Stable): 20 samples depth
+        * Right (Ethereal/Chaotic): 80 samples depth
+        * This creates the "Stable → Seasick" macro behavior, with smoothed transitions to prevent clicks
 * *In code, the exact multipliers are constants in `UnravelTuning::PuckMapping`.*
 
 ### 3.10 Smoothing & Denormals
@@ -490,9 +500,9 @@ struct Fdn {
 
 struct Decay {
     // Global T60 bounds (seconds).
-    // 0.4s keeps short settings usable; 20s covers ambient washes.
+    // 0.4s keeps short settings usable; 50s is near-infinite reverb.
     static constexpr float kT60Min = 0.4f;
-    static constexpr float kT60Max = 20.0f;
+    static constexpr float kT60Max = 50.0f;
 
     // Puck Y decay multiplier (~ /3 to *3).
     static constexpr float kPuckYMultiplierMin = 1.0f / 3.0f;
@@ -512,33 +522,33 @@ struct Damping {
 
 struct Modulation {
     // LFO frequency range for delay modulation (Hz).
-    // Slow rates keep it "alive" without obvious chorus wobble.
-    static constexpr float kMinRateHz = 0.05f;
-    static constexpr float kMaxRateHz = 0.4f;
+    // Wider range from slow to fast creates more obvious modulation.
+    static constexpr float kMinRateHz = 0.1f;
+    static constexpr float kMaxRateHz = 3.0f;
 
     // Max modulation depth in samples at drift=1, puckY=1.
-    // Safe range ~2–8; higher = wobblier.
-    static constexpr float kMaxDepthSamples = 8.0f;
+    // 100 samples at 48kHz creates extreme tape warble/detune.
+    static constexpr float kMaxDepthSamples = 100.0f;
 };
 
 struct Ghost {
     // How long the ghost remembers (seconds).
     static constexpr float kHistorySeconds = 0.75f;
 
-    // Grain durations (seconds). Shorter = more granular; longer = smeary.
-    static constexpr float kGrainMinSec = 0.08f;
-    static constexpr float kGrainMaxSec = 0.20f;
+    // Grain durations (seconds). Wider range for more texture variety.
+    static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
+    static constexpr float kGrainMaxSec = 0.30f;  // Long for smooth texture
 
     // Subtle detune range (in semitones) for most grains.
     static constexpr float kDetuneSemi = 0.2f; // ~20 cents
 
-    // Rare shimmer grains at +12 semitones.
+    // Shimmer grains at +12 semitones (octave up).
     static constexpr float kShimmerSemi = 12.0f;
-    static constexpr float kShimmerProbability = 0.05f; // 5%
+    static constexpr float kShimmerProbability = 0.25f; // 25% for obvious sparkle
 
     // Ghost gain bounds relative to FDN input (dB).
-    static constexpr float kMinGainDb = -30.0f; // subtle
-    static constexpr float kMaxGainDb = -12.0f; // strong but not dominating
+    static constexpr float kMinGainDb = -24.0f; // Louder minimum
+    static constexpr float kMaxGainDb = -3.0f;  // Very loud for massive presence
 };
 
 struct Freeze {

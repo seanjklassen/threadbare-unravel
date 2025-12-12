@@ -594,6 +594,21 @@ void UnravelReverb::process(std::span<float> left,
     // Pre-calculate pre-delay in samples once per block (state.erPreDelay changes infrequently)
     const float preDelaySamples = state.erPreDelay * 0.001f * static_cast<float>(sampleRate);
     
+    // Pre-calculate ER tap offsets once per block (only depend on constants and preDelaySamples)
+    std::array<int, threadbare::tuning::EarlyReflections::kNumTaps> erTapOffsetsL;
+    std::array<int, threadbare::tuning::EarlyReflections::kNumTaps> erTapOffsetsR;
+    for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
+    {
+        const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
+        const float tapTimeR = threadbare::tuning::EarlyReflections::kTapTimesR[tap];
+        erTapOffsetsL[tap] = static_cast<int>((tapTimeL * 0.001f * sampleRate) + preDelaySamples);
+        erTapOffsetsR[tap] = static_cast<int>((tapTimeR * 0.001f * sampleRate) + preDelaySamples);
+    }
+    
+    // Pre-calculate parameter-dependent values once per block
+    const float inputGain = state.freeze ? 0.0f : 1.0f; // Input gain = 0 when frozen
+    const float duckAmount = juce::jlimit(0.0f, 1.0f, state.duck); // Ducking amount
+    
     // Temporary storage for FDN processing
     std::array<float, kNumLines> readOutputs;
     std::array<float, kNumLines> nextInputs;
@@ -612,9 +627,6 @@ void UnravelReverb::process(std::span<float> left,
         const float currentDriftDepth = driftDepthSmoother.getNextValue(); // Smoothed PuckX macro!
         const float currentMix = mixSmoother.getNextValue();
         const float currentGhost = ghostSmoother.getNextValue();
-        
-        // BUG FIX 2: Input gain = 0 when frozen (no new signal enters)
-        const float inputGain = state.freeze ? 0.0f : 1.0f;
         
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
@@ -641,20 +653,14 @@ void UnravelReverb::process(std::span<float> left,
             if (erGain > 0.001f)
             {
                 // Sum all taps for left and right channels
-                // Pre-delay shifts entire ER cluster later in time (calculated once per block above)
+                // Pre-delay shifts entire ER cluster later in time (tap offsets pre-calculated per block)
                 for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
                 {
-                    const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
-                    const float tapTimeR = threadbare::tuning::EarlyReflections::kTapTimesR[tap];
                     const float tapGain = threadbare::tuning::EarlyReflections::kTapGains[tap];
                     
-                    // Calculate tap offsets in samples (tap time + pre-delay)
-                    const int offsetL = static_cast<int>((tapTimeL * 0.001f * sampleRate) + preDelaySamples);
-                    const int offsetR = static_cast<int>((tapTimeR * 0.001f * sampleRate) + preDelaySamples);
-                    
-                    // Read from buffer with wrapping
-                    int readIndexL = erWriteHead - offsetL;
-                    int readIndexR = erWriteHead - offsetR;
+                    // Read from buffer with wrapping (using pre-calculated offsets)
+                    int readIndexL = erWriteHead - erTapOffsetsL[tap];
+                    int readIndexR = erWriteHead - erTapOffsetsR[tap];
                     
                     while (readIndexL < 0) readIndexL += erBufSize;
                     while (readIndexR < 0) readIndexR += erBufSize;
@@ -803,8 +809,7 @@ void UnravelReverb::process(std::span<float> left,
         const float duckCoeff = (duckTarget > duckingEnvelope) ? duckAttackCoeff : duckReleaseCoeff;
         duckingEnvelope = duckTarget + duckCoeff * (duckingEnvelope - duckTarget);
         
-        // Apply ducking to wet signal
-        const float duckAmount = juce::jlimit(0.0f, 1.0f, state.duck);
+        // Apply ducking to wet signal (duckAmount pre-calculated per block)
         float duckGain = 1.0f - (duckAmount * duckingEnvelope);
         duckGain = juce::jlimit(threadbare::tuning::Ducking::kMinWetFactor, 1.0f, duckGain);
         

@@ -130,37 +130,36 @@
 - **Spec (`unravel_spec.md` line 494):** `kT60Max = 20.0f`
 - **Implementation (`UnravelTuning.h` line 26):** `kT60Max = 50.0f`
 - **Impact:** Implementation allows longer decays than spec
-- **Recommendation:** Align with spec (20.0f) or update spec to match implementation intent
+- **Recommendation:** Update spec to match implementation
 
 **Modulation Rate Range:**
 - **Spec (`unravel_spec.md` lines 516-517):** `kMinRateHz = 0.05f`, `kMaxRateHz = 0.4f`
 - **Implementation (`UnravelTuning.h` lines 74-75):** `kMinRateHz = 0.1f`, `kMaxRateHz = 3.0f`
 - **Impact:** Implementation has wider, faster modulation range than spec
-- **Recommendation:** Document why range was expanded, or align with spec
+- **Recommendation:** Update spec to match implementation
 
 **Modulation Depth:**
 - **Spec (`unravel_spec.md` line 521):** `kMaxDepthSamples = 8.0f` (safe range ~2-8)
 - **Implementation (`UnravelTuning.h` line 79):** `kMaxDepthSamples = 100.0f`
 - **Impact:** Implementation allows extreme tape warble (100 samples vs 8)
-- **Recommendation:** This appears intentional for "extreme tape warble/detune" effect - document this design decision
+- **Recommendation:** Update spec to match implementation
 
 **Grain Duration Range:**
 - **Spec (`unravel_spec.md` lines 529-530):** `kGrainMinSec = 0.08f`, `kGrainMaxSec = 0.20f`
 - **Implementation (`UnravelTuning.h` lines 87-88):** `kGrainMinSec = 0.05f`, `kGrainMaxSec = 0.30f`
 - **Impact:** Implementation has wider grain duration range
-- **Recommendation:** Document or align with spec
+- **Recommendation:** Update spec to match implementation
 
 **Ghost Gain Range:**
 - **Spec (`unravel_spec.md` lines 540-541):** `kMinGainDb = -30.0f`, `kMaxGainDb = -12.0f`
 - **Implementation (`UnravelTuning.h` lines 98-99):** `kMinGainDb = -24.0f`, `kMaxGainDb = -3.0f`
 - **Impact:** Implementation has louder ghost presence (less attenuation)
-- **Recommendation:** Document or align with spec
+- **Recommendation:** Update spec to match implementation
 
 **Shimmer Probability:**
 - **Spec (`unravel_spec.md` line 537):** `kShimmerProbability = 0.05f` (5%)
 - **Implementation (`UnravelTuning.h` line 95):** `kShimmerProbability = 0.25f` (25%)
-- **Impact:** Implementation has much more prominent shimmer effect
-- **Recommendation:** Document or align with spec
+- **Impact:** Update spec to match implementation
 
 ### 5.2 Implementation Details Not in Spec
 
