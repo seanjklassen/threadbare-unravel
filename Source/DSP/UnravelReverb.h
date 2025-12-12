@@ -88,7 +88,6 @@ private:
     bool ghostFreezeActive = false;
     std::array<float, 8> frozenSpawnPositions;
     std::size_t numFrozenPositions = 0;
-    std::size_t frozenSpawnIndex = 0; // Round-robin selector for frozen positions
     
     // Early Reflections state (stereo multi-tap delay)
     std::vector<float> erBufferL;
