@@ -134,6 +134,9 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     
     ghostRng.setSeedRandomly();
     samplesSinceLastSpawn = 0;
+    
+    // Pre-calculate grain spawn interval (every 15ms for dense texture)
+    grainSpawnInterval = static_cast<int>(sampleRate * 0.015f);
 }
 
 void UnravelReverb::reset() noexcept
@@ -588,6 +591,9 @@ void UnravelReverb::process(std::span<float> left,
     const float erGain = 1.0f - normX; // 1.0 at Left → 0.0 at Right
     const float fdnSend = 0.2f + (0.8f * normX); // 0.2 at Left → 1.0 at Right
     
+    // Pre-calculate pre-delay in samples once per block (state.erPreDelay changes infrequently)
+    const float preDelaySamples = state.erPreDelay * 0.001f * static_cast<float>(sampleRate);
+    
     // Temporary storage for FDN processing
     std::array<float, kNumLines> readOutputs;
     std::array<float, kNumLines> nextInputs;
@@ -635,9 +641,7 @@ void UnravelReverb::process(std::span<float> left,
             if (erGain > 0.001f)
             {
                 // Sum all taps for left and right channels
-                // Pre-delay shifts entire ER cluster later in time
-                const float preDelaySamples = state.erPreDelay * 0.001f * sampleRate;
-                
+                // Pre-delay shifts entire ER cluster later in time (calculated once per block above)
                 for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
                 {
                     const float tapTimeL = threadbare::tuning::EarlyReflections::kTapTimesL[tap];
@@ -683,8 +687,7 @@ void UnravelReverb::process(std::span<float> left,
         
         // C. Spawn grains at high density for smooth overlap
         ++samplesSinceLastSpawn;
-        const int spawnInterval = static_cast<int>(sampleRate * 0.015f); // Every 15ms for dense texture
-        if (samplesSinceLastSpawn >= spawnInterval && currentGhost > 0.01f)
+        if (samplesSinceLastSpawn >= grainSpawnInterval && currentGhost > 0.01f)
         {
             // Probabilistic spawning based on ghost amount
             if (ghostRng.nextFloat() < (currentGhost * 0.9f)) // Higher ghost = more grains

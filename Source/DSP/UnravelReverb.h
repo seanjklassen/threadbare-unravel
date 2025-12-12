@@ -84,6 +84,7 @@ private:
     std::array<Grain, kMaxGrains> grainPool;
     juce::Random ghostRng;
     int samplesSinceLastSpawn = 0;
+    int grainSpawnInterval = 0; // Cached spawn interval in samples (calculated in prepare())
     
     // Spectral freeze state - locks grain spawn positions when freeze is active
     bool ghostFreezeActive = false;
