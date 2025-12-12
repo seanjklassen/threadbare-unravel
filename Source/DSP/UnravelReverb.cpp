@@ -477,8 +477,7 @@ void UnravelReverb::process(std::span<float> left,
     // Calculate average feedback gain for approximate T60
     // Formula: feedback = exp(-6.9 * avgDelayTime / T60)
     // Using simplified approach: single feedback gain for all lines
-    constexpr float avgDelayMs = 59.125f; // Average of [31,37,41,53,61,71,83,97]
-    const float avgDelaySec = avgDelayMs * 0.001f;
+    const float avgDelaySec = threadbare::tuning::Fdn::kAvgDelayMs * 0.001f;
     constexpr float sixtyDb = -6.90775527898f; // ln(0.001)
     
     float targetFeedback;

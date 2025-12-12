@@ -17,6 +17,10 @@ struct Fdn {
     // Allowed range for Size scalar (tight ↔ huge).
     static constexpr float kSizeMin = 0.5f;
     static constexpr float kSizeMax = 2.0f;
+    
+    // Average delay time in ms (used for simplified feedback calculation).
+    // Calculated as mean of kBaseDelaysMs: [31,37,41,53,61,71,83,97] = 59.125
+    static constexpr float kAvgDelayMs = 59.125f;
 };
 
 struct Decay {
