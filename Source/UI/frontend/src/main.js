@@ -170,7 +170,15 @@ window.updateState = (payload) => {
 
   if (typeof parsed !== 'object') return
 
-  currentState = { ...currentState, ...parsed }
+  // Skip puckX/puckY updates while user is dragging to prevent flicker
+  // (backend echoes can conflict with drag position, causing "two orbs" effect)
+  if (controls?.isDragging) {
+    const { puckX, puckY, ...rest } = parsed
+    currentState = { ...currentState, ...rest }
+  } else {
+    currentState = { ...currentState, ...parsed }
+  }
+  
   orb.update(currentState)
   controls.update(currentState)
   presets.update(currentState)
