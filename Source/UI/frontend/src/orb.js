@@ -8,13 +8,13 @@ const CONFIG = {
   curveWraps: 1.0618,  // How many TWO_PI rotations the curve spans
 
   // Colors
-  lineColor: '#A6CEE1',
-  trailColor: { r: 166, g: 206, b: 225 },
+  lineColor: '#A6CEDF',
+  trailColor: { r: 9, g: 9, b: 9 },
 
   // Stroke
   stroke: {
-    baseWidth: 1,       // Minimum stroke width
-    widthRange: 3,      // How much tailLevel adds (so max = base + range)
+    baseWidth: 3,       // Minimum stroke width
+    widthRange: 4,      // How much tailLevel adds (so max = base + range)
     baseAlpha: 0.7,     // Minimum opacity
     alphaRange: 0.3,    // How much tailLevel adds
     referenceSize: 400, // Normalize stroke to this canvas dimension
@@ -42,8 +42,8 @@ const CONFIG = {
 
   // Ghost trail
   trail: {
-    minHistory: 2,       // Min frames of history
-    historyRange: 2,    // Range based on decay (so max = min + range)
+    minHistory: 3,       // Min frames of history
+    historyRange: 8,    // Range based on decay (so max = min + range)
     widthRatio: 0.5,     // Trail stroke width as ratio of main stroke
     alphaMultiplier: 0.2, // Trail alpha multiplier
   },
@@ -57,11 +57,21 @@ const CONFIG = {
 
   // Jitter/smoothing (ghost wobble)
   jitter: {
-    coefficient: 0.018,    // Jitter amplitude as fraction of minDim
+    coefficient: 0.048,    // Jitter amplitude as fraction of minDim
     smoothingBase: 0.68,   // Base smoothing factor
     smoothingRange: 0.2,   // Smoothing range (less ghost = more smoothing)
     noiseSeedRate: 0.22,   // How fast noise seed evolves with phase
     noisePointRate: 0.5,   // How noise varies per point
+  },
+
+  // Z-axis rotation (whole orb spins around center)
+  rotation: {
+    speed: 0.015,          // Rotation speed relative to phase (slower = more subtle)
+  },
+
+  // State smoothing (lerp toward target values for seamless transitions)
+  smoothing: {
+    lerpSpeed: 0.12,      // How fast to interpolate toward target (0-1, lower = smoother)
   },
 }
 
@@ -71,6 +81,9 @@ const CONFIG = {
 const TWO_PI = Math.PI * 2
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+
+// Linear interpolation helper
+const lerp = (current, target, t) => current + (target - current) * t
 
 export class Orb {
   constructor(canvas) {
@@ -82,6 +95,7 @@ export class Orb {
     }
 
     this.phase = 0
+    this.rotation = 0
     this.width = 0
     this.height = 0
     this.centerX = 0
@@ -90,7 +104,8 @@ export class Orb {
     this.maxHistory = CONFIG.trail.minHistory
     this.lastTime = performance.now()
 
-    this.state = {
+    // Target state (what we're lerping toward)
+    this.targetState = {
       inLevel: 0.35,
       tailLevel: 0.4,
       puckX: 0.5,
@@ -99,8 +114,11 @@ export class Orb {
       ghost: 0.2,
       decay: 0.4,
       size: 0.6,
-      tempo: 120,  // BPM from DAW (default 120)
+      tempo: 120,
     }
+
+    // Current smoothed state (used for rendering)
+    this.state = { ...this.targetState }
 
     this.resize()
   }
@@ -122,11 +140,12 @@ export class Orb {
   }
 
   update(patch = {}) {
+    // Update target state (not current state directly)
     const keys = Object.keys(patch)
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i]
-      if (Object.prototype.hasOwnProperty.call(this.state, key)) {
-        this.state[key] = patch[key]
+      if (Object.prototype.hasOwnProperty.call(this.targetState, key)) {
+        this.targetState[key] = patch[key]
       }
     }
   }
@@ -136,6 +155,19 @@ export class Orb {
 
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
+
+    // Lerp current state toward target state for smooth transitions
+    const lerpSpeed = CONFIG.smoothing.lerpSpeed
+    const keys = Object.keys(this.state)
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i]
+      if (key === 'tempo') {
+        // Tempo doesn't need smoothing - snap to target
+        this.state[key] = this.targetState[key]
+      } else {
+        this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
+      }
+    }
 
     const minDim = Math.max(1, Math.min(this.width, this.height))
     const inLevel = clamp(this.state.inLevel, 0, 1)
@@ -158,9 +190,10 @@ export class Orb {
     ) * sizeMultiplier
 
     // Stroke calculation using CONFIG
+    // Floor at 3px to prevent thin lines on low-DPI WebViews (DAW environments)
     const { stroke: S } = CONFIG
     const strokeScale = minDim / S.referenceSize
-    const strokeWidth = (S.baseWidth + tailLevel * S.widthRange) * strokeScale
+    const strokeWidth = Math.max((S.baseWidth + tailLevel * S.widthRange) * strokeScale, 3)
     const strokeAlpha = S.baseAlpha + tailLevel * S.alphaRange
 
     // Ghost trail history using CONFIG
@@ -187,6 +220,9 @@ export class Orb {
     const rotationsPerMs = (tempo / 60) * TP.division / 1000
     const basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
     this.phase += basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
+
+    // Z-axis rotation (accumulates slower than phase for subtle spin)
+    this.rotation += basePhaseIncrement * CONFIG.rotation.speed
 
     // Generate curve points
     let prevRadius = radiusBase
@@ -239,6 +275,12 @@ export class Orb {
       ctx.stroke()
     }
 
+    // Apply z-axis rotation around center
+    ctx.save()
+    ctx.translate(this.centerX, this.centerY)
+    ctx.rotate(this.rotation)
+    ctx.translate(-this.centerX, -this.centerY)
+
     // Draw ghost trail history
     const { trailColor: TC } = CONFIG
     for (let i = 0; i < this.history.length; i += 1) {
@@ -254,6 +296,8 @@ export class Orb {
 
     // Draw main orb line
     drawPath(this.points, CONFIG.lineColor, strokeAlpha, strokeWidth)
+
+    ctx.restore()
     ctx.globalAlpha = 1
   }
 }
