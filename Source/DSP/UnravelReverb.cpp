@@ -1038,8 +1038,10 @@ void UnravelReverb::process(std::span<float> left,
             {
                 const float lengthF = static_cast<float>(freezeLoopLength);
                 
-                // Detune amount in playback speed (cents to ratio)
-                const float detuneRatio = std::pow(2.0f, threadbare::tuning::Freeze::kHeadDetuneCents / 1200.0f);
+                // PUCK Y → Wobble amount: Stable at bottom (-1), wobbly at top (+1)
+                // Range: 1 cent (nearly stable) to 15 cents (noticeable drift)
+                const float puckYWobble = juce::jmap(puckY, -1.0f, 1.0f, 1.0f, 15.0f);
+                const float detuneRatio = std::pow(2.0f, puckYWobble / 1200.0f);
                 const float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
                 
                 // Sum contributions from all heads (simple averaging, no windowing)
@@ -1078,9 +1080,13 @@ void UnravelReverb::process(std::span<float> left,
                     while (head.readPos >= lengthF) head.readPos -= lengthF;
                 }
                 
-                // Apply warming filter (gentle LPF to remove icy highs)
-                freezeLpfStateL += (loopL - freezeLpfStateL) * threadbare::tuning::Freeze::kLoopWarmingCoef;
-                freezeLpfStateR += (loopR - freezeLpfStateR) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                // PUCK X → Filter brightness: Dark at left (-1), bright at right (+1)
+                // Coefficient range: 0.05 (very dark, ~200Hz) to 0.5 (bright, ~8kHz)
+                const float puckXBrightness = juce::jmap(puckX, -1.0f, 1.0f, 0.05f, 0.5f);
+                
+                // Apply warming filter with puck-controlled brightness
+                freezeLpfStateL += (loopL - freezeLpfStateL) * puckXBrightness;
+                freezeLpfStateR += (loopR - freezeLpfStateR) * puckXBrightness;
                 loopL = freezeLpfStateL;
                 loopR = freezeLpfStateR;
             }
@@ -1114,9 +1120,10 @@ void UnravelReverb::process(std::span<float> left,
                     while (head.readPos >= lengthF) head.readPos -= lengthF;
                 }
                 
-                // Apply warming filter during fade-out too
-                freezeLpfStateL += (loopL - freezeLpfStateL) * threadbare::tuning::Freeze::kLoopWarmingCoef;
-                freezeLpfStateR += (loopR - freezeLpfStateR) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                // Apply warming filter during fade-out (uses same puck brightness)
+                const float fadeoutBrightness = juce::jmap(puckX, -1.0f, 1.0f, 0.05f, 0.5f);
+                freezeLpfStateL += (loopL - freezeLpfStateL) * fadeoutBrightness;
+                freezeLpfStateR += (loopR - freezeLpfStateR) * fadeoutBrightness;
                 loopL = freezeLpfStateL;
                 loopR = freezeLpfStateR;
             }
