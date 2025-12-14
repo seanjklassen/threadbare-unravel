@@ -1,8 +1,7 @@
 :root {
-  --bg: #262620;
-  --text: #F3E0DC;
-  --accent: #E1B689;
-  --orb-line: #A6CEE1;
+  --bg: #47483B;
+  --text: #C8C7B8;
+  --accent: #FFB59F;
   --puck-shadow: 
     /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
     0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
@@ -105,7 +104,7 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #97B86E;
+  background: #C5CC7A;
   display: block;
   position: relative;
   z-index: 1;
@@ -117,8 +116,8 @@ body {
 
 #puck.active .puck-pupil,
 .puck.active .puck-pupil {
-  background-color: #A5CF71;
-  box-shadow: 0 0 8px #A5CF71;
+  background-color: #C5CC7A;
+  box-shadow: 0 0 8px #C5CC7A;
 }
 
 .tb-top-bar,
@@ -146,14 +145,25 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  height: 48px;
   border: none;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.00);
   color: var(--text);
   font-size: 21px;
   text-transform: lowercase;
   cursor: pointer;
   pointer-events: auto;
-  padding: 4px 8px;
+  padding: 0 20px 0 12px;
+  border-radius: 21px;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.preset-pill:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.preset-pill:active {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 #preset-select {
@@ -522,51 +532,6 @@ body {
 
 .pupil-toggle.pulse .pupil-dot {
   animation: pupil-pulse 0.3s ease;
-}
-
-/* ===== GRAIN OVERLAY ===== */
-.grain-svg {
-  position: fixed;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  pointer-events: none;
-  z-index: 1000;
-  opacity: 0.85;
-  mix-blend-mode: overlay;
-  animation: grain-drift 0.5s steps(8) infinite;
-  will-change: transform;
-}
-
-@keyframes grain-drift {
-  0% {
-    transform: translate(0, 0);
-  }
-  12.5% {
-    transform: translate(-10%, -15%);
-  }
-  25% {
-    transform: translate(5%, -25%);
-  }
-  37.5% {
-    transform: translate(-25%, 10%);
-  }
-  50% {
-    transform: translate(15%, 20%);
-  }
-  62.5% {
-    transform: translate(-5%, -10%);
-  }
-  75% {
-    transform: translate(20%, -5%);
-  }
-  87.5% {
-    transform: translate(-15%, 15%);
-  }
-  100% {
-    transform: translate(0, 0);
-  }
 }
 
 @media (max-width: 768px) {
