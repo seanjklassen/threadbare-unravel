@@ -72,6 +72,10 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     mixSmoother.setCurrentAndTargetValue(0.5f);
     ghostSmoother.setCurrentAndTargetValue(0.0f);
     
+    // Freeze transition smoother - prevents clicks when entering/exiting freeze
+    freezeAmountSmoother.reset(sampleRate, threadbare::tuning::Freeze::kRampTimeSec);
+    freezeAmountSmoother.setCurrentAndTargetValue(0.0f);
+    
     // Allocate 2 seconds of buffer space for each delay line
     const auto bufferSize = static_cast<std::size_t>(2.0 * sampleRate);
     
@@ -137,6 +141,35 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     
     // Pre-calculate grain spawn interval (every 15ms for dense texture)
     grainSpawnInterval = static_cast<int>(sampleRate * 0.015f);
+    
+    // Initialize freeze loop buffers (multi-head smooth bed)
+    const auto freezeLoopSize = static_cast<std::size_t>(
+        threadbare::tuning::Freeze::kLoopBufferSeconds * sampleRate);
+    freezeLoopL.resize(freezeLoopSize);
+    freezeLoopR.resize(freezeLoopSize);
+    std::fill(freezeLoopL.begin(), freezeLoopL.end(), 0.0f);
+    std::fill(freezeLoopR.begin(), freezeLoopR.end(), 0.0f);
+    freezeLoopLength = 0;
+    freezeLoopActive = false;
+    freezeTransitionAmount = 0.0f;
+    freezeLpfStateL = 0.0f;
+    freezeLpfStateR = 0.0f;
+    
+    // Initialize multi-head state with staggered positions and alternating directions
+    juce::Random headRng(42); // Fixed seed for consistent behavior
+    for (int h = 0; h < kFreezeNumHeads; ++h)
+    {
+        freezeHeads[static_cast<std::size_t>(h)].readPos = 0.0f;
+        // Alternate forward/reverse: heads 0,2,4 forward, heads 1,3,5 reverse
+        freezeHeads[static_cast<std::size_t>(h)].direction = (h % 2 == 0) ? 1.0f : -1.0f;
+        freezeHeads[static_cast<std::size_t>(h)].modPhase = headRng.nextFloat() * kTwoPi;
+        // Random mod rate within range (slow drift)
+        const float modRate = juce::jmap(headRng.nextFloat(), 
+            threadbare::tuning::Freeze::kHeadModRateMin,
+            threadbare::tuning::Freeze::kHeadModRateMax);
+        freezeHeads[static_cast<std::size_t>(h)].modInc = kTwoPi * modRate / static_cast<float>(sampleRate);
+        freezeHeads[static_cast<std::size_t>(h)].speedMod = 1.0f;
+    }
 }
 
 void UnravelReverb::reset() noexcept
@@ -148,6 +181,7 @@ void UnravelReverb::reset() noexcept
     driftSmoother.setCurrentAndTargetValue(driftSmoother.getTargetValue());
     mixSmoother.setCurrentAndTargetValue(mixSmoother.getTargetValue());
     ghostSmoother.setCurrentAndTargetValue(ghostSmoother.getTargetValue());
+    freezeAmountSmoother.setCurrentAndTargetValue(0.0f);
     
     for (std::size_t i = 0; i < kNumLines; ++i)
     {
@@ -172,6 +206,24 @@ void UnravelReverb::reset() noexcept
     inputMeterState = 0.0f;
     tailMeterState = 0.0f;
     duckingEnvelope = 0.0f;
+    
+    // Reset freeze loop state
+    if (!freezeLoopL.empty())
+        std::fill(freezeLoopL.begin(), freezeLoopL.end(), 0.0f);
+    if (!freezeLoopR.empty())
+        std::fill(freezeLoopR.begin(), freezeLoopR.end(), 0.0f);
+    freezeLoopLength = 0;
+    freezeLoopActive = false;
+    freezeTransitionAmount = 0.0f;
+    freezeLpfStateL = 0.0f;
+    freezeLpfStateR = 0.0f;
+    
+    // Reset multi-head state
+    for (auto& head : freezeHeads)
+    {
+        head.readPos = 0.0f;
+        head.speedMod = 1.0f;
+    }
     
     // Reset DC offset tracking
     dcOffsetL = 0.0f;
@@ -534,6 +586,19 @@ void UnravelReverb::process(std::span<float> left,
         }
         
         ghostFreezeActive = true;
+        
+        // === MULTI-HEAD LOOP BUFFER: Start capturing ===
+        // Reset loop buffer state to begin capturing wet output
+        freezeLoopLength = 0;
+        freezeLoopActive = false;  // Not playing yet, still capturing
+        freezeTransitionAmount = 0.0f;
+        
+        // Reset head positions (will be staggered once capture completes)
+        for (auto& head : freezeHeads)
+        {
+            head.readPos = 0.0f;
+            head.speedMod = 1.0f;
+        }
     }
     
     if (freezeDeactivating)
@@ -541,6 +606,31 @@ void UnravelReverb::process(std::span<float> left,
         // Clear frozen state
         numFrozenPositions = 0;
         ghostFreezeActive = false;
+        
+        // === CROSSFADE LOOP BUFFER: Start transitioning back to FDN ===
+        // freezeTransitionAmount will ramp down to 0 in the sample loop
+    }
+    
+    // ═════════════════════════════════════════════════════════════════════════
+    // INFINITE CLOUD: Freeze smoother + LFO perturbation for organic drift
+    // ═════════════════════════════════════════════════════════════════════════
+    freezeAmountSmoother.setTargetValue(state.freeze ? 1.0f : 0.0f);
+    
+    // Perturb LFO rates during freeze to prevent periodic sync artifacts
+    // This creates the organic "tape machine drift" quality that prevents metallic ringing
+    if (state.freeze)
+    {
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            // Add ±0.1% random variation to LFO increment each block
+            const float perturbation = 1.0f + (ghostRng.nextFloat() - 0.5f) * 0.002f;
+            lfoInc[i] *= perturbation;
+            
+            // Clamp to prevent runaway (0.05Hz to 5Hz range)
+            const float minInc = kTwoPi * 0.05f / static_cast<float>(sampleRate);
+            const float maxInc = kTwoPi * 5.0f / static_cast<float>(sampleRate);
+            lfoInc[i] = juce::jlimit(minInc, maxInc, lfoInc[i]);
+        }
     }
     
     // ═════════════════════════════════════════════════════════════════════════
@@ -562,7 +652,12 @@ void UnravelReverb::process(std::span<float> left,
     const float macroGhost = juce::jmap(normX, 0.0f, 1.0f, 0.0f, 0.7f);
     const float baseGhost = juce::jlimit(0.0f, 1.0f, state.ghost); // Manual knob
     const float combinedGhost = baseGhost * (1.0f - normX * 0.3f) + macroGhost; // Blend
-    const float targetGhost = state.freeze ? 0.0f : juce::jlimit(0.0f, 1.0f, combinedGhost);
+    
+    // INFINITE CLOUD: Keep ghost active during freeze for shimmer texture
+    // Ghost adds variation from limited source material (octave-up shimmer grains)
+    const float targetGhost = state.freeze 
+        ? threadbare::tuning::Freeze::kFreezeGhostLevel * baseGhost  // Reduced but present
+        : juce::jlimit(0.0f, 1.0f, combinedGhost);
     ghostSmoother.setTargetValue(targetGhost);
     
     // 3. DRIFT (Tape Warble): Stable (20 samples) → Seasick (80 samples)
@@ -631,9 +726,25 @@ void UnravelReverb::process(std::span<float> left,
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
         
+        // Get smoothed freeze amount for crossfading behaviors
+        const float currentFreezeAmount = freezeAmountSmoother.getNextValue();
+        
         // Calculate drift amount using smoothed PuckX macro depth (20-80 samples)
         // Smoothing prevents clicks when moving puck horizontally!
-        const float driftAmount = currentDrift * currentDriftDepth;
+        float driftAmount = currentDrift * currentDriftDepth;
+        
+        // INFINITE CLOUD: Enhance drift during freeze to prevent standing waves
+        // This creates the "tape warble" that smears metallic resonances into organic warmth
+        if (currentFreezeAmount > 0.01f)
+        {
+            driftAmount *= juce::jmap(currentFreezeAmount, 0.0f, 1.0f, 
+                                      1.0f, threadbare::tuning::Freeze::kFreezeDriftMultiplier);
+            
+            // Ensure minimum drift even if user has drift knob at 0
+            // Without this, frozen tails at drift=0 sound metallic
+            driftAmount = std::max(driftAmount, 
+                                   currentFreezeAmount * threadbare::tuning::Freeze::kFreezeMinDriftSamples);
+        }
         
         // ═════════════════════════════════════════════════════════════════════
         // A. EARLY REFLECTIONS (Proximity - Physical to Ethereal)
@@ -711,10 +822,17 @@ void UnravelReverb::process(std::span<float> left,
         //    fdnSend: 0.2 (Left/Physical) → 1.0 (Right/Ethereal)
         //    At Left: ERs dominate, less dry signal to FDN
         //    At Right: Full dry signal + ghost to FDN, no ERs
+        //    INFINITE CLOUD: During freeze, disable all injection - tail is self-sustaining
         const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR);
         const float erMono = 0.5f * (erOutputL + erOutputR);
-        const float fdnInput = (gainedInput * fdnSend) + (ghostMono * currentGhost) + 
-                               (erMono * threadbare::tuning::EarlyReflections::kErInjectionGain);
+        
+        // Disable ER and ghost injection during freeze to prevent energy drain when input stops
+        const float freezeInjectionGate = 1.0f - currentFreezeAmount;
+        const float fdnInput = freezeInjectionGate * (
+            (gainedInput * fdnSend) + 
+            (ghostMono * currentGhost) + 
+            (erMono * threadbare::tuning::EarlyReflections::kErInjectionGain)
+        );
         
         // Step A: Read from all 8 delay lines with modulation
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
@@ -740,43 +858,90 @@ void UnravelReverb::process(std::span<float> left,
         
         // Step B: The Matrix - Householder-style mixing with per-line feedback
         float sumOfReads = 0.0f;
-    for (std::size_t i = 0; i < kNumLines; ++i)
+        for (std::size_t i = 0; i < kNumLines; ++i)
             sumOfReads += readOutputs[i];
         
-        constexpr float mixCoeff = -0.2f;
+        // INFINITE CLOUD: Use energy-neutral coefficient during freeze
+        // Normal: -0.2 (intentionally lossy for natural decay)
+        // Freeze: -0.25 (mathematically energy-neutral Householder)
+        // Math: eigenvalue = 1 + n*c, for |λ|=1 with n=8: c=-0.25 gives λ=-1
+        constexpr float normalMixCoeff = -0.2f;
+        constexpr float freezeMixCoeff = -0.25f;  // Energy-neutral!
+        const float mixCoeff = (currentFreezeAmount > 0.5f) ? freezeMixCoeff : normalMixCoeff;
+        
         constexpr float sixtyDb = -6.90775527898f; // ln(0.001) for -60dB
 
-    for (std::size_t i = 0; i < kNumLines; ++i)
-    {
-            // PHASE 8: Calculate per-line feedback for even decay across all lines
-            // Formula: g = exp(-6.9 * delayTime / T60)
+        for (std::size_t i = 0; i < kNumLines; ++i)
+        {
+            // Calculate per-line feedback
             const float delaySec = threadbare::tuning::Fdn::kBaseDelaysMs[i] * 0.001f;
             float lineFeedback = std::exp((sixtyDb * delaySec) / std::max(0.01f, effectiveDecay));
             lineFeedback = juce::jlimit(0.0f, 0.98f, lineFeedback);
             
-            // Override with freeze feedback if frozen
-            if (state.freeze)
-                lineFeedback = threadbare::tuning::Freeze::kFrozenFeedback;
+            // Override with freeze feedback when frozen
+            const float effectiveFeedback = (currentFreezeAmount > 0.5f) 
+                ? threadbare::tuning::Freeze::kFrozenFeedback 
+                : lineFeedback;
             
+            // Householder-style mixing (energy-neutral during freeze)
             const float crossMix = sumOfReads * mixCoeff + readOutputs[i];
-            nextInputs[i] = fdnInput + (crossMix * lineFeedback);
+            
+            // During freeze: no new input, just recirculate
+            // fdnInput is already gated by freezeInjectionGate
+            nextInputs[i] = fdnInput + (crossMix * effectiveFeedback);
         }
         
-        // Step C: Apply damping, HPF, and write with safety clipping
+        // Step C: Apply damping and write with safety clipping
+        // INFINITE CLOUD: Use gentle LPF during freeze (prevents icy sound while preserving energy)
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
-            // 1-pole low-pass filter for damping with smoothed tone (removes highs)
-            lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
+            float processedSample;
             
-            // PHASE 8: 1-pole high-pass filter to prevent LF mud buildup (removes lows)
-            // HPF = Input - LowPass(Input)
-            // Cutoff ~150Hz @ 48kHz
-            constexpr float hpCoef = 0.006f; // ~150Hz cutoff
-            hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
-            const float hpfSample = lpState[i] - hpState[i];
+            if (currentFreezeAmount > 0.99f)
+            {
+                // FULL FREEZE: Gentle LPF only (no HPF) to preserve warmth without icy highs
+                // Using higher cutoff (~12kHz) than normal mode to preserve more energy
+                lpState[i] += (nextInputs[i] - lpState[i]) * threadbare::tuning::Freeze::kFreezeLpfCoef;
+                processedSample = lpState[i] * threadbare::tuning::Freeze::kFrozenMakeupGain;
+                // Note: No HPF during freeze - bass frequencies help sustain the "cloud" feel
+            }
+            else if (currentFreezeAmount > 0.01f)
+            {
+                // TRANSITION: Crossfade between normal and freeze filter chains
+                
+                // Normal filtered path (LPF + HPF)
+                lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
+                constexpr float hpCoef = 0.006f;
+                hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
+                const float normalFiltered = lpState[i] - hpState[i];
+                
+                // Freeze filtered path (gentle LPF only, no HPF)
+                // Use separate tracking to avoid filter state corruption
+                const float freezeLpf = lpState[i] + (nextInputs[i] - lpState[i]) * threadbare::tuning::Freeze::kFreezeLpfCoef;
+                const float freezeFiltered = freezeLpf * threadbare::tuning::Freeze::kFrozenMakeupGain;
+                
+                // Crossfade based on freeze amount
+                processedSample = normalFiltered * (1.0f - currentFreezeAmount) 
+                                + freezeFiltered * currentFreezeAmount;
+            }
+            else
+            {
+                // NORMAL MODE: Full damping chain (LPF + HPF)
+                // 1-pole low-pass filter for damping with smoothed tone (removes highs)
+                lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
+                
+                // 1-pole high-pass filter to prevent LF mud buildup (removes lows)
+                // HPF = Input - LowPass(Input), Cutoff ~150Hz @ 48kHz
+                constexpr float hpCoef = 0.006f;
+                hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
+                processedSample = lpState[i] - hpState[i];
+            }
             
-            // Write with safety clipping
-            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = std::tanh(hpfSample);
+            // Soft limit - gentler during freeze to preserve more energy
+            // tanh provides smooth saturation that sounds more natural
+            const float limitedSample = std::tanh(processedSample * 0.8f) * 1.25f; // Gentle saturation
+            
+            delayLines[i][static_cast<std::size_t>(writeIndices[i])] = limitedSample;
             
             // Advance write index with wrapping
             ++writeIndices[i];
@@ -800,6 +965,174 @@ void UnravelReverb::process(std::span<float> left,
         constexpr float wetScale = 0.5f;
         wetL *= wetScale;
         wetR *= wetScale;
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // MULTI-HEAD LOOP: Smooth bed sound with gradual blend during capture
+        // Blends from FDN to loop gradually over the 5-second capture period
+        // ═══════════════════════════════════════════════════════════════════════
+        float loopL = 0.0f;
+        float loopR = 0.0f;
+        
+        if (state.freeze && !freezeLoopL.empty())
+        {
+            const int maxLoopLength = static_cast<int>(freezeLoopL.size());
+            const float loopLengthF = static_cast<float>(maxLoopLength);
+            
+            // Capture wet output to loop buffer (continues until full)
+            if (freezeLoopLength < maxLoopLength)
+            {
+                freezeLoopL[static_cast<std::size_t>(freezeLoopLength)] = wetL;
+                freezeLoopR[static_cast<std::size_t>(freezeLoopLength)] = wetR;
+                freezeLoopLength++;
+            }
+            
+            // Start playing from loop once we have at least 0.5 seconds captured
+            // This allows gradual blend during the capture phase
+            const int minPlaybackLength = static_cast<int>(0.5f * static_cast<float>(sampleRate));
+            const bool canPlayLoop = (freezeLoopLength >= minPlaybackLength);
+            
+            // Activate loop playback and set up heads once we have enough content
+            if (canPlayLoop && !freezeLoopActive)
+            {
+                freezeLoopActive = true;
+                
+                // Stagger head positions evenly across captured content
+                const float capturedLength = static_cast<float>(freezeLoopLength);
+                const float stagger = capturedLength / static_cast<float>(kFreezeNumHeads);
+                for (int h = 0; h < kFreezeNumHeads; ++h)
+                {
+                    freezeHeads[static_cast<std::size_t>(h)].readPos = stagger * static_cast<float>(h);
+                }
+                
+                // Pre-charge warming filter
+                float initL = 0.0f, initR = 0.0f;
+                const float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
+                for (int h = 0; h < kFreezeNumHeads; ++h)
+                {
+                    const int idx = static_cast<int>(freezeHeads[static_cast<std::size_t>(h)].readPos) % freezeLoopLength;
+                    initL += freezeLoopL[static_cast<std::size_t>(idx)] * headGain;
+                    initR += freezeLoopR[static_cast<std::size_t>(idx)] * headGain;
+                }
+                freezeLpfStateL = initL;
+                freezeLpfStateR = initR;
+            }
+            
+            // Gradual blend: transition amount increases as more content is captured
+            // At minPlaybackLength: 0%, at maxLoopLength: 100%
+            if (canPlayLoop)
+            {
+                const float captureProgress = static_cast<float>(freezeLoopLength - minPlaybackLength) 
+                                            / static_cast<float>(maxLoopLength - minPlaybackLength);
+                const float targetTransition = std::min(1.0f, captureProgress);
+                
+                // Smooth the transition to avoid any sudden jumps
+                const float transitionSpeed = 0.0001f; // Very smooth
+                if (freezeTransitionAmount < targetTransition)
+                    freezeTransitionAmount = std::min(targetTransition, freezeTransitionAmount + transitionSpeed);
+                else
+                    freezeTransitionAmount = targetTransition;
+            }
+            
+            // Multi-head loop playback
+            if (freezeLoopActive && freezeLoopLength > 0)
+            {
+                const float lengthF = static_cast<float>(freezeLoopLength);
+                
+                // Detune amount in playback speed (cents to ratio)
+                const float detuneRatio = std::pow(2.0f, threadbare::tuning::Freeze::kHeadDetuneCents / 1200.0f);
+                const float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
+                
+                // Sum contributions from all heads (simple averaging, no windowing)
+                for (int h = 0; h < kFreezeNumHeads; ++h)
+                {
+                    auto& head = freezeHeads[static_cast<std::size_t>(h)];
+                    
+                    // Update pitch modulation LFO (slow drift)
+                    head.modPhase += head.modInc;
+                    if (head.modPhase >= kTwoPi) head.modPhase -= kTwoPi;
+                    
+                    // Calculate speed with subtle pitch modulation
+                    const float modAmount = std::sin(head.modPhase);
+                    head.speedMod = 1.0f + (detuneRatio - 1.0f) * modAmount;
+                    
+                    // Wrap position
+                    float pos = head.readPos;
+                    while (pos < 0.0f) pos += lengthF;
+                    while (pos >= lengthF) pos -= lengthF;
+                    
+                    // Read from buffer with linear interpolation
+                    const int idx0 = static_cast<int>(pos);
+                    const int idx1 = (idx0 + 1) % freezeLoopLength;
+                    const float frac = pos - static_cast<float>(idx0);
+                    
+                    loopL += (freezeLoopL[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
+                            + freezeLoopL[static_cast<std::size_t>(idx1)] * frac) * headGain;
+                    loopR += (freezeLoopR[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
+                            + freezeLoopR[static_cast<std::size_t>(idx1)] * frac) * headGain;
+                    
+                    // Advance read position (forward or reverse, with pitch mod)
+                    head.readPos += head.direction * head.speedMod;
+                    
+                    // Wrap around
+                    while (head.readPos < 0.0f) head.readPos += lengthF;
+                    while (head.readPos >= lengthF) head.readPos -= lengthF;
+                }
+                
+                // Apply warming filter (gentle LPF to remove icy highs)
+                freezeLpfStateL += (loopL - freezeLpfStateL) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                freezeLpfStateR += (loopR - freezeLpfStateR) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                loopL = freezeLpfStateL;
+                loopR = freezeLpfStateR;
+            }
+        }
+        else
+        {
+            // Not frozen - ramp down loop mix
+            const float transitionSpeed = 1.0f / (threadbare::tuning::Freeze::kTransitionSeconds * static_cast<float>(sampleRate));
+            freezeTransitionAmount = std::max(0.0f, freezeTransitionAmount - transitionSpeed);
+            
+            // Keep playing during fade-out
+            if (freezeTransitionAmount > 0.0f && freezeLoopActive && freezeLoopLength > 0)
+            {
+                const float lengthF = static_cast<float>(freezeLoopLength);
+                const float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
+                
+                for (int h = 0; h < kFreezeNumHeads; ++h)
+                {
+                    auto& head = freezeHeads[static_cast<std::size_t>(h)];
+                    
+                    float pos = head.readPos;
+                    while (pos < 0.0f) pos += lengthF;
+                    while (pos >= lengthF) pos -= lengthF;
+                    
+                    const int idx = static_cast<int>(pos) % freezeLoopLength;
+                    loopL += freezeLoopL[static_cast<std::size_t>(idx)] * headGain;
+                    loopR += freezeLoopR[static_cast<std::size_t>(idx)] * headGain;
+                    
+                    head.readPos += head.direction * head.speedMod;
+                    while (head.readPos < 0.0f) head.readPos += lengthF;
+                    while (head.readPos >= lengthF) head.readPos -= lengthF;
+                }
+                
+                // Apply warming filter during fade-out too
+                freezeLpfStateL += (loopL - freezeLpfStateL) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                freezeLpfStateR += (loopR - freezeLpfStateR) * threadbare::tuning::Freeze::kLoopWarmingCoef;
+                loopL = freezeLpfStateL;
+                loopR = freezeLpfStateR;
+            }
+            else if (freezeTransitionAmount <= 0.0f)
+            {
+                freezeLoopActive = false;
+                freezeLoopLength = 0;
+            }
+        }
+        
+        // Blend FDN output with loop output based on transition amount
+        if (freezeTransitionAmount > 0.0f)
+        {
+            wetL = wetL * (1.0f - freezeTransitionAmount) + loopL * freezeTransitionAmount;
+            wetR = wetR * (1.0f - freezeTransitionAmount) + loopR * freezeTransitionAmount;
+        }
         
         // BUG FIX 2: Implement ducking (sidechain-style)
         // Envelope follower on input signal

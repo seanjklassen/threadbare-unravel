@@ -14,7 +14,7 @@
   <body>
     <div id="app" class="tb-app">
       <header class="tb-top-bar">
-        <div class="preset-pill">
+        <div class="preset-pill" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0">
           <span class="chevron" aria-hidden="true">
             <svg
               width="11"
@@ -30,7 +30,9 @@
             </svg>
           </span>
           <span class="preset-name">unravel</span>
-          <select id="preset-select" aria-label="Select preset"></select>
+          <ul class="preset-dropdown" role="listbox" aria-label="Select preset">
+            <!-- Options populated by JS -->
+          </ul>
         </div>
         <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
           <svg

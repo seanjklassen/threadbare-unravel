@@ -51,6 +51,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> driftDepthSmoother; // PuckX macro depth
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> ghostSmoother;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> freezeAmountSmoother; // Smooth freeze transitions
     
     // 8 delay lines for the FDN
     std::array<std::vector<float>, kNumLines> delayLines;
@@ -90,6 +91,30 @@ private:
     bool ghostFreezeActive = false;
     std::array<float, 8> frozenSpawnPositions;
     std::size_t numFrozenPositions = 0;
+    
+    // === MULTI-HEAD LOOP (Smooth bed sound) ===
+    // Multiple read heads at staggered positions for constant pad
+    static constexpr int kFreezeNumHeads = 6;
+    
+    std::vector<float> freezeLoopL;
+    std::vector<float> freezeLoopR;
+    int freezeLoopLength = 0;           // Actual captured length in samples
+    bool freezeLoopActive = false;      // True when playing from loop buffer
+    float freezeTransitionAmount = 0.0f; // 0 = FDN output, 1 = loop output
+    
+    // Warming filter state (removes icy highs from loop playback)
+    float freezeLpfStateL = 0.0f;
+    float freezeLpfStateR = 0.0f;
+    
+    // Per-head state: position, direction, modulation
+    struct FreezeHead {
+        float readPos = 0.0f;       // Current read position
+        float direction = 1.0f;     // 1.0 = forward, -1.0 = reverse
+        float modPhase = 0.0f;      // LFO phase for pitch modulation
+        float modInc = 0.0f;        // LFO increment (set in prepare)
+        float speedMod = 1.0f;      // Current playback speed (1.0 ± detune)
+    };
+    std::array<FreezeHead, kFreezeNumHeads> freezeHeads;
     
     // Early Reflections state (stereo multi-tap delay)
     std::vector<float> erBufferL;

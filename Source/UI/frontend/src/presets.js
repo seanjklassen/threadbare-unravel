@@ -8,11 +8,19 @@ const getNativeFn = (name) => {
 
 export class Presets {
   constructor() {
-    this.presetSelect = document.getElementById('preset-select')
+    this.presetPill = document.querySelector('.preset-pill')
+    this.presetDropdown = document.querySelector('.preset-dropdown')
     this.presetName = document.querySelector('.preset-name')
     this.currentPresetIndex = 0
     this.presetList = []
     this.initialized = false
+    this.isOpen = false
+    
+    // Bind methods
+    this.handlePillClick = this.handlePillClick.bind(this)
+    this.handleOptionClick = this.handleOptionClick.bind(this)
+    this.handleKeyDown = this.handleKeyDown.bind(this)
+    this.handleClickOutside = this.handleClickOutside.bind(this)
     
     // Delay init to allow main.js to set up window.__getNativeFunction
     setTimeout(() => this.init(), 0)
@@ -47,31 +55,176 @@ export class Presets {
       this.populatePresets()
     }
     
-    // Attach change listener
-    if (this.presetSelect) {
-      this.presetSelect.addEventListener('change', (e) => {
-        this.loadPreset(parseInt(e.target.value, 10))
-      })
+    // Attach event listeners
+    this.attachEvents()
+  }
+  
+  attachEvents() {
+    if (this.presetPill) {
+      this.presetPill.addEventListener('click', this.handlePillClick)
+      this.presetPill.addEventListener('keydown', this.handleKeyDown)
+    }
+    
+    // Click outside to close
+    document.addEventListener('click', this.handleClickOutside)
+  }
+  
+  handlePillClick(e) {
+    // Don't toggle if clicking an option (let option handler deal with it)
+    if (e.target.closest('.preset-option')) return
+    
+    e.stopPropagation()
+    this.toggleDropdown()
+  }
+  
+  handleOptionClick(e) {
+    const option = e.target.closest('.preset-option')
+    if (!option) return
+    
+    e.stopPropagation()
+    const index = parseInt(option.dataset.index, 10)
+    this.selectPreset(index)
+    this.closeDropdown()
+  }
+  
+  handleKeyDown(e) {
+    switch (e.key) {
+      case 'Enter':
+      case ' ':
+        e.preventDefault()
+        this.toggleDropdown()
+        break
+      case 'Escape':
+        if (this.isOpen) {
+          e.preventDefault()
+          this.closeDropdown()
+        }
+        break
+      case 'ArrowDown':
+        if (this.isOpen) {
+          e.preventDefault()
+          this.focusNextOption(1)
+        } else {
+          e.preventDefault()
+          this.openDropdown()
+        }
+        break
+      case 'ArrowUp':
+        if (this.isOpen) {
+          e.preventDefault()
+          this.focusNextOption(-1)
+        }
+        break
     }
   }
   
+  handleClickOutside(e) {
+    if (this.isOpen && !this.presetPill?.contains(e.target)) {
+      this.closeDropdown()
+    }
+  }
+  
+  toggleDropdown() {
+    if (this.isOpen) {
+      this.closeDropdown()
+    } else {
+      this.openDropdown()
+    }
+  }
+  
+  openDropdown() {
+    if (!this.presetPill || !this.presetDropdown) return
+    this.isOpen = true
+    this.presetPill.classList.add('open')
+    this.presetPill.setAttribute('aria-expanded', 'true')
+    
+    // Focus current option
+    const currentOption = this.presetDropdown.querySelector('.preset-option.selected')
+    currentOption?.focus()
+  }
+  
+  closeDropdown() {
+    if (!this.presetPill) return
+    this.isOpen = false
+    this.presetPill.classList.remove('open')
+    this.presetPill.setAttribute('aria-expanded', 'false')
+    this.presetPill.focus()
+  }
+  
+  focusNextOption(direction) {
+    const options = Array.from(this.presetDropdown?.querySelectorAll('.preset-option') || [])
+    if (options.length === 0) return
+    
+    const currentFocused = document.activeElement
+    const currentIndex = options.indexOf(currentFocused)
+    
+    let nextIndex
+    if (currentIndex === -1) {
+      nextIndex = direction > 0 ? 0 : options.length - 1
+    } else {
+      nextIndex = currentIndex + direction
+      if (nextIndex < 0) nextIndex = options.length - 1
+      if (nextIndex >= options.length) nextIndex = 0
+    }
+    
+    options[nextIndex]?.focus()
+  }
+  
   populatePresets() {
-    if (!this.presetSelect) return
+    if (!this.presetDropdown) return
     
     // Clear existing options
-    this.presetSelect.innerHTML = ''
+    this.presetDropdown.innerHTML = ''
     
     // Add options for each preset
     this.presetList.forEach((name, index) => {
-      const option = document.createElement('option')
-      option.value = index
+      const option = document.createElement('li')
+      option.className = 'preset-option'
+      option.setAttribute('role', 'option')
+      option.setAttribute('tabindex', '-1')
+      option.dataset.index = index
       option.textContent = name
-      this.presetSelect.appendChild(option)
+      
+      if (index === this.currentPresetIndex) {
+        option.classList.add('selected')
+        option.setAttribute('aria-selected', 'true')
+      }
+      
+      option.addEventListener('click', this.handleOptionClick)
+      option.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          this.selectPreset(index)
+          this.closeDropdown()
+        }
+      })
+      
+      this.presetDropdown.appendChild(option)
     })
     
-    // Set initial selection
-    this.presetSelect.value = this.currentPresetIndex
     this.updatePresetName()
+  }
+  
+  selectPreset(index) {
+    this.loadPreset(index)
+    this.updateSelectedOption(index)
+  }
+  
+  updateSelectedOption(index) {
+    if (!this.presetDropdown) return
+    
+    // Remove selected from all
+    this.presetDropdown.querySelectorAll('.preset-option').forEach(opt => {
+      opt.classList.remove('selected')
+      opt.setAttribute('aria-selected', 'false')
+    })
+    
+    // Add selected to current
+    const option = this.presetDropdown.querySelector(`[data-index="${index}"]`)
+    if (option) {
+      option.classList.add('selected')
+      option.setAttribute('aria-selected', 'true')
+    }
   }
   
   async loadPreset(index) {
@@ -91,7 +244,10 @@ export class Presets {
         console.error('Error loading preset:', error)
       }
     } else {
-      console.warn('Native loadPreset not available')
+      // Dev mode - just update locally
+      this.currentPresetIndex = index
+      this.updatePresetName()
+      console.warn('Native loadPreset not available, updated locally')
     }
   }
   
@@ -106,14 +262,11 @@ export class Presets {
         state.currentPreset !== this.currentPresetIndex) {
       this.currentPresetIndex = state.currentPreset
       
-      // Update select element
-      if (this.presetSelect) {
-        this.presetSelect.value = this.currentPresetIndex
-      }
+      // Update selected option in dropdown
+      this.updateSelectedOption(this.currentPresetIndex)
       
       // Update displayed name
       this.updatePresetName()
     }
   }
 }
-

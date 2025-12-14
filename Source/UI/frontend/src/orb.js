@@ -8,7 +8,7 @@ const CONFIG = {
   curveWraps: 1.0618,  // How many TWO_PI rotations the curve spans
 
   // Colors
-  lineColor: '#E0E993',
+  lineColor: '#FFB59F',
   trailColor: { r: 9, g: 9, b: 9 },
 
   // Stroke

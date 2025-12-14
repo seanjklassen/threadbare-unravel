@@ -1,7 +1,7 @@
 :root {
-  --bg: #47483B;
+  --bg: #313128;
   --text: #C8C7B8;
-  --accent: #FFB59F;
+  --accent: #E0E993;
   --puck-shadow: 
     /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
     0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
@@ -32,6 +32,28 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
+}
+
+/* ===== FOCUS STATES ===== */
+.preset-pill:focus-visible,
+.btn-freeze:focus-visible,
+.btn-settings:focus-visible,
+.btn-close-drawer:focus-visible,
+.pupil-toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.param-slider:focus-visible {
+  outline: none;
+}
+
+.param-slider:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.param-slider:focus-visible::-moz-range-thumb {
+  opacity: 1;
 }
 
 .tb-app {
@@ -138,6 +160,7 @@ body {
 
 .tb-bottom-bar {
   bottom: 0;
+  margin-left: 12px;
 }
 
 .preset-pill {
@@ -163,18 +186,66 @@ body {
 }
 
 .preset-pill:active {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
 }
 
-#preset-select {
-  position: absolute;
-  top: 0;
+/* ===== PRESET DROPDOWN ===== */
+.preset-dropdown {
+  position: fixed;
+  top: 80px;
   left: 0;
-  width: 100%;
-  height: 100%;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  background: rgba(49, 49, 40, 0.64);
+  backdrop-filter: blur(4px);
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
   opacity: 0;
-  cursor: pointer;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
+  z-index: 200;
+}
+
+.preset-pill.open .preset-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.preset-option {
+  padding: 13px 16px 14px 54px;
   font-size: 21px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 120ms ease;
+  border-radius: 0;
+}
+
+.preset-option:hover,
+.preset-option:focus {
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
+.preset-option.selected {
+  color: var(--accent);
+}
+
+.preset-option:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Chevron rotation when open */
+.preset-pill.open .chevron {
+  transform: rotate(180deg);
+}
+
+.preset-pill .chevron {
+  transition: transform 200ms ease;
 }
 
 .preset-pill .chevron {
@@ -293,10 +364,12 @@ body {
   transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
   display: flex;
   flex-direction: column;
+  pointer-events: none;
 }
 
 .settings-drawer.open {
   transform: translateX(0);
+  pointer-events: auto;
 }
 
 .drawer-header {

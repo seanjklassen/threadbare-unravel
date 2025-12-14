@@ -134,11 +134,40 @@ struct Ghost {
 };
 
 struct Freeze {
-    // Feedback gain while frozen (slightly <1.0 to avoid blow-up).
-    static constexpr float kFrozenFeedback = 0.999f;
-
-    // Ramp time when entering/exiting freeze (seconds).
+    // === MULTI-HEAD LOOP (Smooth bed sound) ===
+    // Multiple read heads at staggered positions with gentle filtering
+    // for a warm, constant pad without audible looping or pumping.
+    
+    // Loop buffer duration in seconds (longer = more variation)
+    static constexpr float kLoopBufferSeconds = 5.0f;
+    
+    // Number of read heads (more = smoother blend)
+    // 6 heads provides excellent coverage without excessive CPU
+    static constexpr int kNumReadHeads = 6;
+    
+    // Transition time when entering/exiting freeze
+    static constexpr float kTransitionSeconds = 0.3f;
+    
+    // Per-head pitch modulation depth (cents) - subtle detuning
+    static constexpr float kHeadDetuneCents = 6.0f;
+    
+    // Per-head pitch modulation rate range (Hz) - slow drift
+    static constexpr float kHeadModRateMin = 0.03f;
+    static constexpr float kHeadModRateMax = 0.12f;
+    
+    // Loop output warming filter (1-pole LPF coefficient)
+    // Lower = darker/warmer, higher = brighter
+    // 0.15 ≈ 1.5kHz cutoff - very warm, removes icy highs
+    static constexpr float kLoopWarmingCoef = 0.15f;
+    
+    // === LEGACY SETTINGS (kept for compatibility) ===
+    static constexpr float kFrozenFeedback = 1.0f;
+    static constexpr float kFrozenMakeupGain = 1.001f;
     static constexpr float kRampTimeSec = 0.05f;
+    static constexpr float kFreezeDriftMultiplier = 2.5f;
+    static constexpr float kFreezeMinDriftSamples = 25.0f;
+    static constexpr float kFreezeGhostLevel = 0.25f;
+    static constexpr float kFreezeLpfCoef = 0.75f;
 };
 
 struct Ducking {
