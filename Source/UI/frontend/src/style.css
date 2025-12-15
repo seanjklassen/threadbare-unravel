@@ -37,11 +37,16 @@ body {
 /* ===== FOCUS STATES ===== */
 .preset-pill:focus-visible,
 .btn-freeze:focus-visible,
+.btn-freeze-settings:focus-visible,
 .btn-settings:focus-visible,
-.btn-close-drawer:focus-visible,
+.btn-close-settings:focus-visible,
 .pupil-toggle:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.btn-close-settings:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
 }
 
 .param-slider:focus-visible {
@@ -351,70 +356,150 @@ body {
   border: 0;
 }
 
-/* ===== SETTINGS DRAWER ===== */
-.settings-drawer {
+/* ===== SETTINGS VIEW (Full-screen bottom-up) ===== */
+.settings-view {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 320px;
-  background: #191F1B;
+  inset: 0;
+  background: var(--bg);
   z-index: 100;
-  transform: translateX(100%);
+  transform: translateY(100%);
   transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
   display: flex;
   flex-direction: column;
   pointer-events: none;
+  will-change: transform;
 }
 
-.settings-drawer.open {
-  transform: translateX(0);
+.settings-view.open {
+  transform: translateY(0);
   pointer-events: auto;
 }
 
-.drawer-header {
+/* Main app transition when settings opens */
+.tb-app {
+  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: transform;
+}
+
+.tb-app.settings-open .tb-top-bar,
+.tb-app.settings-open .tb-canvas-shell {
+  transform: translateY(calc(-100vh + 80px));
+  pointer-events: none;
+}
+
+/* Settings Header */
+.settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 24px 32px;
-  border-bottom: 1px solid rgba(239, 223, 189, 0.1);
+  flex-shrink: 0;
 }
 
-.drawer-title {
+.settings-readouts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.settings-readouts span {
+  display: block;
+}
+
+.settings-control-cluster {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Freeze button in settings header */
+.btn-freeze-settings {
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  border: none;
+  background: rgba(255, 255, 255, 0.00);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.btn-freeze-settings:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.btn-freeze-settings:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.btn-freeze-settings[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.btn-freeze-settings svg {
+  width: 20px;
+  height: auto;
+  display: block;
+  fill: currentColor;
+}
+
+/* Close button - accent colored circular button */
+.btn-close-settings {
+  width: 48px;
+  height: 48px;
+  border: none;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.btn-close-settings:hover {
+  transform: scale(1.05);
+}
+
+.btn-close-settings:active {
+  transform: scale(0.95);
+}
+
+.btn-close-settings svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* Settings Body */
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 48px 48px;
+  position: relative;
+}
+
+/* Settings Title - positioned at approximately Y:200px */
+.settings-title {
   font-size: 21px;
   font-weight: 500;
   letter-spacing: -0.01em;
   text-transform: lowercase;
   color: var(--text);
   margin: 0;
+  padding-top: 120px;
+  padding-bottom: 48px;
 }
 
-.btn-close-drawer {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 16px;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.btn-close-drawer:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.btn-close-drawer:active {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.drawer-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 32px 32px 48px;
+/* Settings Content - holds the control rows */
+.settings-content {
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -617,12 +702,21 @@ body {
     font-size: 12px;
   }
 
-  .settings-drawer {
-    width: 280px;
+  .settings-header {
+    padding: 16px 24px;
   }
 
-  .drawer-content {
-    padding: 24px 20px;
+  .settings-body {
+    padding: 0 24px 48px;
+  }
+
+  .settings-title {
+    padding-top: 80px;
+    padding-bottom: 32px;
+  }
+
+  .settings-content {
+    gap: 24px;
   }
 
   .control-row {

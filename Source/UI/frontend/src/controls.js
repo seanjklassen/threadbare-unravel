@@ -56,8 +56,14 @@ export class Controls {
     this.readoutSize = document.querySelector('[data-readout="y"]')
     this.freezeBtn = document.querySelector('.btn-freeze')
     this.settingsBtn = document.querySelector('.btn-settings')
-    this.drawer = document.querySelector('.settings-drawer')
-    this.closeDrawerBtn = document.querySelector('.btn-close-drawer')
+    
+    // Settings view elements
+    this.settingsView = document.querySelector('.settings-view')
+    this.closeSettingsBtn = document.querySelector('.btn-close-settings')
+    this.freezeSettingsBtn = document.querySelector('.btn-freeze-settings')
+    this.settingsReadoutX = document.querySelector('[data-readout="settings-x"]')
+    this.settingsReadoutY = document.querySelector('[data-readout="settings-y"]')
+    this.app = document.getElementById('app')
 
     this.bounds = getBounds(this.surface)
     this.dimensions = null
@@ -185,16 +191,26 @@ export class Controls {
       })
     }
 
-    // Drawer toggle
-    if (this.settingsBtn && this.drawer) {
+    // Settings view toggle
+    if (this.settingsBtn && this.settingsView) {
       this.settingsBtn.addEventListener('click', () => {
-        this.drawer.classList.toggle('open')
+        this.toggleSettingsView(true)
       })
     }
 
-    if (this.closeDrawerBtn && this.drawer) {
-      this.closeDrawerBtn.addEventListener('click', () => {
-        this.drawer.classList.remove('open')
+    if (this.closeSettingsBtn && this.settingsView) {
+      this.closeSettingsBtn.addEventListener('click', () => {
+        this.toggleSettingsView(false)
+      })
+    }
+
+    // Freeze button in settings header (synced with main freeze button)
+    if (this.freezeSettingsBtn) {
+      this.freezeSettingsBtn.addEventListener('click', () => {
+        const next = !this.freezeBtn?.classList.contains('active')
+        this.setFreezeVisual(next)
+        sendParam('freeze', next ? 1 : 0)
+        this.onFreezeChange(next)
       })
     }
 
@@ -417,10 +433,60 @@ export class Controls {
   }
 
   setFreezeVisual(isActive) {
-    if (!this.freezeBtn) return
-    this.freezeBtn.classList.toggle('active', isActive)
-    this.freezeBtn.setAttribute('aria-pressed', String(!!isActive))
-    this.state.freeze = !!isActive
+    const active = !!isActive
+    this.state.freeze = active
+    
+    // Update main freeze button
+    if (this.freezeBtn) {
+      this.freezeBtn.classList.toggle('active', active)
+      this.freezeBtn.setAttribute('aria-pressed', String(active))
+    }
+    
+    // Sync settings view freeze button
+    if (this.freezeSettingsBtn) {
+      this.freezeSettingsBtn.classList.toggle('active', active)
+      this.freezeSettingsBtn.setAttribute('aria-pressed', String(active))
+    }
+  }
+
+  /**
+   * Toggle the full-screen settings view
+   * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
+   */
+  toggleSettingsView(shouldOpen) {
+    if (!this.settingsView || !this.app) return
+    
+    const isCurrentlyOpen = this.settingsView.classList.contains('open')
+    const nextState = shouldOpen !== undefined ? shouldOpen : !isCurrentlyOpen
+    
+    if (nextState) {
+      // Opening settings view
+      this.settingsView.classList.add('open')
+      this.settingsView.setAttribute('aria-hidden', 'false')
+      this.app.classList.add('settings-open')
+      this.settingsBtn?.setAttribute('aria-expanded', 'true')
+      
+      // Sync readouts to settings header
+      this.syncSettingsReadouts()
+    } else {
+      // Closing settings view
+      this.settingsView.classList.remove('open')
+      this.settingsView.setAttribute('aria-hidden', 'true')
+      this.app.classList.remove('settings-open')
+      this.settingsBtn?.setAttribute('aria-expanded', 'false')
+    }
+  }
+
+  /**
+   * Sync the readout values to the settings header
+   */
+  syncSettingsReadouts() {
+    if (this.settingsReadoutX && this.readoutDecay) {
+      this.settingsReadoutX.textContent = this.readoutDecay.textContent
+    }
+    if (this.settingsReadoutY && this.readoutSize) {
+      this.settingsReadoutY.textContent = this.readoutSize.textContent
+    }
   }
 
   update(state = {}) {
@@ -522,11 +588,23 @@ export class Controls {
   renderReadoutsFromNorm(normX = this.state.puckX, normY = this.state.puckY) {
     const clampedX = clamp(normX)
     const clampedY = clamp(normY)
+    const xValue = to11Scale(clampedX, SIZE_RANGE)
+    const yValue = to11Scale(clampedY, DECAY_RANGE)
+    
+    // Update main footer readouts
     if (this.readoutDecay) {
-      this.readoutDecay.textContent = to11Scale(clampedX, SIZE_RANGE)
+      this.readoutDecay.textContent = xValue
     }
     if (this.readoutSize) {
-      this.readoutSize.textContent = to11Scale(clampedY, DECAY_RANGE)
+      this.readoutSize.textContent = yValue
+    }
+    
+    // Also update settings header readouts (if settings view is open)
+    if (this.settingsReadoutX) {
+      this.settingsReadoutX.textContent = xValue
+    }
+    if (this.settingsReadoutY) {
+      this.settingsReadoutY.textContent = yValue
     }
   }
 
