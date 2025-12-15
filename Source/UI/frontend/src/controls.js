@@ -59,7 +59,6 @@ export class Controls {
     
     // Settings view elements
     this.settingsView = document.querySelector('.settings-view')
-    this.closeSettingsBtn = document.querySelector('.btn-close-settings')
     this.freezeSettingsBtn = document.querySelector('.btn-freeze-settings')
     this.settingsReadoutX = document.querySelector('[data-readout="settings-x"]')
     this.settingsReadoutY = document.querySelector('[data-readout="settings-y"]')
@@ -191,16 +190,10 @@ export class Controls {
       })
     }
 
-    // Settings view toggle
+    // Settings view toggle - button toggles between open/close
     if (this.settingsBtn && this.settingsView) {
       this.settingsBtn.addEventListener('click', () => {
-        this.toggleSettingsView(true)
-      })
-    }
-
-    if (this.closeSettingsBtn && this.settingsView) {
-      this.closeSettingsBtn.addEventListener('click', () => {
-        this.toggleSettingsView(false)
+        this.toggleSettingsView() // Toggle without forcing a specific state
       })
     }
 
