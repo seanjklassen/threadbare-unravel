@@ -146,11 +146,11 @@ body {
   box-shadow: 0 0 8px #C5CC7A;
 }
 
-.tb-top-bar,
-.tb-bottom-bar {
+.tb-top-bar {
   position: absolute;
   left: 0;
   right: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -158,13 +158,19 @@ body {
   pointer-events: none;
 }
 
-.tb-top-bar {
-  top: 0;
-}
-
 .tb-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
   bottom: 0;
-  margin-left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 32px;
+  padding-left: 44px;
+  pointer-events: none;
+  z-index: 200;
+  background: var(--bg);
 }
 
 .preset-pill {
@@ -647,9 +653,13 @@ body {
 }
 
 @media (max-width: 768px) {
-  .tb-top-bar,
+  .tb-top-bar {
+    padding: 16px;
+  }
+
   .tb-bottom-bar {
     padding: 16px;
+    padding-left: 28px;
   }
 
   .tb-bottom-bar .readouts {
