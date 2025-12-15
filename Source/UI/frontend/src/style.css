@@ -37,7 +37,6 @@ body {
 /* ===== FOCUS STATES ===== */
 .preset-pill:focus-visible,
 .btn-freeze:focus-visible,
-.btn-freeze-settings:focus-visible,
 .btn-settings:focus-visible,
 .pupil-toggle:focus-visible {
   outline: none;
@@ -431,62 +430,6 @@ body {
 .tb-app.settings-open .tb-canvas-shell {
   transform: translateY(calc(-100vh + 80px));
   pointer-events: none;
-}
-
-/* Settings Header */
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px 32px;
-  flex-shrink: 0;
-}
-
-.settings-readouts {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.settings-readouts span {
-  display: block;
-}
-
-/* Freeze button in settings header */
-.btn-freeze-settings {
-  width: 48px;
-  height: 48px;
-  border-radius: 21px;
-  border: none;
-  background: rgba(255, 255, 255, 0.00);
-  color: var(--text);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.btn-freeze-settings:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.btn-freeze-settings:active {
-  background: rgba(255, 255, 255, 0.16);
-}
-
-.btn-freeze-settings[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.btn-freeze-settings svg {
-  width: 20px;
-  height: auto;
-  display: block;
-  fill: currentColor;
 }
 
 /* Settings Body */
