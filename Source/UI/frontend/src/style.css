@@ -356,31 +356,44 @@ body {
   border: 0;
 }
 
-/* ===== SETTINGS VIEW (Full-screen bottom-up) ===== */
+/* ===== SETTINGS VIEW (Full-screen bottom-up push transition) ===== */
+
+/* 
+ * Push transition: Main content and settings are stacked vertically.
+ * Opening settings translates the whole "stack" up so settings comes into view.
+ * Footer height is 80px and stays fixed.
+ */
+
 .settings-view {
   position: fixed;
-  inset: 0;
+  /* Position settings view directly below the visible viewport */
+  top: calc(100vh - 80px);
+  left: 0;
+  right: 0;
+  height: calc(100vh - 80px);
   background: var(--bg);
-  z-index: 100;
-  transform: translateY(100%);
-  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  z-index: 50;
   display: flex;
   flex-direction: column;
   pointer-events: none;
+  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
   will-change: transform;
 }
 
 .settings-view.open {
-  transform: translateY(0);
+  /* Push up into view */
+  transform: translateY(calc(-100vh + 80px));
   pointer-events: auto;
 }
 
-/* Main app transition when settings opens */
-.tb-app {
+/* Main content transitions */
+.tb-top-bar,
+.tb-canvas-shell {
   transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
   will-change: transform;
 }
 
+/* When settings opens, push main content up and out */
 .tb-app.settings-open .tb-top-bar,
 .tb-app.settings-open .tb-canvas-shell {
   transform: translateY(calc(-100vh + 80px));
