@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ThreadbareUnravel VERSION 0.1.0 LANGUAGES C CXX)
+project(Unravel VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,7 +48,7 @@ set_source_files_properties(${UI_RESOURCES} PROPERTIES
 )
 
 juce_add_plugin(ThreadbareUnravel
-    COMPANY_NAME "Threadbare"
+    COMPANY_NAME "threadbare"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -59,7 +59,9 @@ juce_add_plugin(ThreadbareUnravel
     PLUGIN_MANUFACTURER_CODE TrbR
     PLUGIN_CODE Unrv
     FORMATS VST3 AU Standalone
-    PRODUCT_NAME "ThreadbareUnravel"
+    PRODUCT_NAME "unravel"
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
 )
 
 juce_generate_juce_header(ThreadbareUnravel)

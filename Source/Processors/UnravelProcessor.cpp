@@ -231,7 +231,11 @@ void UnravelProcessor::changeProgramName(int, const juce::String&) {}
 //==============================================================================
 void UnravelProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    const auto state = apvts.copyState();
+    auto state = apvts.copyState();
+    
+    // Save current preset index alongside parameters
+    state.setProperty("currentPreset", currentProgramIndex, nullptr);
+    
     juce::MemoryOutputStream stream(destData, false);
     state.writeToStream(stream);
 }
@@ -240,7 +244,16 @@ void UnravelProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes));
     if (tree.isValid())
+    {
+        // Restore preset index if saved
+        if (tree.hasProperty("currentPreset"))
+        {
+            currentProgramIndex = static_cast<int>(tree.getProperty("currentPreset"));
+        }
+        
         apvts.replaceState(tree);
+        pushCurrentState();  // Push restored state to UI queue
+    }
 }
 
 bool UnravelProcessor::popVisualState(threadbare::dsp::UnravelState& state) noexcept
