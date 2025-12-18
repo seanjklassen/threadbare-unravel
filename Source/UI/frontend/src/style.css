@@ -1,5 +1,5 @@
 :root {
-  --bg: #313128;
+  --bg: #31312b;
   --text: #C8C7B8;
   --accent: #E0E993;
   --puck-shadow: 
@@ -127,8 +127,8 @@ body {
 }
 
 .puck-pupil {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #C5CC7A;
   display: block;
@@ -217,7 +217,7 @@ body {
   visibility: hidden;
   transform: translateY(-8px);
   transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
-  z-index: 200;
+  z-index: 300;  /* Above footer (z-index: 200) */
 }
 
 .preset-pill.open .preset-dropdown {
