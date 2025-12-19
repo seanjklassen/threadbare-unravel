@@ -454,31 +454,27 @@ body {
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 36px;  /* Generous spacing between controls */
 }
 
 /* ===== CONTROL ROWS ===== */
 .control-row {
   display: grid;
-  grid-template-columns: 70px 1fr 50px 20px;
-  gap: 12px;
+  grid-template-columns: 90px 1fr 20px;  /* label | slider | dot (no value column) */
+  gap: 16px;
   align-items: center;
 }
 
 .param-label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
   text-transform: lowercase;
   letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
 }
 
+/* Hide numeric value indicators */
 .param-value {
-  font-size: 12px;
-  color: var(--text);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  display: none;
 }
 
 /* ===== SLIDER VISUALIZATION ===== */
@@ -490,8 +486,7 @@ body {
 }
 
 .slider-track-bg,
-.slider-track-base,
-.slider-track-macro {
+.slider-track-base {
   position: absolute;
   left: 0;
   top: 50%;
@@ -503,26 +498,19 @@ body {
 
 .slider-track-bg {
   width: 100%;
-  background: #26332A;
+  background: rgba(200, 199, 184, 0.15);  /* Subtle track background */
 }
 
 .slider-track-base {
   width: 50%;
   background: var(--text);
-  opacity: 0.3;
+  opacity: 0.6;
   transition: width 0.1s ease-out;
 }
 
+/* Hide the macro/freeze enhancement track */
 .slider-track-macro {
-  width: 50%;
-  background: #C4A056;
-  opacity: 1;
-  transition: width 0.1s ease-out, opacity 0.2s ease;
-  z-index: 1;
-}
-
-.slider-track-macro.hidden {
-  opacity: 0;
+  display: none;
 }
 
 .param-slider {
@@ -595,7 +583,7 @@ body {
   height: 32px;
 }
 
-/* ===== PUPIL TOGGLE ===== */
+/* ===== STATUS DOT (Pupil Toggle) ===== */
 .pupil-toggle {
   width: 20px;
   height: 20px;
@@ -618,18 +606,20 @@ body {
   transform: scale(0.9);
 }
 
+/* Active state: bright accent green */
 .pupil-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #97B86E;
+  background: var(--accent);
   display: block;
-  transition: background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-  box-shadow: 0 0 6px rgba(151, 184, 110, 0.6);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 0 6px rgba(224, 233, 147, 0.5);
 }
 
+/* Inactive state: dark/muted */
 .pupil-toggle[aria-pressed="false"] .pupil-dot {
-  background: #314938;
+  background: rgba(200, 199, 184, 0.2);
   box-shadow: none;
 }
 
@@ -676,7 +666,7 @@ body {
   }
 
   .control-row {
-    grid-template-columns: 60px 1fr 45px 20px;
-    gap: 10px;
+    grid-template-columns: 70px 1fr 20px;
+    gap: 12px;
   }
 }
