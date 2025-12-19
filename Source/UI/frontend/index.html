@@ -41,9 +41,6 @@
             </svg>
           </span>
           <span class="preset-name">unravel</span>
-          <ul class="preset-dropdown" role="listbox" aria-label="Select preset">
-            <!-- Options populated by JS -->
-          </ul>
         </div>
         <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
           <svg
@@ -64,6 +61,10 @@
           </svg>
         </span>
       </header>
+
+      <ul class="preset-dropdown" role="listbox" aria-label="Select preset">
+        <!-- Options populated by JS. Now at root to avoid stacking context issues -->
+      </ul>
 
       <main class="tb-canvas-shell" aria-label="Orb Canvas">
         <canvas id="orb" width="1200" height="1600"></canvas>

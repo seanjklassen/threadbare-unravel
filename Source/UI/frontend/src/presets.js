@@ -6,22 +6,29 @@ const getNativeFn = (name) => {
   return null
 }
 
+/**
+ * Presets dropdown manager with robust open/close handling.
+ * Uses a state-based approach to prevent race conditions.
+ */
 export class Presets {
   constructor() {
     this.presetPill = document.querySelector('.preset-pill')
     this.presetDropdown = document.querySelector('.preset-dropdown')
     this.presetName = document.querySelector('.preset-name')
+    this.app = document.getElementById('app')
     this.currentPresetIndex = 0
     this.presetList = []
     this.initialized = false
-    this.isOpen = false
-    this.openedAt = 0  // Timestamp to prevent immediate close
+    
+    // State management
+    this.state = 'closed' // 'closed' | 'open'
+    this._lastToggleTime = 0
     
     // Bind methods
-    this.handlePillClick = this.handlePillClick.bind(this)
+    this.handlePillPointerDown = this.handlePillPointerDown.bind(this)
     this.handleOptionClick = this.handleOptionClick.bind(this)
     this.handleKeyDown = this.handleKeyDown.bind(this)
-    this.handleClickOutside = this.handleClickOutside.bind(this)
+    this.handleDocumentPointerDown = this.handleDocumentPointerDown.bind(this)
     
     // Delay init to allow main.js to set up window.__getNativeFunction
     setTimeout(() => this.init(), 0)
@@ -69,27 +76,46 @@ export class Presets {
   
   attachEvents() {
     if (this.presetPill) {
-      this.presetPill.addEventListener('click', this.handlePillClick)
+      // Use pointerdown for maximum responsiveness in JUCE
+      this.presetPill.addEventListener('pointerdown', this.handlePillPointerDown)
       this.presetPill.addEventListener('keydown', this.handleKeyDown)
+      
+      // Prevent click from doing anything else
+      this.presetPill.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      })
     }
     
-    // Click outside to close
-    document.addEventListener('click', this.handleClickOutside)
+    // Document listener for outside clicks (bubble phase)
+    document.addEventListener('pointerdown', this.handleDocumentPointerDown)
   }
   
-  handlePillClick(e) {
-    // Don't toggle if clicking an option (let option handler deal with it)
-    if (e.target.closest('.preset-option')) return
-    
+  handlePillPointerDown(e) {
+    // Stop propagation so document listener doesn't see this as an "outside" click
+    e.preventDefault()
     e.stopPropagation()
-    this.toggleDropdown()
+    
+    const now = Date.now()
+    if (now - this._lastToggleTime < 200) return
+    this._lastToggleTime = now
+    
+    // Toggle based on current state
+    if (this.state === 'closed') {
+      this.openDropdown()
+    } else {
+      this.closeDropdown()
+    }
   }
   
   handleOptionClick(e) {
     const option = e.target.closest('.preset-option')
     if (!option) return
     
+    // Stop propagation to prevent toggle back
+    e.preventDefault()
     e.stopPropagation()
+    
     const index = parseInt(option.dataset.index, 10)
     this.selectPreset(index)
     this.closeDropdown()
@@ -100,25 +126,28 @@ export class Presets {
       case 'Enter':
       case ' ':
         e.preventDefault()
-        this.toggleDropdown()
+        if (this.state === 'closed') {
+          this.openDropdown()
+        } else {
+          this.closeDropdown()
+        }
         break
       case 'Escape':
-        if (this.isOpen) {
+        if (this.state === 'open') {
           e.preventDefault()
           this.closeDropdown()
         }
         break
       case 'ArrowDown':
-        if (this.isOpen) {
-          e.preventDefault()
+        e.preventDefault()
+        if (this.state === 'open') {
           this.focusNextOption(1)
         } else {
-          e.preventDefault()
           this.openDropdown()
         }
         break
       case 'ArrowUp':
-        if (this.isOpen) {
+        if (this.state === 'open') {
           e.preventDefault()
           this.focusNextOption(-1)
         }
@@ -126,42 +155,47 @@ export class Presets {
     }
   }
   
-  handleClickOutside(e) {
-    // Prevent immediate close after opening (debounce)
-    const timeSinceOpen = Date.now() - this.openedAt
-    if (timeSinceOpen < 100) return
+  handleDocumentPointerDown(e) {
+    // Only close if open
+    if (this.state !== 'open') return
     
-    if (this.isOpen && !this.presetPill?.contains(e.target)) {
-      this.closeDropdown()
-    }
-  }
-  
-  toggleDropdown() {
-    if (this.isOpen) {
-      this.closeDropdown()
-    } else {
-      this.openDropdown()
-    }
+    // If clicking the pill, handlePillPointerDown will stop propagation
+    // If it reached here, it's definitely outside the pill
+    
+    // We also check if it's inside the dropdown itself (which is now a sibling)
+    if (this.presetDropdown?.contains(e.target)) return
+    
+    // Close the dropdown
+    this.closeDropdown()
   }
   
   openDropdown() {
-    if (!this.presetPill || !this.presetDropdown) return
-    this.isOpen = true
-    this.openedAt = Date.now()  // Track open time for debounce
+    if (!this.presetPill || !this.presetDropdown || !this.app) return
+    if (this.state === 'open') return
+    
+    this.state = 'open'
+    this.app.classList.add('presets-open')
     this.presetPill.classList.add('open')
-    this.presetPill.classList.add('has-opened')  // Track that it's been opened (for close animation)
+    this.presetPill.classList.add('has-opened')
     this.presetPill.setAttribute('aria-expanded', 'true')
     
-    // Focus current option
+    // Focus the selected option
     const currentOption = this.presetDropdown.querySelector('.preset-option.selected')
-    currentOption?.focus()
+    if (currentOption) {
+      setTimeout(() => currentOption.focus(), 10)
+    }
   }
   
   closeDropdown() {
-    if (!this.presetPill) return
-    this.isOpen = false
+    if (!this.presetPill || !this.app) return
+    if (this.state === 'closed') return
+    
+    this.state = 'closed'
+    this.app.classList.remove('presets-open')
     this.presetPill.classList.remove('open')
     this.presetPill.setAttribute('aria-expanded', 'false')
+    
+    // Return focus to pill
     this.presetPill.focus()
   }
   
@@ -204,6 +238,8 @@ export class Presets {
         option.setAttribute('aria-selected', 'true')
       }
       
+      // Use both pointerdown and click for maximum compatibility
+      option.addEventListener('pointerdown', this.handleOptionClick)
       option.addEventListener('click', this.handleOptionClick)
       option.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
