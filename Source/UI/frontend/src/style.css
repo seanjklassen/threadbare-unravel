@@ -57,11 +57,40 @@ body {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
 }
 
+/* ===== APP LOAD ANIMATION ===== */
+@keyframes app-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 .tb-app {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
   isolation: isolate;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Staggered reveal for main UI sections */
+.tb-top-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+.tb-canvas-shell {
+  opacity: 0;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+.tb-bottom-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s forwards;
 }
 
 .tb-canvas-shell {
@@ -177,7 +206,7 @@ body {
   gap: 8px;
   height: 48px;
   border: none;
-  background: rgba(255, 255, 255, 0.00);
+  background: transparent;
   color: var(--text);
   font-size: 21px;
   text-transform: lowercase;
@@ -185,15 +214,32 @@ body {
   pointer-events: auto;
   padding: 0 20px 0 12px;
   border-radius: 21px;
-  transition: background 160ms ease, color 160ms ease;
+  transition: color 160ms ease;
 }
 
-.preset-pill:hover {
+/* Background pseudo-element for hover effects */
+.preset-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.preset-pill:hover::before {
   background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.04);
 }
 
-.preset-pill:active {
+.preset-pill:active::before {
   background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ===== PRESET DROPDOWN ===== */
@@ -204,8 +250,9 @@ body {
   right: 0;
   bottom: 0;
   overflow-y: auto;
-  background: rgba(49, 49, 43, 0.64);
-  backdrop-filter: blur(4px);
+  background: rgba(49, 49, 43, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 0;
   padding: 0;
   margin: 0;
@@ -215,22 +262,50 @@ body {
   transform: translateY(-8px);
   transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
   z-index: 300;  /* Above footer (z-index: 200) */
+  pointer-events: none;
 }
 
 .preset-pill.open .preset-dropdown {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
+/* Preset options with cascade animation */
 .preset-option {
   padding: 13px 16px 14px 54px;
   font-size: 21px;
   color: var(--text);
   cursor: pointer;
-  transition: background 120ms ease;
   border-radius: 0;
+  transition: 
+    opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    background 120ms ease;
 }
+
+/* Cascade animation for preset options */
+.preset-dropdown .preset-option {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+/* Revealed state when dropdown open */
+.preset-pill.open .preset-dropdown .preset-option {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Staggered cascade delays */
+.preset-pill.open .preset-dropdown .preset-option:nth-child(1) { transition-delay: 0.03s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(2) { transition-delay: 0.06s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(3) { transition-delay: 0.09s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(4) { transition-delay: 0.12s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(5) { transition-delay: 0.15s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(6) { transition-delay: 0.18s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(7) { transition-delay: 0.21s; }
+.preset-pill.open .preset-dropdown .preset-option:nth-child(8) { transition-delay: 0.24s; }
 
 .preset-option:hover,
 .preset-option:focus {
@@ -246,13 +321,32 @@ body {
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* Chevron rotation when open */
-.preset-pill.open .chevron {
-  transform: rotate(180deg);
+/* Chevron rotation when open with bounce */
+@keyframes chevron-flip {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(200deg); }
+  75% { transform: rotate(170deg); }
+  100% { transform: rotate(180deg); }
+}
+
+@keyframes chevron-unflip {
+  0% { transform: rotate(180deg); }
+  50% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
 }
 
 .preset-pill .chevron {
-  transition: transform 200ms ease;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.preset-pill.open .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Only animate unflip if it was previously opened (has-opened class) */
+.preset-pill.has-opened:not(.open) .chevron {
+  animation: chevron-unflip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .preset-pill .chevron {
@@ -308,34 +402,64 @@ body {
 
 .btn-freeze,
 .btn-settings {
+  position: relative;
   width: 48px;
   height: 48px;
   border-radius: 21px;
   border: none;
-  background: rgba(255, 255, 255, 0.00);
+  background: transparent;
   color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition: color 160ms ease, box-shadow 160ms ease;
 }
 
-.btn-freeze:hover,
-.btn-settings:hover {
+/* Background pseudo-element for hover/active effects */
+.btn-freeze::before,
+.btn-settings::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-freeze:hover::before,
+.btn-settings:hover::before {
   background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
+  transform: scale(1.12);
 }
 
-.btn-freeze:active,
-.btn-settings:active {
+.btn-freeze:active::before,
+.btn-settings:active::before {
   background: rgba(255, 255, 255, 0.16);
-  color: var(--text);
+  transform: scale(0.92);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Bounce animation for background on state toggle */
+@keyframes btn-bg-bounce {
+  0% { transform: scale(0.85); }
+  35% { transform: scale(1.12); }
+  55% { transform: scale(0.97); }
+  75% { transform: scale(1.03); }
+  100% { transform: scale(1); }
 }
 
 .btn-freeze[aria-pressed='true'] {
-  background: var(--accent);
   color: var(--bg);
+}
+
+.btn-freeze[aria-pressed='true']::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .btn-freeze svg,
@@ -365,9 +489,19 @@ body {
 
 /* Settings button transforms to close button when open (matches freeze active state) */
 .tb-app.settings-open .btn-settings {
-  background: var(--accent);
   color: var(--bg);
-  border-radius: 21px;  /* Match freeze button shape */
+}
+
+.tb-app.settings-open .btn-settings::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Hover state when settings is open - consistent with other buttons */
+.tb-app.settings-open .btn-settings:hover::before {
+  transform: scale(1.12);
+  animation: none;
+  background: var(--accent);
 }
 
 .sr-only {
@@ -435,7 +569,7 @@ body {
   position: relative;
 }
 
-/* Settings Title - positioned lower in the view */
+/* Settings Title - positioned lower in the view, with cascade */
 .settings-title {
   font-size: 21px;
   font-weight: 500;
@@ -445,6 +579,19 @@ body {
   margin: 0;
   padding-top: 160px;
   padding-bottom: 48px;
+  
+  /* Cascade animation */
+  opacity: 0;
+  transform: translateY(12px);
+  transition: 
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tb-app.settings-open .settings-title {
+  opacity: 1;
+  transform: translateY(0);
+  transition-delay: 0.04s;
 }
 
 /* Settings Content - holds the control rows */
@@ -455,12 +602,36 @@ body {
 }
 
 /* ===== CONTROL ROWS ===== */
+/* Control rows with cascade animation */
 .control-row {
   display: grid;
   grid-template-columns: 90px 1fr 24px;  /* label | elastic slider | pupil dot */
   gap: 16px;
-  align-items: center;
+  
+  /* Hidden state for cascade */
+  opacity: 0;
+  transform: translateY(16px);
+  transition: 
+    opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* Revealed state when settings open */
+.tb-app.settings-open .control-row {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered cascade delays - waterfall effect */
+.tb-app.settings-open .control-row:nth-child(1) { transition-delay: 0.08s; }
+.tb-app.settings-open .control-row:nth-child(2) { transition-delay: 0.11s; }
+.tb-app.settings-open .control-row:nth-child(3) { transition-delay: 0.14s; }
+.tb-app.settings-open .control-row:nth-child(4) { transition-delay: 0.17s; }
+.tb-app.settings-open .control-row:nth-child(5) { transition-delay: 0.20s; }
+.tb-app.settings-open .control-row:nth-child(6) { transition-delay: 0.23s; }
+.tb-app.settings-open .control-row:nth-child(7) { transition-delay: 0.26s; }
+.tb-app.settings-open .control-row:nth-child(8) { transition-delay: 0.29s; }
+.tb-app.settings-open .control-row:nth-child(9) { transition-delay: 0.32s; }
 
 .param-label {
   font-size: 14px;
@@ -674,5 +845,16 @@ body {
   .elastic-slider__thumb {
     width: 14px;
     height: 14px;
+  }
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

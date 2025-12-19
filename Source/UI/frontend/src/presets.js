@@ -15,6 +15,7 @@ export class Presets {
     this.presetList = []
     this.initialized = false
     this.isOpen = false
+    this.openedAt = 0  // Timestamp to prevent immediate close
     
     // Bind methods
     this.handlePillClick = this.handlePillClick.bind(this)
@@ -50,8 +51,15 @@ export class Presets {
       }
     } else {
       console.warn('Native getPresetList not available')
-      // Fallback preset list for testing
-      this.presetList = ['unravel']
+      // Fallback preset list for testing/development
+      this.presetList = [
+        'unravel',
+        'shimmer',
+        'cathedral',
+        'whisper',
+        'drift',
+        'ghost'
+      ]
       this.populatePresets()
     }
     
@@ -119,6 +127,10 @@ export class Presets {
   }
   
   handleClickOutside(e) {
+    // Prevent immediate close after opening (debounce)
+    const timeSinceOpen = Date.now() - this.openedAt
+    if (timeSinceOpen < 100) return
+    
     if (this.isOpen && !this.presetPill?.contains(e.target)) {
       this.closeDropdown()
     }
@@ -135,7 +147,9 @@ export class Presets {
   openDropdown() {
     if (!this.presetPill || !this.presetDropdown) return
     this.isOpen = true
+    this.openedAt = Date.now()  // Track open time for debounce
     this.presetPill.classList.add('open')
+    this.presetPill.classList.add('has-opened')  // Track that it's been opened (for close animation)
     this.presetPill.setAttribute('aria-expanded', 'true')
     
     // Focus current option
