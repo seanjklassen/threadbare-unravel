@@ -235,13 +235,28 @@ body {
 
 .preset-pill:hover::before {
   background: rgba(255, 255, 255, 0.04);
-  transform: scale(1.04);
+  transform: scale(1.02);
 }
 
 .preset-pill:active::before {
   background: rgba(255, 255, 255, 0.08);
   transform: scale(0.96);
   transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Active/open styling (consistency): preset pill uses accent background while dropdown is open */
+.tb-app.presets-open .preset-pill {
+  color: var(--bg);
+}
+
+.tb-app.presets-open .preset-pill::before {
+  background: var(--accent);
+  transform: scale(1.02);
+}
+
+.tb-app.presets-open .preset-pill:hover::before,
+.tb-app.presets-open .preset-pill:active::before {
+  background: var(--accent);
 }
 
 /* ===== PRESET DROPDOWN ===== */
@@ -354,7 +369,7 @@ body {
 .logo-glyph {
   width: 48px;
   height: 48px;
-  display: inline-flex;
+  display: none;
   justify-content: center;
   align-items: center;
 }
@@ -397,7 +412,7 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: color 160ms ease, box-shadow 160ms ease;
+  transition: color 160ms ease;
 }
 
 /* Background pseudo-element for hover/active effects */
@@ -418,22 +433,20 @@ body {
 .btn-freeze:hover::before,
 .btn-settings:hover::before {
   background: rgba(255, 255, 255, 0.04);
-  transform: scale(1.12);
+  transform: scale(1);
 }
 
 .btn-freeze:active::before,
 .btn-settings:active::before {
   background: rgba(255, 255, 255, 0.16);
-  transform: scale(0.92);
+  transform: scale(0.96);
   transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Bounce animation for background on state toggle */
 @keyframes btn-bg-bounce {
-  0% { transform: scale(0.85); }
-  35% { transform: scale(1.12); }
-  55% { transform: scale(0.97); }
-  75% { transform: scale(1.03); }
+  0% { transform: scale(0.95); }
+  35% { transform: scale(1.02); }
   100% { transform: scale(1); }
 }
 
@@ -483,7 +496,7 @@ body {
 
 /* Hover state when settings is open - consistent with other buttons */
 .tb-app.settings-open .btn-settings:hover::before {
-  transform: scale(1.12);
+  transform: scale(0.96);
   animation: none;
   background: var(--accent);
 }

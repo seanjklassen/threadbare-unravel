@@ -354,6 +354,7 @@ export class Controls {
     this.freezeBtn = document.querySelector('.btn-freeze')
     this.settingsBtn = document.querySelector('.btn-settings')
     this.settingsView = document.querySelector('.settings-view')
+    this.settingsBody = document.querySelector('.settings-body')
     this.app = document.getElementById('app')
 
     this.bounds = getBounds(this.surface)
@@ -395,6 +396,16 @@ export class Controls {
     this.handlePointerUp = this.handlePointerUp.bind(this)
     this.applyInertiaStep = this.applyInertiaStep.bind(this)
     this.animatePuck = this.animatePuck.bind(this)
+
+    // Settings overlay robustness (match presets dropdown behavior)
+    this.settingsState = this.settingsView?.classList.contains('open') ? 'open' : 'closed' // 'open' | 'closed'
+    this.settingsSuppressToggleUntil = 0
+    this.settingsIgnoreClickUntil = 0
+
+    this.onSettingsBtnPointerUp = this.onSettingsBtnPointerUp.bind(this)
+    this.onDocPointerDownCaptureForSettings = this.onDocPointerDownCaptureForSettings.bind(this)
+    this.onDocKeyDownCaptureForSettings = this.onDocKeyDownCaptureForSettings.bind(this)
+    this.onCloseSettingsEvent = this.onCloseSettingsEvent.bind(this)
 
     this.initDrawerControls()
     this.attachEvents()
@@ -464,6 +475,8 @@ export class Controls {
   }
 
   attachEvents() {
+    const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window
+
     if (this.puck) {
       this.puck.addEventListener('pointerdown', this.handlePointerDown)
       this.puck.addEventListener('dblclick', (event) => {
@@ -489,7 +502,18 @@ export class Controls {
 
     // Settings view toggle (same button opens and closes)
     if (this.settingsBtn && this.settingsView) {
-      this.settingsBtn.addEventListener('click', () => {
+      // Prefer pointerup toggle (prevents click-order quirks in DAW WebViews)
+      if (supportsPointer) {
+        this.settingsBtn.addEventListener('pointerup', this.onSettingsBtnPointerUp)
+      } else {
+        this.settingsBtn.addEventListener('mouseup', this.onSettingsBtnPointerUp)
+      }
+
+      // Keep click for accessibility, but ignore right after pointer toggles.
+      this.settingsBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (performance.now() < this.settingsIgnoreClickUntil) return
         this.toggleSettingsView()
       })
     }
@@ -509,6 +533,59 @@ export class Controls {
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
     window.addEventListener('resize', () => this.refreshBounds())
+
+    // Deterministic close for settings (capture, before click is dispatched)
+    if (supportsPointer) {
+      document.addEventListener('pointerdown', this.onDocPointerDownCaptureForSettings, { capture: true })
+    } else {
+      document.addEventListener('mousedown', this.onDocPointerDownCaptureForSettings, { capture: true })
+    }
+    document.addEventListener('keydown', this.onDocKeyDownCaptureForSettings, { capture: true })
+
+    // Allow other modules (e.g. presets) to close settings deterministically
+    document.addEventListener('tb:close-settings', this.onCloseSettingsEvent)
+  }
+
+  onCloseSettingsEvent() {
+    this.toggleSettingsView(false, { reason: 'external', deferFocusToBtn: true, suppressToggleMs: 250 })
+  }
+
+  onSettingsBtnPointerUp(e) {
+    // Avoid double-toggles from trailing click
+    e.preventDefault()
+    e.stopPropagation()
+    if (performance.now() < this.settingsSuppressToggleUntil) return
+    this.settingsIgnoreClickUntil = performance.now() + 400
+    this.toggleSettingsView(undefined, { reason: 'button', deferFocusToBtn: false })
+  }
+
+  onDocPointerDownCaptureForSettings(e) {
+    if (this.settingsState !== 'open') return
+
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement
+    if (!t) return
+
+    // Ignore clicks on the settings button (let button toggle own the gesture)
+    if (this.settingsBtn && this.settingsBtn.contains(t)) return
+
+    // Ignore clicks inside the drawer content
+    if (this.settingsBody && this.settingsBody.contains(t)) return
+
+    // If the click landed on the settings overlay (backdrop), close immediately.
+    if (this.settingsView && this.settingsView.contains(t)) {
+      e.preventDefault()
+      this.settingsIgnoreClickUntil = performance.now() + 400
+      this.toggleSettingsView(false, { reason: 'backdrop', deferFocusToBtn: true, suppressToggleMs: 250 })
+    }
+  }
+
+  onDocKeyDownCaptureForSettings(e) {
+    if (this.settingsState !== 'open') return
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    this.settingsIgnoreClickUntil = performance.now() + 400
+    this.toggleSettingsView(false, { reason: 'escape', deferFocusToBtn: true, suppressToggleMs: 250 })
   }
 
   refreshBounds() {
@@ -705,19 +782,33 @@ export class Controls {
    * Toggle the full-screen settings view
    * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
    */
-  toggleSettingsView(shouldOpen) {
+  toggleSettingsView(shouldOpen, { reason = 'unknown', deferFocusToBtn = false, suppressToggleMs = 0 } = {}) {
     if (!this.settingsView || !this.app) return
     
     const isCurrentlyOpen = this.settingsView.classList.contains('open')
     const nextState = shouldOpen !== undefined ? shouldOpen : !isCurrentlyOpen
     
     if (nextState) {
+      if (performance.now() < this.settingsSuppressToggleUntil) return
+
+      // Mutual exclusivity: opening settings closes presets
+      document.dispatchEvent(new CustomEvent('tb:close-presets'))
+
       // Opening settings view
       this.settingsView.classList.add('open')
       this.settingsView.setAttribute('aria-hidden', 'false')
       this.app.classList.add('settings-open')
       this.settingsBtn?.setAttribute('aria-expanded', 'true')
       this.settingsBtn?.setAttribute('aria-label', 'Close settings')
+      this.settingsState = 'open'
+
+      // Focus first control (deferred to avoid retargeting in WebViews)
+      const focusFirst = () => {
+        const first = this.settingsView.querySelector('.elastic-slider, .pupil-toggle, button, [tabindex]')
+        first?.focus?.({ preventScroll: true })
+      }
+      if (typeof queueMicrotask === 'function') queueMicrotask(focusFirst)
+      else setTimeout(focusFirst, 0)
     } else {
       // Closing settings view
       this.settingsView.classList.remove('open')
@@ -725,6 +816,20 @@ export class Controls {
       this.app.classList.remove('settings-open')
       this.settingsBtn?.setAttribute('aria-expanded', 'false')
       this.settingsBtn?.setAttribute('aria-label', 'Open settings')
+      this.settingsState = 'closed'
+
+      if (suppressToggleMs > 0) {
+        this.settingsSuppressToggleUntil = performance.now() + suppressToggleMs
+      }
+
+      // Return focus to settings button (optionally deferred)
+      const focusBtn = () => this.settingsBtn?.focus?.({ preventScroll: true })
+      if (deferFocusToBtn) {
+        if (typeof queueMicrotask === 'function') queueMicrotask(focusBtn)
+        else setTimeout(focusBtn, 0)
+      } else {
+        focusBtn()
+      }
     }
   }
 

@@ -127,6 +127,12 @@ export class Presets {
 
     // Legacy outside click handler (bubble) kept for safety, but should be redundant now.
     document.addEventListener('click', this.handleClickOutside)
+
+    // Allow other modules (e.g. settings) to close presets deterministically
+    document.addEventListener('tb:close-presets', () => {
+      if (this.state !== 'open') return
+      this.closeDropdown({ reason: 'external', deferFocusToPill: true, suppressToggleMs: 250 })
+    })
   }
   
   handlePillClick(e) {
@@ -212,6 +218,9 @@ export class Presets {
   openDropdown() {
     if (!this.presetPill || !this.presetDropdown || !this.app) return
     if (this.state === 'open') return
+
+    // Mutual exclusivity: opening presets closes settings
+    document.dispatchEvent(new CustomEvent('tb:close-settings'))
     
     this.state = 'open'
     this.app.classList.add('presets-open')
