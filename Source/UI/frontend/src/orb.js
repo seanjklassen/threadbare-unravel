@@ -66,7 +66,7 @@ const CONFIG = {
 
   // Z-axis rotation (whole orb spins around center)
   rotation: {
-    speed: 0.015,          // Rotation speed relative to phase (slower = more subtle)
+    speed: 0.0005,          // Rotation speed relative to phase (slower = more subtle)
   },
 
   // State smoothing (lerp toward target values for seamless transitions)

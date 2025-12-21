@@ -1,5 +1,5 @@
 :root {
-  --bg: #313128;
+  --bg: #31312b;
   --text: #C8C7B8;
   --accent: #E0E993;
   --puck-shadow: 
@@ -38,22 +38,35 @@ body {
 .preset-pill:focus-visible,
 .btn-freeze:focus-visible,
 .btn-settings:focus-visible,
-.btn-close-drawer:focus-visible,
 .pupil-toggle:focus-visible {
   outline: none;
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.param-slider:focus-visible {
+/* Focus state for settings button when in close mode */
+.tb-app.settings-open .btn-settings:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+/* Elastic slider focus state */
+.elastic-slider:focus-visible {
   outline: none;
 }
 
-.param-slider:focus-visible::-webkit-slider-thumb {
-  opacity: 1;
+.elastic-slider:focus-visible .elastic-slider__fill {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
 }
 
-.param-slider:focus-visible::-moz-range-thumb {
-  opacity: 1;
+/* ===== APP LOAD ANIMATION ===== */
+@keyframes app-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .tb-app {
@@ -61,6 +74,23 @@ body {
   min-height: 100vh;
   overflow: hidden;
   isolation: isolate;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Staggered reveal for main UI sections */
+.tb-top-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+.tb-canvas-shell {
+  opacity: 0;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+.tb-bottom-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s forwards;
 }
 
 .tb-canvas-shell {
@@ -123,8 +153,8 @@ body {
 }
 
 .puck-pupil {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #C5CC7A;
   display: block;
@@ -142,25 +172,32 @@ body {
   box-shadow: 0 0 8px #C5CC7A;
 }
 
-.tb-top-bar,
-.tb-bottom-bar {
+.tb-top-bar {
   position: absolute;
   left: 0;
   right: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 24px 32px;
   pointer-events: none;
-}
-
-.tb-top-bar {
-  top: 0;
+  z-index: 400; /* Ensure top bar stays above canvas but below dropdown */
 }
 
 .tb-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
   bottom: 0;
-  margin-left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 32px;
+  padding-left: 44px;
+  pointer-events: none;
+  z-index: 200;
+  background: var(--bg);
 }
 
 .preset-pill {
@@ -170,7 +207,7 @@ body {
   gap: 8px;
   height: 48px;
   border: none;
-  background: rgba(255, 255, 255, 0.00);
+  background: transparent;
   color: var(--text);
   font-size: 21px;
   text-transform: lowercase;
@@ -178,15 +215,48 @@ body {
   pointer-events: auto;
   padding: 0 20px 0 12px;
   border-radius: 21px;
-  transition: background 160ms ease, color 160ms ease;
+  transition: color 160ms ease;
+  z-index: 1;
 }
 
-.preset-pill:hover {
+/* Background pseudo-element for hover effects */
+.preset-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.preset-pill:hover::before {
   background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.02);
 }
 
-.preset-pill:active {
+.preset-pill:active::before {
   background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Active/open styling (consistency): preset pill uses accent background while dropdown is open */
+.tb-app.presets-open .preset-pill {
+  color: var(--bg);
+}
+
+.tb-app.presets-open .preset-pill::before {
+  background: var(--accent);
+  transform: scale(1.02);
+}
+
+.tb-app.presets-open .preset-pill:hover::before,
+.tb-app.presets-open .preset-pill:active::before {
+  background: var(--accent);
 }
 
 /* ===== PRESET DROPDOWN ===== */
@@ -197,33 +267,40 @@ body {
   right: 0;
   bottom: 0;
   overflow-y: auto;
-  background: rgba(49, 49, 40, 0.64);
+  background: rgba(49, 49, 43, 0.85);
   backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   border-radius: 0;
   padding: 0;
   margin: 0;
   list-style: none;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-8px);
+  transform: translateY(-12px);
   transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
-  z-index: 200;
+  z-index: 500;  /* Highest z-index to cover everything */
+  pointer-events: none;
+  will-change: transform, opacity;
 }
 
-.preset-pill.open .preset-dropdown {
+.tb-app.presets-open .preset-dropdown {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+  pointer-events: auto;
 }
 
+/* Preset options (no cascade animation - DAW-friendly) */
 .preset-option {
   padding: 13px 16px 14px 54px;
   font-size: 21px;
   color: var(--text);
   cursor: pointer;
-  transition: background 120ms ease;
   border-radius: 0;
+  transition: background 120ms ease;
 }
+
+/* (cascade removed) */
 
 .preset-option:hover,
 .preset-option:focus {
@@ -239,13 +316,36 @@ body {
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* Chevron rotation when open */
-.preset-pill.open .chevron {
-  transform: rotate(180deg);
+/* Chevron rotation when open with bounce */
+@keyframes chevron-flip {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(200deg); }
+  75% { transform: rotate(170deg); }
+  100% { transform: rotate(180deg); }
+}
+
+@keyframes chevron-unflip {
+  0% { transform: rotate(180deg); }
+  50% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
 }
 
 .preset-pill .chevron {
-  transition: transform 200ms ease;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tb-app.presets-open .preset-pill .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Only animate unflip if it was previously opened (has-opened class) */
+.preset-pill.has-opened:not(.open) .chevron {
+  animation: chevron-unflip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.tb-app.presets-open .preset-pill.has-opened .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .preset-pill .chevron {
@@ -269,7 +369,7 @@ body {
 .logo-glyph {
   width: 48px;
   height: 48px;
-  display: inline-flex;
+  display: none;
   justify-content: center;
   align-items: center;
 }
@@ -301,42 +401,104 @@ body {
 
 .btn-freeze,
 .btn-settings {
+  position: relative;
   width: 48px;
   height: 48px;
   border-radius: 21px;
   border: none;
-  background: rgba(255, 255, 255, 0.00);
+  background: transparent;
   color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  transition: color 160ms ease;
 }
 
-.btn-freeze:hover,
-.btn-settings:hover {
+/* Background pseudo-element for hover/active effects */
+.btn-freeze::before,
+.btn-settings::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-freeze:hover::before,
+.btn-settings:hover::before {
   background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
+  transform: scale(1);
 }
 
-.btn-freeze:active,
-.btn-settings:active {
+.btn-freeze:active::before,
+.btn-settings:active::before {
   background: rgba(255, 255, 255, 0.16);
-  color: var(--text);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Bounce animation for background on state toggle */
+@keyframes btn-bg-bounce {
+  0% { transform: scale(0.95); }
+  35% { transform: scale(1.02); }
+  100% { transform: scale(1); }
 }
 
 .btn-freeze[aria-pressed='true'] {
-  background: var(--accent);
   color: var(--bg);
 }
 
+.btn-freeze[aria-pressed='true']::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 .btn-freeze svg,
-.btn-settings svg {
+.btn-settings .icon-settings {
   width: 20px;
   height: auto;
   display: block;
   fill: currentColor;
+}
+
+/* Settings button icon toggle */
+.btn-settings .icon-close {
+  width: 14px;
+  height: 14px;
+  display: none;
+  fill: currentColor;
+}
+
+/* When settings is open, show close icon and hide settings icon */
+.tb-app.settings-open .btn-settings .icon-settings {
+  display: none;
+}
+
+.tb-app.settings-open .btn-settings .icon-close {
+  display: block;
+}
+
+/* Settings button transforms to close button when open (matches freeze active state) */
+.tb-app.settings-open .btn-settings {
+  color: var(--bg);
+}
+
+.tb-app.settings-open .btn-settings::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Hover state when settings is open - consistent with other buttons */
+.tb-app.settings-open .btn-settings:hover::before {
+  transform: scale(0.96);
+  animation: none;
+  background: var(--accent);
 }
 
 .sr-only {
@@ -351,214 +513,210 @@ body {
   border: 0;
 }
 
-/* ===== SETTINGS DRAWER ===== */
-.settings-drawer {
+/* ===== SETTINGS VIEW (Overlay with fade + slide from bottom) ===== */
+
+/* 
+ * Overlay transition: Settings fades in over main content.
+ * Matches preset dropdown style but from the bottom.
+ * 
+ * TUNING: Adjust --settings-slide-distance to change how far it slides up.
+ *         Larger = more dramatic entrance, smaller = more subtle.
+ */
+
+.settings-view {
+  --settings-slide-distance: 24px;  /* Easy to tweak: try 16px, 32px, 48px */
+  
   position: fixed;
   top: 0;
+  left: 0;
   right: 0;
-  bottom: 0;
-  width: 320px;
-  background: #191F1B;
-  z-index: 100;
-  transform: translateX(100%);
-  transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+  bottom: 80px;  /* Leave space for footer */
+  background: rgba(49, 49, 43, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 600;  /* Sit on top of everything except maybe the footer */
   display: flex;
   flex-direction: column;
+  
+  /* Hidden state */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(var(--settings-slide-distance));
   pointer-events: none;
+  will-change: transform, opacity;
+  
+  /* Transition timing (matches preset dropdown feel) */
+  transition: 
+    opacity 240ms ease,
+    transform 320ms ease,
+    visibility 320ms;
 }
 
-.settings-drawer.open {
-  transform: translateX(0);
+.settings-view.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
   pointer-events: auto;
 }
 
-.drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px 32px;
-  border-bottom: 1px solid rgba(239, 223, 189, 0.1);
+/* Settings Body */
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 48px 48px;
+  position: relative;
 }
 
-.drawer-title {
+/* Settings Title - positioned lower in the view, with cascade */
+.settings-title {
   font-size: 21px;
   font-weight: 500;
   letter-spacing: -0.01em;
   text-transform: lowercase;
   color: var(--text);
   margin: 0;
+  padding-top: 160px;
+  padding-bottom: 48px;
+  
+  /* Cascade animation */
+  opacity: 0;
 }
 
-.btn-close-drawer {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  border-radius: 16px;
-  transition: background 160ms ease, color 160ms ease;
-}
-
-.btn-close-drawer:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.btn-close-drawer:active {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.drawer-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 32px 32px 48px;
+/* Settings Content - holds the control rows */
+.settings-content {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 36px;  /* Generous spacing between controls */
 }
 
 /* ===== CONTROL ROWS ===== */
+/* Control rows (no cascade animation - DAW-friendly) */
 .control-row {
   display: grid;
-  grid-template-columns: 70px 1fr 50px 20px;
-  gap: 12px;
+  grid-template-columns: 90px 1fr 24px;  /* label | elastic slider | pupil dot */
+  gap: 16px;
   align-items: center;
 }
 
 .param-label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
   text-transform: lowercase;
   letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
 }
 
-.param-value {
-  font-size: 12px;
-  color: var(--text);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-/* ===== SLIDER VISUALIZATION ===== */
-.slider-container {
+/* ===== ELASTIC SLIDER ===== */
+.elastic-slider {
   position: relative;
-  height: 32px;
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Fine control mode indicator (when holding Shift) */
+.elastic-slider.fine-control {
+  cursor: ew-resize;
+}
+
+/* SVG Gooey filter - hidden, no longer needed without thumb */
+.elastic-slider-goo {
+  display: none;
+}
+
+/* Container - no gooey filter needed */
+.elastic-slider__goo-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
 }
 
-.slider-track-bg,
-.slider-track-base,
-.slider-track-macro {
+/* Track background (transparent) */
+.elastic-slider__track {
   position: absolute;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 2px;
-  pointer-events: none;
-  border-radius: 1px;
+  right: 0;
+  height: 8px;
+  background: transparent;
+  border-radius: 4px;
+  overflow: visible;
 }
 
-.slider-track-bg {
-  width: 100%;
-  background: #26332A;
-}
-
-.slider-track-base {
-  width: 50%;
+/* Filled portion of track (beige color from --text) */
+.elastic-slider__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  min-width: 8px;  /* Minimum width so it's always visible with rounded ends */
   background: var(--text);
-  opacity: 0.3;
-  transition: width 0.1s ease-out;
+  border-radius: 4px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left center;
 }
 
-.slider-track-macro {
-  width: 50%;
-  background: #C4A056;
-  opacity: 1;
-  transition: width 0.1s ease-out, opacity 0.2s ease;
-  z-index: 1;
+/* Thumb/handle - hidden, cleaner without it */
+.elastic-slider__thumb {
+  display: none;
 }
 
-.slider-track-macro.hidden {
-  opacity: 0;
+/* Scale fill bar on hover - subtle and refined */
+.elastic-slider:hover .elastic-slider__fill {
+  transform: scaleY(1.15);
 }
 
+/* Active/dragging state - gentle squeeze */
+.elastic-slider.active .elastic-slider__fill {
+  transform: scaleY(0.9);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 
+ * Refined elastic bounce animation
+ * Uses a sophisticated easing curve inspired by high-end motion design
+ * The keyframes create a natural, organic settling motion
+ */
+@keyframes elastic-settle {
+  0% { 
+    transform: scaleY(0.75); 
+  }
+  25% { 
+    transform: scaleY(1.08); 
+  }
+  50% { 
+    transform: scaleY(0.97); 
+  }
+  75% { 
+    transform: scaleY(1.02); 
+  }
+  100% { 
+    transform: scaleY(1); 
+  }
+}
+
+.elastic-slider__fill.bounce {
+  animation: elastic-settle 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Hide legacy slider elements */
+.slider-container {
+  display: none;
+}
+
+.slider-track-bg,
+.slider-track-base,
+.slider-track-macro,
 .param-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 32px;
-  background: transparent;
-  cursor: pointer;
-  position: relative;
-  z-index: 2;
-  margin: 0;
+  display: none;
 }
 
-/* Webkit (Chrome, Safari) slider thumb */
-.param-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 12px;
-  height: 18px;
-  background: var(--text);
-  border-radius: 2px;
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.1s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.param-slider:hover::-webkit-slider-thumb {
-  opacity: 1;
-}
-
-.param-slider:active::-webkit-slider-thumb {
-  cursor: grabbing;
-  transform: scale(0.95);
-  opacity: 1;
-}
-
-/* Firefox slider thumb */
-.param-slider::-moz-range-thumb {
-  width: 12px;
-  height: 18px;
-  background: var(--text);
-  border: none;
-  border-radius: 2px;
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.2s ease, transform 0.1s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.param-slider:hover::-moz-range-thumb {
-  opacity: 1;
-}
-
-.param-slider:active::-moz-range-thumb {
-  cursor: grabbing;
-  transform: scale(0.95);
-  opacity: 1;
-}
-
-/* Remove default track styling */
-.param-slider::-webkit-slider-runnable-track {
-  background: transparent;
-  height: 32px;
-}
-
-.param-slider::-moz-range-track {
-  background: transparent;
-  height: 32px;
-}
-
-/* ===== PUPIL TOGGLE ===== */
+/* ===== STATUS DOT (Pupil Toggle) ===== */
 .pupil-toggle {
   width: 20px;
   height: 20px;
@@ -581,18 +739,20 @@ body {
   transform: scale(0.9);
 }
 
+/* Active state: bright accent green */
 .pupil-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #97B86E;
+  background: var(--accent);
   display: block;
-  transition: background 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-  box-shadow: 0 0 6px rgba(151, 184, 110, 0.6);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 0 6px rgba(224, 233, 147, 0.5);
 }
 
+/* Inactive state: dark/muted */
 .pupil-toggle[aria-pressed="false"] .pupil-dot {
-  background: #314938;
+  background: rgba(200, 199, 184, 0.2);
   box-shadow: none;
 }
 
@@ -608,25 +768,59 @@ body {
 }
 
 @media (max-width: 768px) {
-  .tb-top-bar,
+  .tb-top-bar {
+    padding: 16px;
+  }
+
   .tb-bottom-bar {
     padding: 16px;
+    padding-left: 28px;
   }
 
   .tb-bottom-bar .readouts {
     font-size: 12px;
   }
 
-  .settings-drawer {
-    width: 280px;
+  .settings-header {
+    padding: 16px 24px;
   }
 
-  .drawer-content {
-    padding: 24px 20px;
+  .settings-body {
+    padding: 0 30px 48px;
+  }
+
+  .settings-title {
+    padding-top: 29px;
+    padding-bottom: 32px;
+  }
+
+  .settings-content {
+    gap: 24px;
   }
 
   .control-row {
-    grid-template-columns: 60px 1fr 45px 20px;
-    gap: 10px;
+    grid-template-columns: 70px 1fr 20px;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .elastic-slider {
+    height: 36px;
+  }
+
+  .elastic-slider__thumb {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

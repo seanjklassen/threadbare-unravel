@@ -6,21 +6,52 @@ const getNativeFn = (name) => {
   return null
 }
 
+/**
+ * Presets dropdown manager with robust open/close handling.
+ * Uses a state-based approach to prevent race conditions.
+ */
 export class Presets {
   constructor() {
+    // Manual regression checklist:
+    // - Mouse: click pill toggles open/close; click option selects and closes; click outside closes; no flash on release.
+    // - Mouse: press option, drag off, release => should NOT select.
+    // - Keyboard: Enter/Space toggles; Esc closes; Arrow keys navigate while open; focus stays sensible.
+    // - Rapid: repeated quick clicks on pill/option/outside => no reopen/flash.
+    // - Other UI: puck/orb dragging and other controls behave unchanged.
+    //
+    // NOTE: During diagnosis we temporarily log event sequences; removed before final.
+
     this.presetPill = document.querySelector('.preset-pill')
     this.presetDropdown = document.querySelector('.preset-dropdown')
     this.presetName = document.querySelector('.preset-name')
+    this.app = document.getElementById('app')
     this.currentPresetIndex = 0
     this.presetList = []
     this.initialized = false
-    this.isOpen = false
+    
+    // State management
+    this.state = 'closed' // 'closed' | 'open'
+
+    // Pointer-gesture state (prevents click-through + supports "press-drag-release off option cancels")
+    this.activePointerId = null
+    this.downOption = null
+    this.downWasOnOption = false
+    this.downStartedInPillToggleRegion = false
+    this.suppressToggleUntil = 0
+    this.ignorePillClickUntil = 0
     
     // Bind methods
-    this.handlePillClick = this.handlePillClick.bind(this)
     this.handleOptionClick = this.handleOptionClick.bind(this)
     this.handleKeyDown = this.handleKeyDown.bind(this)
     this.handleClickOutside = this.handleClickOutside.bind(this)
+    this.handlePillClick = this.handlePillClick.bind(this)
+    this.toggleDropdown = this.toggleDropdown.bind(this)
+
+    // New pointer/capture model
+    this.onDocPointerDownCapture = this.onDocPointerDownCapture.bind(this)
+    this.onDocPointerUpCapture = this.onDocPointerUpCapture.bind(this)
+    this.onPillPointerUp = this.onPillPointerUp.bind(this)
+    this.onPillPointerDown = this.onPillPointerDown.bind(this)
     
     // Delay init to allow main.js to set up window.__getNativeFunction
     setTimeout(() => this.init(), 0)
@@ -50,30 +81,73 @@ export class Presets {
       }
     } else {
       console.warn('Native getPresetList not available')
-      // Fallback preset list for testing
-      this.presetList = ['unravel']
+      // Fallback preset list for testing/development
+      this.presetList = [
+        'unravel',
+        'shimmer',
+        'cathedral',
+        'whisper',
+        'drift',
+        'ghost'
+      ]
       this.populatePresets()
     }
     
     // Attach event listeners
     this.attachEvents()
   }
-  
+
   attachEvents() {
+    const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window
+
     if (this.presetPill) {
+      // Pointer-based toggle (avoid relying on click ordering)
+      if (supportsPointer) {
+        this.presetPill.addEventListener('pointerdown', this.onPillPointerDown)
+        this.presetPill.addEventListener('pointerup', this.onPillPointerUp)
+      } else {
+        this.presetPill.addEventListener('mousedown', this.onPillPointerDown)
+        this.presetPill.addEventListener('mouseup', this.onPillPointerUp)
+      }
+
+      // Legacy click handler left in place for now but becomes a no-op under suppression.
+      // (We keep it to preserve any accessibility quirks from older browsers.)
       this.presetPill.addEventListener('click', this.handlePillClick)
       this.presetPill.addEventListener('keydown', this.handleKeyDown)
     }
     
-    // Click outside to close
+    // Deterministic outside-close (capture, before click is dispatched)
+    if (supportsPointer) {
+      document.addEventListener('pointerdown', this.onDocPointerDownCapture, { capture: true })
+      document.addEventListener('pointerup', this.onDocPointerUpCapture, { capture: true })
+    } else {
+      document.addEventListener('mousedown', this.onDocPointerDownCapture, { capture: true })
+      document.addEventListener('mouseup', this.onDocPointerUpCapture, { capture: true })
+    }
+
+    // Legacy outside click handler (bubble) kept for safety, but should be redundant now.
     document.addEventListener('click', this.handleClickOutside)
+
+    // Allow other modules (e.g. settings) to close presets deterministically
+    document.addEventListener('tb:close-presets', () => {
+      if (this.state !== 'open') return
+      this.closeDropdown({ reason: 'external', deferFocusToPill: true, suppressToggleMs: 250 })
+    })
   }
   
   handlePillClick(e) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    if (performance.now() < this.ignorePillClickUntil) {
+      return
+    }
+    // If we just closed due to pointer interaction, ignore stray click toggles.
+    if (performance.now() < this.suppressToggleUntil) return
+    
     // Don't toggle if clicking an option (let option handler deal with it)
     if (e.target.closest('.preset-option')) return
     
-    e.stopPropagation()
     this.toggleDropdown()
   }
   
@@ -81,10 +155,13 @@ export class Presets {
     const option = e.target.closest('.preset-option')
     if (!option) return
     
+    // Stop propagation to prevent toggle back
+    e.preventDefault()
     e.stopPropagation()
+    
     const index = parseInt(option.dataset.index, 10)
     this.selectPreset(index)
-    this.closeDropdown()
+    this.closeDropdown({ reason: 'option-click', deferFocusToPill: true, suppressToggleMs: 250 })
   }
   
   handleKeyDown(e) {
@@ -92,25 +169,28 @@ export class Presets {
       case 'Enter':
       case ' ':
         e.preventDefault()
-        this.toggleDropdown()
+        if (this.state === 'closed') {
+          this.openDropdown()
+        } else {
+          this.closeDropdown()
+        }
         break
       case 'Escape':
-        if (this.isOpen) {
+        if (this.state === 'open') {
           e.preventDefault()
           this.closeDropdown()
         }
         break
       case 'ArrowDown':
-        if (this.isOpen) {
-          e.preventDefault()
+        e.preventDefault()
+        if (this.state === 'open') {
           this.focusNextOption(1)
         } else {
-          e.preventDefault()
           this.openDropdown()
         }
         break
       case 'ArrowUp':
-        if (this.isOpen) {
+        if (this.state === 'open') {
           e.preventDefault()
           this.focusNextOption(-1)
         }
@@ -119,36 +199,152 @@ export class Presets {
   }
   
   handleClickOutside(e) {
-    if (this.isOpen && !this.presetPill?.contains(e.target)) {
-      this.closeDropdown()
-    }
+    if (this.state !== 'open') return
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement
+    if (!t) return
+    if (this.presetPill?.contains(t)) return
+    if (this.presetDropdown?.contains(t)) return
+    this.closeDropdown({ reason: 'outside-click', deferFocusToPill: true, suppressToggleMs: 250 })
   }
-  
+
   toggleDropdown() {
-    if (this.isOpen) {
-      this.closeDropdown()
+    if (this.state === 'open') {
+      this.closeDropdown({ reason: 'pill-toggle', deferFocusToPill: false, suppressToggleMs: 0 })
     } else {
       this.openDropdown()
     }
   }
   
   openDropdown() {
-    if (!this.presetPill || !this.presetDropdown) return
-    this.isOpen = true
+    if (!this.presetPill || !this.presetDropdown || !this.app) return
+    if (this.state === 'open') return
+
+    // Mutual exclusivity: opening presets closes settings
+    document.dispatchEvent(new CustomEvent('tb:close-settings'))
+    
+    this.state = 'open'
+    this.app.classList.add('presets-open')
     this.presetPill.classList.add('open')
+    this.presetPill.classList.add('has-opened')
     this.presetPill.setAttribute('aria-expanded', 'true')
     
-    // Focus current option
+    // Focus the selected option
     const currentOption = this.presetDropdown.querySelector('.preset-option.selected')
-    currentOption?.focus()
+    if (currentOption) {
+      setTimeout(() => currentOption.focus(), 10)
+    }
   }
   
-  closeDropdown() {
-    if (!this.presetPill) return
-    this.isOpen = false
+  closeDropdown({ reason = 'unknown', deferFocusToPill = false, suppressToggleMs = 0 } = {}) {
+    if (!this.presetPill || !this.app) return
+    if (this.state === 'closed') return
+
+    this.state = 'closed'
+    this.app.classList.remove('presets-open')
     this.presetPill.classList.remove('open')
     this.presetPill.setAttribute('aria-expanded', 'false')
-    this.presetPill.focus()
+
+    if (suppressToggleMs > 0) {
+      this.suppressToggleUntil = performance.now() + suppressToggleMs
+    }
+
+    // Don't focus synchronously during pointer events; it can contribute to retargeting.
+    const focusPill = () => this.presetPill?.focus({ preventScroll: true })
+    if (deferFocusToPill) {
+      if (typeof queueMicrotask === 'function') queueMicrotask(focusPill)
+      else setTimeout(focusPill, 0)
+    } else {
+      focusPill()
+    }
+
+    // Clear gesture state
+    this.activePointerId = null
+    this.downOption = null
+    this.downWasOnOption = false
+    this.downStartedInPillToggleRegion = false
+  }
+
+  // =====================
+  // Pointer / Capture model
+  // =====================
+  _isOptionEl(target) {
+    const t = target && target.nodeType === 1 ? target : target?.parentElement
+    if (!t || typeof t.closest !== 'function') return null
+    return t.closest('.preset-option')
+  }
+
+  onDocPointerDownCapture(e) {
+    if (this.state !== 'open') return
+
+    const option = this._isOptionEl(e.target)
+    if (option) {
+      this.activePointerId = e.pointerId ?? 'mouse'
+      this.downOption = option
+      this.downWasOnOption = true
+      return
+    }
+
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement
+    const isOnPill = !!(t && this.presetPill && this.presetPill.contains(t))
+    if (isOnPill) {
+      // Let the pill's own pointerup toggle close/open. Closing here causes close→reopen races.
+      return
+    }
+
+    const isOnDropdown = !!(t && this.presetDropdown && this.presetDropdown.contains(t))
+    if (isOnDropdown) {
+      // Clicked the overlay background (not an option) => close immediately.
+      this.closeDropdown({ reason: 'overlay', deferFocusToPill: true, suppressToggleMs: 250 })
+      return
+    }
+
+    // True outside click
+    this.closeDropdown({ reason: 'outside', deferFocusToPill: true, suppressToggleMs: 250 })
+  }
+
+  onDocPointerUpCapture(e) {
+    if (this.state !== 'open') {
+      // If we already closed on pointerdown, swallow stale gesture state.
+      this.activePointerId = null
+      this.downOption = null
+      this.downWasOnOption = false
+      return
+    }
+
+    if (!this.downWasOnOption || !this.downOption) return
+    const pointerId = e.pointerId ?? 'mouse'
+    if (this.activePointerId != null && pointerId !== this.activePointerId) return
+
+    const upOption = this._isOptionEl(e.target)
+    if (upOption && upOption === this.downOption) {
+      const index = parseInt(upOption.dataset.index, 10)
+      if (!Number.isNaN(index)) {
+        this.selectPreset(index)
+      }
+      this.closeDropdown({ reason: 'option-pointer', deferFocusToPill: true, suppressToggleMs: 250 })
+    } else {
+      // Press-drag-release off the option => cancel.
+      this.downOption = null
+      this.downWasOnOption = false
+      this.activePointerId = null
+    }
+  }
+
+  onPillPointerDown(e) {
+    // Pill contains dropdown; only treat as "toggle gesture" if we're not on dropdown/option.
+    const onOption = !!this._isOptionEl(e.target)
+    this.downStartedInPillToggleRegion = !onOption
+  }
+
+  onPillPointerUp(e) {
+    if (!this.downStartedInPillToggleRegion) return
+    if (performance.now() < this.suppressToggleUntil) return
+
+    // When open, pointerdown capture already closes on overlay/outside; this is just the pill toggle.
+    e.preventDefault()
+    e.stopPropagation()
+    this.ignorePillClickUntil = performance.now() + 400
+    this.toggleDropdown()
   }
   
   focusNextOption(direction) {
@@ -190,12 +386,11 @@ export class Presets {
         option.setAttribute('aria-selected', 'true')
       }
       
-      option.addEventListener('click', this.handleOptionClick)
       option.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           this.selectPreset(index)
-          this.closeDropdown()
+          this.closeDropdown({ reason: 'option-key', deferFocusToPill: true, suppressToggleMs: 250 })
         }
       })
       

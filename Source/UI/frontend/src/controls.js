@@ -4,6 +4,303 @@ const DECAY_RANGE = { min: 0, max: 1 }
 const SIZE_RANGE = { min: 0, max: 1 }
 const PUCK_RADIUS = 40
 
+// ===== ELASTIC SLIDER CLASS =====
+class ElasticSlider {
+  constructor(element, options = {}) {
+    this.element = element
+    this.onChange = options.onChange || (() => {})
+    
+    // DOM elements
+    this.track = element.querySelector('.elastic-slider__track')
+    this.fill = element.querySelector('.elastic-slider__fill')
+    
+    // State
+    this.value = parseFloat(element.dataset.value) || 0
+    this.targetValue = this.value
+    this.displayValue = this.value  // Animated display value
+    this.velocity = 0
+    this.isDragging = false
+    this.pointerId = null
+    
+    // Fine control (Shift key modifier)
+    this.fineControlSensitivity = 0.1  // 10% of normal sensitivity when Shift held
+    this.dragStartX = 0
+    this.dragStartValue = 0
+    
+    // Spring physics parameters (refined for smoother feel)
+    this.springStiffness = 120   // Slightly softer
+    this.springDamping = 14      // More damping for elegance
+    this.mass = 1
+    
+    // Animation state
+    this.animationFrame = null
+    this.lastTime = 0
+    
+    // Default value for reset (stored from initial value)
+    this.defaultValue = this.value
+    
+    // Bind methods
+    this.handlePointerDown = this.handlePointerDown.bind(this)
+    this.handlePointerMove = this.handlePointerMove.bind(this)
+    this.handlePointerUp = this.handlePointerUp.bind(this)
+    this.handleKeyDown = this.handleKeyDown.bind(this)
+    this.handleDoubleClick = this.handleDoubleClick.bind(this)
+    this.animate = this.animate.bind(this)
+    
+    // Initialize
+    this.attachEvents()
+    this.updateDisplay(this.value)
+  }
+  
+  attachEvents() {
+    this.element.addEventListener('pointerdown', this.handlePointerDown)
+    this.element.addEventListener('keydown', this.handleKeyDown)
+    this.element.addEventListener('dblclick', this.handleDoubleClick)
+    
+    // Global listeners for drag
+    window.addEventListener('pointerup', this.handlePointerUp)
+    window.addEventListener('pointercancel', this.handlePointerUp)
+  }
+  
+  detachEvents() {
+    this.element.removeEventListener('pointerdown', this.handlePointerDown)
+    this.element.removeEventListener('keydown', this.handleKeyDown)
+    this.element.removeEventListener('dblclick', this.handleDoubleClick)
+    window.removeEventListener('pointerup', this.handlePointerUp)
+    window.removeEventListener('pointercancel', this.handlePointerUp)
+  }
+  
+  // Double-click to reset to default value
+  handleDoubleClick(event) {
+    event.preventDefault()
+    event.stopPropagation()
+    
+    // Reset to default value with animation
+    this.setValue(this.defaultValue, true)
+    
+    // Trigger bounce animation
+    this.fill.classList.add('bounce')
+    setTimeout(() => {
+      this.fill.classList.remove('bounce')
+    }, 500)
+    
+    // Notify listener
+    this.onChange(this.defaultValue)
+  }
+  
+  // Set the default value (can be called externally for preset changes)
+  setDefaultValue(value) {
+    this.defaultValue = clamp(value)
+  }
+  
+  handlePointerDown(event) {
+    event.preventDefault()
+    this.isDragging = true
+    this.pointerId = event.pointerId
+    this.element.classList.add('active')
+    
+    // Remove any ongoing bounce animations
+    this.fill.classList.remove('bounce')
+    
+    // Set pointer capture
+    this.element.setPointerCapture?.(event.pointerId)
+    
+    // Store drag start position for fine control mode
+    this.dragStartX = event.clientX
+    this.dragStartValue = this.value
+    
+    // Get initial position (normal click positioning)
+    const rect = this.track.getBoundingClientRect()
+    const x = event.clientX - rect.left
+    const newValue = clamp(x / rect.width)
+    
+    // Set target immediately (spring will animate)
+    this.targetValue = newValue
+    this.value = newValue
+    
+    // Start animation if not already running
+    if (!this.animationFrame) {
+      this.lastTime = performance.now()
+      this.animationFrame = requestAnimationFrame(this.animate)
+    }
+    
+    // Attach move listener
+    window.addEventListener('pointermove', this.handlePointerMove)
+    
+    // Trigger callback
+    this.onChange(this.value)
+  }
+  
+  handlePointerMove(event) {
+    if (!this.isDragging) return
+    if (this.pointerId !== null && event.pointerId !== this.pointerId) return
+    
+    const rect = this.track.getBoundingClientRect()
+    let newValue
+    
+    // Fine control mode: Shift key reduces sensitivity for precision
+    if (event.shiftKey) {
+      this.element.classList.add('fine-control')
+      
+      // Calculate delta from drag start, apply reduced sensitivity
+      const deltaX = event.clientX - this.dragStartX
+      const normalizedDelta = deltaX / rect.width
+      const fineDelta = normalizedDelta * this.fineControlSensitivity
+      newValue = clamp(this.dragStartValue + fineDelta)
+    } else {
+      this.element.classList.remove('fine-control')
+      
+      // Normal mode: direct positioning
+      const x = event.clientX - rect.left
+      newValue = clamp(x / rect.width)
+      
+      // Update drag start for smooth transition if Shift is pressed mid-drag
+      this.dragStartX = event.clientX
+      this.dragStartValue = newValue
+    }
+    
+    // Update target value - spring physics will smooth it
+    this.targetValue = newValue
+    this.value = newValue
+    
+    // For immediate feedback, directly update display during drag
+    this.updateDisplay(newValue)
+    
+    // Trigger callback
+    this.onChange(this.value)
+  }
+  
+  handlePointerUp(event) {
+    if (!this.isDragging) return
+    if (this.pointerId !== null && event.pointerId !== this.pointerId) return
+    
+    this.isDragging = false
+    this.pointerId = null
+    this.element.classList.remove('active')
+    this.element.classList.remove('fine-control')
+    this.element.releasePointerCapture?.(event.pointerId)
+    
+    // Remove move listener
+    window.removeEventListener('pointermove', this.handlePointerMove)
+    
+    // Trigger elastic settle animation on fill
+    this.fill.classList.add('bounce')
+    
+    // Remove bounce class after animation completes
+    setTimeout(() => {
+      this.fill.classList.remove('bounce')
+    }, 500)
+    
+    // Give the spring some initial velocity for subtle bounce effect
+    const delta = this.targetValue - this.displayValue
+    this.velocity = delta * 3  // Gentler impulse
+  }
+  
+  handleKeyDown(event) {
+    // Shift = fine control (smaller steps), no Shift = normal steps
+    const step = event.shiftKey ? 0.001 : 0.01
+    let newValue = this.value
+    
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowDown':
+        newValue = clamp(this.value - step)
+        event.preventDefault()
+        break
+      case 'ArrowRight':
+      case 'ArrowUp':
+        newValue = clamp(this.value + step)
+        event.preventDefault()
+        break
+      case 'Home':
+        newValue = 0
+        event.preventDefault()
+        break
+      case 'End':
+        newValue = 1
+        event.preventDefault()
+        break
+      default:
+        return
+    }
+    
+    this.setValue(newValue)
+    this.onChange(this.value)
+  }
+  
+  // Spring physics animation
+  animate(currentTime) {
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1)  // Cap delta to prevent instability
+    this.lastTime = currentTime
+    
+    if (!this.isDragging) {
+      // Spring physics: F = -kx - cv
+      const displacement = this.displayValue - this.targetValue
+      const springForce = -this.springStiffness * displacement
+      const dampingForce = -this.springDamping * this.velocity
+      const acceleration = (springForce + dampingForce) / this.mass
+      
+      this.velocity += acceleration * deltaTime
+      this.displayValue += this.velocity * deltaTime
+      
+      // Check if we've settled
+      const isSettled = Math.abs(displacement) < 0.0001 && Math.abs(this.velocity) < 0.001
+      
+      if (isSettled) {
+        this.displayValue = this.targetValue
+        this.velocity = 0
+        this.animationFrame = null
+        this.updateDisplay(this.displayValue)
+        return
+      }
+    } else {
+      // During drag, display follows target closely
+      this.displayValue = this.targetValue
+    }
+    
+    this.updateDisplay(this.displayValue)
+    this.animationFrame = requestAnimationFrame(this.animate)
+  }
+  
+  updateDisplay(value) {
+    const percent = clamp(value) * 100
+    this.fill.style.width = `${percent}%`
+    
+    // Update ARIA
+    this.element.setAttribute('aria-valuenow', value.toFixed(3))
+    this.element.dataset.value = value.toFixed(3)
+  }
+  
+  setValue(newValue, animate = true) {
+    newValue = clamp(newValue)
+    this.value = newValue
+    this.targetValue = newValue
+    
+    if (animate && !this.isDragging) {
+      // Start animation for smooth transition
+      if (!this.animationFrame) {
+        this.lastTime = performance.now()
+        this.animationFrame = requestAnimationFrame(this.animate)
+      }
+    } else {
+      // Immediate update
+      this.displayValue = newValue
+      this.updateDisplay(newValue)
+    }
+  }
+  
+  getValue() {
+    return this.value
+  }
+  
+  destroy() {
+    this.detachEvents()
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame)
+    }
+  }
+}
+
 const toDsp = (normValue) => clamp(normValue) * 2 - 1
 const fromDsp = (dspValue) => clamp((dspValue + 1) / 2)
 
@@ -56,8 +353,9 @@ export class Controls {
     this.readoutSize = document.querySelector('[data-readout="y"]')
     this.freezeBtn = document.querySelector('.btn-freeze')
     this.settingsBtn = document.querySelector('.btn-settings')
-    this.drawer = document.querySelector('.settings-drawer')
-    this.closeDrawerBtn = document.querySelector('.btn-close-drawer')
+    this.settingsView = document.querySelector('.settings-view')
+    this.settingsBody = document.querySelector('.settings-body')
+    this.app = document.getElementById('app')
 
     this.bounds = getBounds(this.surface)
     this.dimensions = null
@@ -77,7 +375,8 @@ export class Controls {
     this.lerpSpeed = 0.12  // Smoothing factor (0-1, lower = smoother)
 
     // Settings drawer state
-    this.sliders = {}
+    this.elasticSliders = {}  // New elastic slider instances
+    this.sliders = {}  // Legacy reference (deprecated)
     this.pupils = {}
     this.pupilEnabled = {}
     this.paramMetadata = {
@@ -97,6 +396,16 @@ export class Controls {
     this.handlePointerUp = this.handlePointerUp.bind(this)
     this.applyInertiaStep = this.applyInertiaStep.bind(this)
     this.animatePuck = this.animatePuck.bind(this)
+
+    // Settings overlay robustness (match presets dropdown behavior)
+    this.settingsState = this.settingsView?.classList.contains('open') ? 'open' : 'closed' // 'open' | 'closed'
+    this.settingsSuppressToggleUntil = 0
+    this.settingsIgnoreClickUntil = 0
+
+    this.onSettingsBtnPointerUp = this.onSettingsBtnPointerUp.bind(this)
+    this.onDocPointerDownCaptureForSettings = this.onDocPointerDownCaptureForSettings.bind(this)
+    this.onDocKeyDownCaptureForSettings = this.onDocKeyDownCaptureForSettings.bind(this)
+    this.onCloseSettingsEvent = this.onCloseSettingsEvent.bind(this)
 
     this.initDrawerControls()
     this.attachEvents()
@@ -134,27 +443,31 @@ export class Controls {
   }
 
   initDrawerControls() {
-    // Initialize all slider and pupil references
+    // Initialize all elastic slider and pupil references
     const paramIds = ['decay', 'erPreDelay', 'size', 'tone', 'drift', 'ghost', 'duck', 'mix', 'output']
     
     paramIds.forEach(id => {
       const row = document.querySelector(`.control-row[data-param="${id}"]`)
       if (!row) return
 
-      const slider = row.querySelector('.param-slider')
-      const valueDisplay = row.querySelector('.param-value')
+      const sliderElement = row.querySelector('.elastic-slider')
       const pupil = row.querySelector('.pupil-toggle')
-      const baseTrack = row.querySelector('.slider-track-base')
-      const macroTrack = row.querySelector('.slider-track-macro')
 
-      if (slider && valueDisplay && pupil && baseTrack && macroTrack) {
-        this.sliders[id] = { 
-          slider, 
-          valueDisplay, 
-          baseTrack, 
-          macroTrack,
-          currentValue: parseFloat(slider.value)
-        }
+      if (sliderElement && pupil) {
+        const metadata = this.paramMetadata[id]
+        
+        // Create elastic slider instance
+        const elasticSlider = new ElasticSlider(sliderElement, {
+          onChange: (normValue) => {
+            // Convert normalized (0-1) to actual parameter value
+            const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
+            
+            // Send to backend
+            sendParam(id, actualValue)
+          }
+        })
+        
+        this.elasticSliders[id] = elasticSlider
         this.pupils[id] = pupil
         this.pupilEnabled[id] = pupil.getAttribute('aria-pressed') === 'true'
       }
@@ -162,6 +475,8 @@ export class Controls {
   }
 
   attachEvents() {
+    const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window
+
     if (this.puck) {
       this.puck.addEventListener('pointerdown', this.handlePointerDown)
       this.puck.addEventListener('dblclick', (event) => {
@@ -185,39 +500,26 @@ export class Controls {
       })
     }
 
-    // Drawer toggle
-    if (this.settingsBtn && this.drawer) {
-      this.settingsBtn.addEventListener('click', () => {
-        this.drawer.classList.toggle('open')
+    // Settings view toggle (same button opens and closes)
+    if (this.settingsBtn && this.settingsView) {
+      // Prefer pointerup toggle (prevents click-order quirks in DAW WebViews)
+      if (supportsPointer) {
+        this.settingsBtn.addEventListener('pointerup', this.onSettingsBtnPointerUp)
+      } else {
+        this.settingsBtn.addEventListener('mouseup', this.onSettingsBtnPointerUp)
+      }
+
+      // Keep click for accessibility, but ignore right after pointer toggles.
+      this.settingsBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (performance.now() < this.settingsIgnoreClickUntil) return
+        this.toggleSettingsView()
       })
     }
 
-    if (this.closeDrawerBtn && this.drawer) {
-      this.closeDrawerBtn.addEventListener('click', () => {
-        this.drawer.classList.remove('open')
-      })
-    }
-
-    // Attach slider listeners
-    Object.keys(this.sliders).forEach(id => {
-      const { slider, valueDisplay, baseTrack } = this.sliders[id]
-      
-      slider.addEventListener('input', (e) => {
-        const normValue = parseFloat(e.target.value)
-        this.sliders[id].currentValue = normValue
-        
-        // Update base track width
-        baseTrack.style.width = `${normValue * 100}%`
-        
-        // Update value display
-        const metadata = this.paramMetadata[id]
-        const actualValue = metadata.min + normValue * (metadata.max - metadata.min)
-        valueDisplay.textContent = metadata.format(actualValue)
-        
-        // Send to backend (backend expects actual parameter value, not normalized)
-        sendParam(id, actualValue)
-      })
-    })
+    // Elastic sliders are self-contained - they handle their own events
+    // via the ElasticSlider class initialized in initDrawerControls()
 
     // Attach pupil toggle listeners
     Object.keys(this.pupils).forEach(id => {
@@ -231,6 +533,59 @@ export class Controls {
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
     window.addEventListener('resize', () => this.refreshBounds())
+
+    // Deterministic close for settings (capture, before click is dispatched)
+    if (supportsPointer) {
+      document.addEventListener('pointerdown', this.onDocPointerDownCaptureForSettings, { capture: true })
+    } else {
+      document.addEventListener('mousedown', this.onDocPointerDownCaptureForSettings, { capture: true })
+    }
+    document.addEventListener('keydown', this.onDocKeyDownCaptureForSettings, { capture: true })
+
+    // Allow other modules (e.g. presets) to close settings deterministically
+    document.addEventListener('tb:close-settings', this.onCloseSettingsEvent)
+  }
+
+  onCloseSettingsEvent() {
+    this.toggleSettingsView(false, { reason: 'external', deferFocusToBtn: true, suppressToggleMs: 250 })
+  }
+
+  onSettingsBtnPointerUp(e) {
+    // Avoid double-toggles from trailing click
+    e.preventDefault()
+    e.stopPropagation()
+    if (performance.now() < this.settingsSuppressToggleUntil) return
+    this.settingsIgnoreClickUntil = performance.now() + 400
+    this.toggleSettingsView(undefined, { reason: 'button', deferFocusToBtn: false })
+  }
+
+  onDocPointerDownCaptureForSettings(e) {
+    if (this.settingsState !== 'open') return
+
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement
+    if (!t) return
+
+    // Ignore clicks on the settings button (let button toggle own the gesture)
+    if (this.settingsBtn && this.settingsBtn.contains(t)) return
+
+    // Ignore clicks inside the drawer content
+    if (this.settingsBody && this.settingsBody.contains(t)) return
+
+    // If the click landed on the settings overlay (backdrop), close immediately.
+    if (this.settingsView && this.settingsView.contains(t)) {
+      e.preventDefault()
+      this.settingsIgnoreClickUntil = performance.now() + 400
+      this.toggleSettingsView(false, { reason: 'backdrop', deferFocusToBtn: true, suppressToggleMs: 250 })
+    }
+  }
+
+  onDocKeyDownCaptureForSettings(e) {
+    if (this.settingsState !== 'open') return
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    e.stopPropagation()
+    this.settingsIgnoreClickUntil = performance.now() + 400
+    this.toggleSettingsView(false, { reason: 'escape', deferFocusToBtn: true, suppressToggleMs: 250 })
   }
 
   refreshBounds() {
@@ -423,6 +778,61 @@ export class Controls {
     this.state.freeze = !!isActive
   }
 
+  /**
+   * Toggle the full-screen settings view
+   * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
+   */
+  toggleSettingsView(shouldOpen, { reason = 'unknown', deferFocusToBtn = false, suppressToggleMs = 0 } = {}) {
+    if (!this.settingsView || !this.app) return
+    
+    const isCurrentlyOpen = this.settingsView.classList.contains('open')
+    const nextState = shouldOpen !== undefined ? shouldOpen : !isCurrentlyOpen
+    
+    if (nextState) {
+      if (performance.now() < this.settingsSuppressToggleUntil) return
+
+      // Mutual exclusivity: opening settings closes presets
+      document.dispatchEvent(new CustomEvent('tb:close-presets'))
+
+      // Opening settings view
+      this.settingsView.classList.add('open')
+      this.settingsView.setAttribute('aria-hidden', 'false')
+      this.app.classList.add('settings-open')
+      this.settingsBtn?.setAttribute('aria-expanded', 'true')
+      this.settingsBtn?.setAttribute('aria-label', 'Close settings')
+      this.settingsState = 'open'
+
+      // Focus first control (deferred to avoid retargeting in WebViews)
+      const focusFirst = () => {
+        const first = this.settingsView.querySelector('.elastic-slider, .pupil-toggle, button, [tabindex]')
+        first?.focus?.({ preventScroll: true })
+      }
+      if (typeof queueMicrotask === 'function') queueMicrotask(focusFirst)
+      else setTimeout(focusFirst, 0)
+    } else {
+      // Closing settings view
+      this.settingsView.classList.remove('open')
+      this.settingsView.setAttribute('aria-hidden', 'true')
+      this.app.classList.remove('settings-open')
+      this.settingsBtn?.setAttribute('aria-expanded', 'false')
+      this.settingsBtn?.setAttribute('aria-label', 'Open settings')
+      this.settingsState = 'closed'
+
+      if (suppressToggleMs > 0) {
+        this.settingsSuppressToggleUntil = performance.now() + suppressToggleMs
+      }
+
+      // Return focus to settings button (optionally deferred)
+      const focusBtn = () => this.settingsBtn?.focus?.({ preventScroll: true })
+      if (deferFocusToBtn) {
+        if (typeof queueMicrotask === 'function') queueMicrotask(focusBtn)
+        else setTimeout(focusBtn, 0)
+      } else {
+        focusBtn()
+      }
+    }
+  }
+
   update(state = {}) {
     let nextX = this.state.puckX
     let nextY = this.state.puckY
@@ -468,8 +878,8 @@ export class Controls {
       'output': 'output'
     }
 
-    // Update drawer parameters from state
-    Object.keys(this.sliders).forEach(id => {
+    // Update elastic slider parameters from state
+    Object.keys(this.elasticSliders).forEach(id => {
       const stateKey = stateMapping[id] || id
       
       if (typeof state[stateKey] !== 'undefined') {
@@ -479,16 +889,11 @@ export class Controls {
         // Convert actual value to normalized (0-1)
         const normValue = clamp((actualValue - metadata.min) / (metadata.max - metadata.min))
         
-        const slider = this.sliders[id]
-        slider.currentValue = normValue
-        slider.slider.value = normValue
-        slider.baseTrack.style.width = `${normValue * 100}%`
-        slider.valueDisplay.textContent = metadata.format(actualValue)
-      }
-
-      // Update macro layer if there's a macro offset in state
-      if (typeof state[`${id}Macro`] !== 'undefined') {
-        this.updateMacroLayer(id, state[`${id}Macro`])
+        // Update elastic slider with animation
+        const elasticSlider = this.elasticSliders[id]
+        if (elasticSlider && !elasticSlider.isDragging) {
+          elasticSlider.setValue(normValue, true)
+        }
       }
     })
 
@@ -499,15 +904,6 @@ export class Controls {
         if (this.pupilEnabled[id] !== shouldBeEnabled) {
           this.pupilEnabled[id] = shouldBeEnabled
           this.pupils[id].setAttribute('aria-pressed', String(shouldBeEnabled))
-          
-          const macroTrack = this.sliders[id]?.macroTrack
-          if (macroTrack) {
-            if (shouldBeEnabled) {
-              macroTrack.classList.remove('hidden')
-            } else {
-              macroTrack.classList.add('hidden')
-            }
-          }
         }
       }
     })
@@ -606,39 +1002,9 @@ export class Controls {
     pupil.classList.add('pulse')
     setTimeout(() => pupil.classList.remove('pulse'), 300)
 
-    // Update macro track visibility
-    const macroTrack = this.sliders[id]?.macroTrack
-    if (macroTrack) {
-      if (isEnabled) {
-        macroTrack.classList.remove('hidden')
-      } else {
-        macroTrack.classList.add('hidden')
-      }
-    }
-
     // Send to backend (for future preset storage)
     if (typeof window.setParameterEnabled === 'function') {
       window.setParameterEnabled(id, isEnabled)
-    }
-  }
-
-  updateMacroLayer(id, macroOffset) {
-    if (!this.sliders[id]) return
-    
-    const { macroTrack, currentValue } = this.sliders[id]
-    const isEnabled = this.pupilEnabled[id]
-
-    if (isEnabled && macroOffset !== 0) {
-      // Calculate effective value with macro offset
-      const effectiveValue = clamp(currentValue + macroOffset)
-      macroTrack.style.width = `${effectiveValue * 100}%`
-      macroTrack.classList.remove('hidden')
-    } else {
-      // Just show base value
-      macroTrack.style.width = `${currentValue * 100}%`
-      if (!isEnabled) {
-        macroTrack.classList.add('hidden')
-      }
     }
   }
 
