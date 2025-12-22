@@ -52,6 +52,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> ghostSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> freezeAmountSmoother; // Smooth freeze transitions
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> preDelaySmoother;     // Smooth pre-delay changes
     
     // 8 delay lines for the FDN
     std::array<std::vector<float>, kNumLines> delayLines;

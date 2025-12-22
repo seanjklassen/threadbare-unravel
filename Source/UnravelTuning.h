@@ -100,7 +100,7 @@ struct Ghost {
 
     // Ghost gain bounds relative to FDN input (dB).
     static constexpr float kMinGainDb = -24.0f; // Louder minimum
-    static constexpr float kMaxGainDb = -3.0f;  // Very loud for massive presence
+    static constexpr float kMaxGainDb = -6.0f;  // Reduced from -3dB to prevent clipping with many grains
     
     // === REVERSE MEMORY PLAYBACK ===
     // Probability of reverse grains at ghost=1.0 (squared scaling).
@@ -162,7 +162,7 @@ struct Freeze {
     
     // === LEGACY SETTINGS (kept for compatibility) ===
     static constexpr float kFrozenFeedback = 1.0f;
-    static constexpr float kFrozenMakeupGain = 1.001f;
+    static constexpr float kFrozenMakeupGain = 1.0f;  // Unity to prevent energy accumulation
     static constexpr float kRampTimeSec = 0.05f;
     static constexpr float kFreezeDriftMultiplier = 2.5f;
     static constexpr float kFreezeMinDriftSamples = 25.0f;
