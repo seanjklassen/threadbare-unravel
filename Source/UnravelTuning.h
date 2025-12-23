@@ -85,7 +85,9 @@ struct Modulation {
 
 struct Ghost {
     // How long the ghost remembers (seconds).
-    static constexpr float kHistorySeconds = 0.75f;
+    // Extended to 1.2s for deeper memory recall while keeping lookback at 750ms.
+    // This provides 450ms safety margin for extreme grain speeds/positions.
+    static constexpr float kHistorySeconds = 1.2f;
 
     // Grain durations (seconds). Wider range for more texture variety.
     static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
