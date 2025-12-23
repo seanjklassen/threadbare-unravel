@@ -84,11 +84,15 @@ export class Presets {
       // Fallback preset list for testing/development
       this.presetList = [
         'unravel',
-        'shimmer',
-        'cathedral',
-        'whisper',
-        'drift',
-        'ghost'
+        'close',
+        'tether',
+        'pulse',
+        'bloom',
+        'mist',
+        'rewind',
+        'halation',
+        'stasis',
+        'shiver'
       ]
       this.populatePresets()
     }
