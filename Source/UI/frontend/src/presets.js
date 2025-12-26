@@ -383,6 +383,7 @@ export class Presets {
       option.setAttribute('role', 'option')
       option.setAttribute('tabindex', '-1')
       option.dataset.index = index
+      option.style.setProperty('--i', String(index))
       option.textContent = name
       
       if (index === this.currentPresetIndex) {

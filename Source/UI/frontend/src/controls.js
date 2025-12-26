@@ -377,8 +377,6 @@ export class Controls {
     // Settings drawer state
     this.elasticSliders = {}  // New elastic slider instances
     this.sliders = {}  // Legacy reference (deprecated)
-    this.pupils = {}
-    this.pupilEnabled = {}
     this.paramMetadata = {
       decay: { min: 0.4, max: 50.0, format: this.formatDecay.bind(this) },
       erPreDelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
@@ -443,7 +441,7 @@ export class Controls {
   }
 
   initDrawerControls() {
-    // Initialize all elastic slider and pupil references
+    // Initialize all elastic slider references
     const paramIds = ['decay', 'erPreDelay', 'size', 'tone', 'drift', 'ghost', 'duck', 'mix', 'output']
     
     paramIds.forEach(id => {
@@ -451,9 +449,7 @@ export class Controls {
       if (!row) return
 
       const sliderElement = row.querySelector('.elastic-slider')
-      const pupil = row.querySelector('.pupil-toggle')
-
-      if (sliderElement && pupil) {
+      if (sliderElement) {
         const metadata = this.paramMetadata[id]
         
         // Create elastic slider instance
@@ -468,8 +464,6 @@ export class Controls {
         })
         
         this.elasticSliders[id] = elasticSlider
-        this.pupils[id] = pupil
-        this.pupilEnabled[id] = pupil.getAttribute('aria-pressed') === 'true'
       }
     })
   }
@@ -520,15 +514,6 @@ export class Controls {
 
     // Elastic sliders are self-contained - they handle their own events
     // via the ElasticSlider class initialized in initDrawerControls()
-
-    // Attach pupil toggle listeners
-    Object.keys(this.pupils).forEach(id => {
-      const pupil = this.pupils[id]
-      
-      pupil.addEventListener('click', () => {
-        this.togglePupil(id)
-      })
-    })
 
     window.addEventListener('pointerup', this.handlePointerUp)
     window.addEventListener('pointercancel', this.handlePointerUp)
@@ -804,7 +789,7 @@ export class Controls {
 
       // Focus first control (deferred to avoid retargeting in WebViews)
       const focusFirst = () => {
-        const first = this.settingsView.querySelector('.elastic-slider, .pupil-toggle, button, [tabindex]')
+        const first = this.settingsView.querySelector('.elastic-slider, button, [tabindex]')
         first?.focus?.({ preventScroll: true })
       }
       if (typeof queueMicrotask === 'function') queueMicrotask(focusFirst)
@@ -897,17 +882,6 @@ export class Controls {
       }
     })
 
-    // Update pupil states from state
-    Object.keys(this.pupils).forEach(id => {
-      if (typeof state[`${id}Enabled`] !== 'undefined') {
-        const shouldBeEnabled = Boolean(state[`${id}Enabled`])
-        if (this.pupilEnabled[id] !== shouldBeEnabled) {
-          this.pupilEnabled[id] = shouldBeEnabled
-          this.pupils[id].setAttribute('aria-pressed', String(shouldBeEnabled))
-        }
-      }
-    })
-
     this.renderReadoutsFromNorm(nextX, nextY)
   }
 
@@ -984,28 +958,6 @@ export class Controls {
     this.renderReadoutsFromNorm(nextX, nextY)
 
     this.inertiaFrame = requestAnimationFrame(this.applyInertiaStep)
-  }
-
-  // === PUPIL TOGGLE LOGIC ===
-  togglePupil(id) {
-    const pupil = this.pupils[id]
-    if (!pupil) return
-
-    // Toggle enabled state
-    this.pupilEnabled[id] = !this.pupilEnabled[id]
-    const isEnabled = this.pupilEnabled[id]
-
-    // Update ARIA state
-    pupil.setAttribute('aria-pressed', String(isEnabled))
-
-    // Add pulse animation
-    pupil.classList.add('pulse')
-    setTimeout(() => pupil.classList.remove('pulse'), 300)
-
-    // Send to backend (for future preset storage)
-    if (typeof window.setParameterEnabled === 'function') {
-      window.setParameterEnabled(id, isEnabled)
-    }
   }
 
   // === VALUE FORMATTING HELPERS ===
