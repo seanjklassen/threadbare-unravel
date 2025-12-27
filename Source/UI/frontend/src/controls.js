@@ -882,7 +882,11 @@ export class Controls {
       }
     })
 
-    this.renderReadoutsFromNorm(nextX, nextY)
+    // Only update readouts if not currently dragging
+    // (During drag, readouts are updated directly by drag handlers)
+    if (!this.isDragging) {
+      this.renderReadoutsFromNorm(nextX, nextY)
+    }
   }
 
   refresh() {
@@ -896,7 +900,8 @@ export class Controls {
       this.readoutDecay.textContent = to11Scale(clampedX, SIZE_RANGE)
     }
     if (this.readoutSize) {
-      this.readoutSize.textContent = to11Scale(clampedY, DECAY_RANGE)
+      // Invert Y so top = 11.00, bottom = 0.00
+      this.readoutSize.textContent = to11Scale(1 - clampedY, DECAY_RANGE)
     }
   }
 

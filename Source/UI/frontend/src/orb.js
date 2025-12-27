@@ -9,7 +9,7 @@ const CONFIG = {
 
   // Colors
   lineColor: '#FFB59F',
-  trailColor: { r: 9, g: 9, b: 9 },
+  trailColor: { r: 255, g: 181, b: 159 },
 
   // Stroke
   stroke: {
