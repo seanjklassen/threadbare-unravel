@@ -180,7 +180,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 32px;
+  padding: 24px 16px;
   pointer-events: none;
   z-index: 400; /* Ensure top bar stays above canvas but below dropdown */
 }
@@ -193,8 +193,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 32px;
-  padding-left: 44px;
+  padding: 24px 24px 24px 32px;
   pointer-events: none;
   z-index: 200;
   background: var(--bg);
@@ -574,30 +573,48 @@ body {
 .settings-body {
   flex: 1;
   overflow-y: auto;
-  padding: 0 48px 48px;
+  padding: 0 32px 32px;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
-/* Settings Title - positioned lower in the view, with cascade */
+/* Settings Title */
 .settings-title {
+  position: absolute;
+  top: 24px;   /* matches .tb-top-bar padding-top */
+  left: 24px;  /* matches .tb-top-bar padding-left */
+
+  height: 48px; /* matches .preset-pill height */
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0 60px 0 0; /* matches .preset-pill padding */
+  border-radius: 21px;    /* matches .preset-pill radius */
+
   font-size: 21px;
   font-weight: 400;
   letter-spacing: -0.01em;
   text-transform: lowercase;
   color: var(--text);
   margin: 0;
-  padding-top: 160px;
-  padding-bottom: 48px;
+  flex-shrink: 0;
   
   /* Always visible (settings view handles its own show/hide) */
   opacity: 1;
 }
 
+/* Clear old padding hack (title is now absolutely positioned) */
+#settings-title { padding-bottom: 0; padding-left: 8px; }
+
 /* Settings Content - holds the control rows */
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: 36px;  /* Generous spacing between controls */
+  gap: 12px;
+  flex-shrink: 0;
+  padding-top: 72px;
 }
 
 /* ===== SETTINGS OPEN CASCADE (compositor-only) ===== */
@@ -637,16 +654,43 @@ body {
 /* Control rows (no cascade animation - DAW-friendly) */
 .control-row {
   display: grid;
-  grid-template-columns: 90px 1fr;  /* label | elastic slider */
-  gap: 16px;
+  grid-template-columns: 18px 1fr;
+  row-gap: 24px;
+  column-gap: 24px;
   align-items: center;
 }
 
 .param-label {
-  font-size: 14px;
-  color: var(--text);
-  text-transform: lowercase;
-  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.param-label svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+/* Hover effect for visual feedback */
+.control-row:hover .param-label svg {
+  opacity: 1;
+}
+
+/* Screen reader only - keeps text accessible but visually hidden */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ===== ELASTIC SLIDER ===== */
@@ -699,7 +743,7 @@ body {
   top: 0;
   height: 100%;
   min-width: 12px;  /* Minimum width so it's always visible with rounded ends */
-  background: var(--accent);
+  background: var(--text);
   border-radius: 12px;
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: left center;
@@ -712,6 +756,7 @@ body {
 
 /* Scale fill bar on hover - subtle and refined */
 .elastic-slider:hover .elastic-slider__fill {
+  background: #FFB59F;
   transform: scaleY(1.12);
 }
 
@@ -731,53 +776,6 @@ body {
 .slider-track-macro,
 .param-slider {
   display: none;
-}
-
-@media (max-width: 768px) {
-  .tb-top-bar {
-    padding: 16px;
-  }
-
-  .tb-bottom-bar {
-    padding: 16px;
-    padding-left: 28px;
-  }
-
-  .tb-bottom-bar .readouts {
-    font-size: 12px;
-  }
-
-  .settings-header {
-    padding: 16px 24px;
-  }
-
-  .settings-body {
-    padding: 0 30px 48px;
-  }
-
-  .settings-title {
-    padding-top: 29px;
-    padding-bottom: 32px;
-  }
-
-  .settings-content {
-    gap: 24px;
-  }
-
-  .control-row {
-    grid-template-columns: 70px 1fr;
-    gap: 12px;
-    align-items: center;
-  }
-
-  .elastic-slider {
-    height: 36px;
-  }
-
-  .elastic-slider__thumb {
-    width: 14px;
-    height: 14px;
-  }
 }
 
 /* ===== REDUCED MOTION ===== */
