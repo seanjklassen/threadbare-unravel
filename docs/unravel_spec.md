@@ -70,10 +70,11 @@ Everything should lean toward:
     * Right: freeze icon to the left of the sliders icon → activates 2.3.3 Freeze mode.
 
 ### 2.2 Look & Feel
-* **Background:** `#26332A`
-* **Text and icons:** `#EFDFBD`
-* **Unravel accent:** `#AFD3E4` (puck center, sliders, active states, Freeze on background).
-* **Lissajous Orb:** `#E1A6A6` line with soft anti-aliasing; faint “ghost” trail when Ghost > 0.
+* **Background:** `#31312b` (warm gray)
+* **Text and icons:** `#C8C7B8` (soft beige)
+* **Unravel accent:** `#E0E993` (lime/chartreuse, used for active states, Freeze on background).
+* **Puck pupil:** `#C5CC7A` (olive green)
+* **Lissajous Orb:** `#FFB59F` (peach/salmon) line with soft anti-aliasing; faint "ghost" trail when Ghost > 0.
 
 ### 2.3 Controls
 
@@ -105,8 +106,8 @@ Everything should lean toward:
 
 #### 2.3.4 Advanced Drawer
 **Contains:**
-1.  Decay (0.4–20 s).
-2.  Pre-delay (0–150 ms).
+1.  Decay (0.4–50 s).
+2.  Pre-delay (0–100 ms).
 3.  Size (0.5–2.0).
 4.  Tone (Dark ↔ Bright, −1..1).
 5.  Drift (0–1).
@@ -118,9 +119,8 @@ Everything should lean toward:
 **Defaults:** “great ambient guitar pad” right out of the box.
 
 **Drawer Visual Language:**
-* Each parameter uses a single horizontal slider with no numeric readout. The track shows two layers:
+* Each parameter uses a single horizontal slider with no numeric readout. The track shows:
     * A neutral base layer that reflects the stored parameter value.
-    * A secondary gold layer that indicates the puck-applied macro offset (if any) so users can see the effective value at a glance.
 * A small “pupil” indicator to the right of each slider lights up (soft green) whenever the puck is contributing a macro value to that parameter.
 * Sliders must remain keyboard accessible; optionally show a transient tooltip while dragging for precise values. Provide a taller invisible hit area (e.g. 3–4× the visible track height) so the control is easy to grab with mouse or touch.
 
@@ -511,8 +511,8 @@ struct Decay {
 
 struct Damping {
     // Tone control → low-pass cutoff (Hz).
-    // These set the darkest, neutral, and brightest edges.
-    static constexpr float kLowCutoffHz  = 1500.0f;
+    // Lower cutoff for more aggressive darkening (underwater effect).
+    static constexpr float kLowCutoffHz  = 400.0f;
     static constexpr float kMidCutoffHz  = 8000.0f;
     static constexpr float kHighCutoffHz = 16000.0f;
 
@@ -533,7 +533,8 @@ struct Modulation {
 
 struct Ghost {
     // How long the ghost remembers (seconds).
-    static constexpr float kHistorySeconds = 0.75f;
+    // Extended to 1.2s for deeper memory recall while keeping lookback at 750ms.
+    static constexpr float kHistorySeconds = 1.2f;
 
     // Grain durations (seconds). Wider range for more texture variety.
     static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
@@ -548,12 +549,22 @@ struct Ghost {
 
     // Ghost gain bounds relative to FDN input (dB).
     static constexpr float kMinGainDb = -24.0f; // Louder minimum
-    static constexpr float kMaxGainDb = -3.0f;  // Very loud for massive presence
+    static constexpr float kMaxGainDb = -6.0f;  // Reduced from -3dB to prevent clipping
 };
 
 struct Freeze {
-    // Feedback gain while frozen (slightly <1.0 to avoid blow-up).
-    static constexpr float kFrozenFeedback = 0.999f;
+    // Multi-head loop buffer for smooth frozen pads
+    static constexpr float kLoopBufferSeconds = 5.0f;
+    static constexpr int kNumReadHeads = 6;
+    static constexpr float kTransitionSeconds = 0.3f;
+    
+    // Per-head pitch modulation for subtle variation
+    static constexpr float kHeadDetuneCents = 6.0f;
+    static constexpr float kHeadModRateMin = 0.03f;
+    static constexpr float kHeadModRateMax = 0.12f;
+    
+    // Feedback gain while frozen.
+    static constexpr float kFrozenFeedback = 1.0f;
 
     // Ramp time when entering/exiting freeze (seconds).
     static constexpr float kRampTimeSec = 0.05f;
@@ -612,179 +623,147 @@ Each preset is designed to showcase specific features while hitting the emotiona
 
 ---
 
-#### 2. **fading polaroid**
-*Showcases Body (left puck) + strong early reflections for intimate presence.*
-- **Puck:** X=-0.7, Y=0.0
-- **Decay:** 2.8s
-- **Pre-delay:** 15ms
-- **Size:** 0.8
-- **Tone:** -0.3 (darker, warmer)
-- **Drift:** 0.2
-- **Ghost:** 0.25
-- **Duck:** 0.3
-- **Blend:** 40%
+#### 2. **close**
+*Intimate, close-mic'd feel with minimal space.*
+- **Puck:** X=-0.9, Y=-0.4
+- **Decay:** 1.1s
+- **Pre-delay:** 8ms
+- **Size:** 0.75
+- **Tone:** -0.45 (dark, warm)
+- **Drift:** 0.10
+- **Ghost:** 0.05
+- **Duck:** 0.15
+- **Blend:** 28%
 - **Output:** 0dB
-- **Use case:** Fingerpicked guitar, intimate vocals. Strong body, short tail, stays close. Ducking keeps it articulate.
+- **Use case:** Tight, controlled ambience for vocals or acoustic instruments. Minimal ghost, stays very close.
 
 ---
 
-#### 3. **dissolving into mist**
-*Showcases Air (right puck) + diffuse wash for weightless ambience.*
-- **Puck:** X=+0.8, Y=0.6
-- **Decay:** 8.5s
-- **Pre-delay:** 60ms
-- **Size:** 1.6
-- **Tone:** +0.1 (slightly bright)
-- **Drift:** 0.5
-- **Ghost:** 0.6 (distant memories)
-- **Duck:** 0.0
+#### 3. **tether**
+*Body-heavy with ducking—reverb follows the playing.*
+- **Puck:** X=-0.7, Y=0.0
+- **Decay:** 2.4s
+- **Pre-delay:** 18ms
+- **Size:** 0.95
+- **Tone:** -0.35 (warm)
+- **Drift:** 0.20
+- **Ghost:** 0.15
+- **Duck:** 0.45 (moderate ducking)
+- **Blend:** 35%
+- **Output:** 0dB
+- **Use case:** Fingerpicked guitar, intimate vocals. Strong body, ducking keeps it articulate and responsive.
+
+---
+
+#### 4. **pulse**
+*Rhythmic ducking for strummed parts and synths.*
+- **Puck:** X=0.25, Y=0.10
+- **Decay:** 4.5s
+- **Pre-delay:** 12ms
+- **Size:** 1.15
+- **Tone:** -0.15
+- **Drift:** 0.35
+- **Ghost:** 0.25
+- **Duck:** 0.85 (heavy ducking)
 - **Blend:** 55%
 - **Output:** -1dB
-- **Use case:** Pads, synth washes, ambient guitars. Minimal body, maximum diffusion. Ghost pulls from distant memories.
+- **Use case:** Strummed guitars, percussion, rhythmic synths. Reverb pumps with the input, blooms in gaps.
 
 ---
 
-#### 4. **rewind the moment**
-*Heavy Ghost + recent memory (left puck X) for granular, tape-like smear.*
-- **Puck:** X=-0.5, Y=0.7
-- **Decay:** 5.0s
-- **Pre-delay:** 10ms
-- **Size:** 1.2
-- **Tone:** -0.4 (dark, lo-fi)
-- **Drift:** 0.6
-- **Ghost:** 0.85 (high = more reverse grains)
-- **Duck:** 0.0
-- **Blend:** 50%
-- **Output:** 0dB
-- **Use case:** Showcases Ghost engine at high levels with reverse memory playback. Grains replay recent moments (puck left). Great for textural guitar loops.
-
----
-
-#### 5. **echoes you can't quite place**
-*Heavy Ghost + distant memory (right puck X) for ethereal, detuned fragments.*
-- **Puck:** X=+0.6, Y=0.8
-- **Decay:** 7.0s
+#### 5. **bloom**
+*Slowly expanding wash with long decay and ghost presence.*
+- **Puck:** X=0.40, Y=0.80
+- **Decay:** 10.0s
 - **Pre-delay:** 40ms
-- **Size:** 1.5
-- **Tone:** +0.2 (airy)
-- **Drift:** 0.7
-- **Ghost:** 0.9 (max ghost, pulls from 750ms back)
+- **Size:** 1.7
+- **Tone:** +0.05 (neutral-bright)
+- **Drift:** 0.50
+- **Ghost:** 0.55
 - **Duck:** 0.0
 - **Blend:** 60%
 - **Output:** -2dB
-- **Use case:** Maximum ghost character pulling from distant memory buffer. Shimmer grains likely. Perfect for "what is that sound?" moments on synths/vocals.
+- **Use case:** Pads, synth washes, ambient guitars. Long tail with ghost memory for evolving textures.
 
 ---
 
-#### 6. **held breath**
-*Optimized for Freeze mode—long decay, high feedback, ready to lock.*
-- **Puck:** X=0.0, Y=0.5
-- **Decay:** 12.0s
-- **Pre-delay:** 20ms
-- **Size:** 1.4
-- **Tone:** -0.1 (neutral-dark)
-- **Drift:** 0.4
-- **Ghost:** 0.5
-- **Duck:** 0.0
-- **Blend:** 50%
-- **Output:** 0dB
-- **Use case:** Hit Freeze to lock the tail into infinite sustain. Ghost engine will replay frozen spawn points with variation. Perfect for creating instant pads underneath guitars.
-
----
-
-#### 7. **sunfaded memory**
-*Soft, nostalgic, bittersweet. Maximum emotional target alignment.*
-- **Puck:** X=-0.2, Y=0.3
-- **Decay:** 4.5s
-- **Pre-delay:** 30ms
-- **Size:** 1.0
-- **Tone:** -0.5 (warm, rolled-off highs)
-- **Drift:** 0.3
-- **Ghost:** 0.35
-- **Duck:** 0.2
-- **Blend:** 42%
-- **Output:** 0dB
-- **Use case:** Indie vocals, clean guitars. Soft, warm, never harsh. Feels like a memory fading at the edges.
-
----
-
-#### 8. **shimmer and sway**
-*Longer tail + higher drift for evolving, modulated spaces.*
-- **Puck:** X=+0.3, Y=0.7
-- **Decay:** 9.0s
-- **Pre-delay:** 45ms
-- **Size:** 1.7
-- **Tone:** +0.3 (bright, shimmery)
-- **Drift:** 0.8 (high modulation)
-- **Ghost:** 0.7
-- **Duck:** 0.0
-- **Blend:** 58%
-- **Output:** -1dB
-- **Use case:** Synth pads, ambient guitar swells. Emphasizes modulation and shimmer grains. Tail constantly shifts and breathes.
-
----
-
-#### 9. **between the notes**
-*Short, tight, heavily ducked—reverb only in the gaps.*
-- **Puck:** X=-0.4, Y=-0.3
-- **Decay:** 1.8s
-- **Pre-delay:** 5ms
-- **Size:** 0.7
-- **Tone:** -0.2
-- **Drift:** 0.15
-- **Ghost:** 0.2
-- **Duck:** 0.75 (heavy ducking)
-- **Blend:** 38%
-- **Output:** +1dB
-- **Use case:** Strummed guitars, percussion, rhythmic synths. Reverb blooms between notes but stays out of the way during playing.
-
----
-
-#### 10. **weightless ascent**
-*Maximum Y (distant) + long decay for hovering, infinite spaces.*
-- **Puck:** X=0.1, Y=+0.9
-- **Decay:** 15.0s (×3 from puck Y)
-- **Pre-delay:** 80ms
-- **Size:** 1.8
-- **Tone:** 0.0 (neutral)
-- **Drift:** 0.6
-- **Ghost:** 0.8
+#### 6. **mist**
+*Maximum Air—distant, diffuse, ethereal.*
+- **Puck:** X=0.90, Y=0.60
+- **Decay:** 14.0s
+- **Pre-delay:** 70ms
+- **Size:** 1.85
+- **Tone:** -0.60 (dark, foggy)
+- **Drift:** 0.60
+- **Ghost:** 0.70 (distant memories)
 - **Duck:** 0.0
 - **Blend:** 65%
-- **Output:** -2dB
-- **Use case:** Ambient washes, drones, "lost in space" textures. Puck at top = maximum decay multiplier, maximum drift/ghost bonus. Feels like floating.
+- **Output:** -3dB
+- **Use case:** Ambient drones, pads. Maximum diffusion, ghost pulls from distant memory buffer. Enveloping fog.
 
 ---
 
-#### 11. **twilight reversal**
-*Showcases reverse grain feature—memories played backwards.*
-- **Puck:** X=0.0, Y=0.75
+#### 7. **rewind**
+*Heavy Ghost with reverse grain character.*
+- **Puck:** X=0.10, Y=0.75
 - **Decay:** 6.0s
-- **Pre-delay:** 35ms
-- **Size:** 1.3
-- **Tone:** -0.3
-- **Drift:** 0.5
-- **Ghost:** 0.9 (high ghost = higher reverse probability)
+- **Pre-delay:** 20ms
+- **Size:** 1.25
+- **Tone:** -0.35 (warm, lo-fi)
+- **Drift:** 0.55
+- **Ghost:** 0.95 (max ghost = high reverse probability)
 - **Duck:** 0.0
-- **Blend:** 52%
-- **Output:** 0dB
-- **Use case:** At ghost > 0.7, reverse grains become prominent. Showcases the "rewinding memory" effect. Surreal on vocals and sustained synths.
+- **Blend:** 50%
+- **Output:** -1dB
+- **Use case:** Showcases Ghost engine at high levels with reverse memory playback. Surreal on vocals and sustained sounds.
 
 ---
 
-#### 12. **whispering distance**
-*Vocal-optimized: clear, soft, never muddy.*
-- **Puck:** X=-0.3, Y=0.2
-- **Decay:** 3.0s
-- **Pre-delay:** 40ms
-- **Size:** 1.0
-- **Tone:** -0.1
-- **Drift:** 0.25
-- **Ghost:** 0.3
-- **Duck:** 0.4
-- **Blend:** 35%
-- **Output:** 0dB
-- **Use case:** Indie/ambient vocals. Pre-delay separates dry from wet. Slight body bias, gentle ghost, ducking prevents wash-out. Stays intimate but spacious.
+#### 8. **halation**
+*Bright, shimmery, lens-flare character.*
+- **Puck:** X=1.0, Y=0.90
+- **Decay:** 9.0s
+- **Pre-delay:** 45ms
+- **Size:** 1.9
+- **Tone:** +0.60 (bright, shimmery)
+- **Drift:** 0.45
+- **Ghost:** 0.65
+- **Duck:** 0.0
+- **Blend:** 55%
+- **Output:** -2dB
+- **Use case:** Synth pads, ambient guitar swells. Emphasizes shimmer grains and bright tail. Feels like light overexposure.
+
+---
+
+#### 9. **stasis**
+*Freeze-optimized—long decay, max ghost, ready to lock.*
+- **Puck:** X=0.0, Y=0.30
+- **Decay:** 20.0s
+- **Pre-delay:** 0ms
+- **Size:** 1.5
+- **Tone:** -0.40 (warm)
+- **Drift:** 0.60
+- **Ghost:** 1.0 (max ghost)
+- **Duck:** 0.0
+- **Blend:** 75%
+- **Output:** -3dB
+- **Use case:** Hit Freeze to lock the tail into infinite sustain. Perfect for creating instant drone pads.
+
+---
+
+#### 10. **shiver**
+*Extreme settings—maximum everything for otherworldly textures.*
+- **Puck:** X=1.0, Y=1.0
+- **Decay:** 30.0s
+- **Pre-delay:** 0ms
+- **Size:** 2.0 (max)
+- **Tone:** +0.45 (bright)
+- **Drift:** 0.80 (high modulation)
+- **Ghost:** 1.0 (max ghost)
+- **Duck:** 0.0
+- **Blend:** 80%
+- **Output:** -4dB
+- **Use case:** Extreme ambient textures. Full distant, full ghost, max size. For when you want to dissolve completely.
 
 ---
 
@@ -796,16 +775,16 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - Avoid gear references or technical jargon.
 
 **Coverage Goals:**
-- ✅ Body vs Air extremes (#2, #3)
-- ✅ Near vs Distant extremes (#9, #10)
-- ✅ Ghost engine showcase (recent: #4, distant: #5, reverse: #11)
-- ✅ Freeze-ready (#6)
-- ✅ Ducking showcase (#2, #9, #12)
-- ✅ Drift/modulation showcase (#8)
-- ✅ Source-specific (guitar: #2, vocals: #12, synths: #3, #8)
-- ✅ Emotional targets (#7 hits all four)
+- ✅ Body vs Air extremes (#2 close, #6 mist)
+- ✅ Near vs Distant extremes (#2 close, #10 shiver)
+- ✅ Ghost engine showcase (#7 rewind, #9 stasis)
+- ✅ Freeze-ready (#9 stasis)
+- ✅ Ducking showcase (#3 tether, #4 pulse)
+- ✅ Drift/modulation showcase (#8 halation, #10 shiver)
+- ✅ Source-specific (guitar: #3, vocals: #2, synths: #5, #8)
+- ✅ Emotional targets (#1 unravel hits the balanced sweet spot)
 
 **Implementation Notes:**
-- Store presets as JSON or XML in plugin state.
-- Preset dropdown in UI (section 2.1) loads these on selection.
-- Init state = "Fading Polaroid" (#1)
+- Presets defined in `UnravelProcessor::initialiseFactoryPresets()`.
+- Preset dropdown in UI loads these on selection.
+- Init state = "unravel" (#1)
