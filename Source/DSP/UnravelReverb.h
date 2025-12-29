@@ -58,6 +58,8 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> erGainSmoother;       // ER gain from puckX
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> fdnSendSmoother;      // FDN send from puckX
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> puckXBrightnessSmoother; // Freeze loop filter coef
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> detuneRatioSmoother;  // Freeze loop pitch mod
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> duckAmountSmoother;   // Ducking depth
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>, kNumLines> lineFeedbackSmoothers; // Per-line feedback
     
     // 8 delay lines for the FDN

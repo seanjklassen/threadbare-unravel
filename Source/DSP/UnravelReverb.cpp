@@ -111,6 +111,14 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     puckXBrightnessSmoother.reset(sampleRate, smoothingTimeSec);
     puckXBrightnessSmoother.setCurrentAndTargetValue(0.275f); // Center value
     
+    // Detune ratio smoother - eliminates stepping in freeze loop pitch modulation
+    detuneRatioSmoother.reset(sampleRate, smoothingTimeSec);
+    detuneRatioSmoother.setCurrentAndTargetValue(1.0f); // Default: no detune
+    
+    // Duck amount smoother - eliminates stepping when duck parameter changes
+    duckAmountSmoother.reset(sampleRate, smoothingTimeSec);
+    duckAmountSmoother.setCurrentAndTargetValue(0.0f);
+    
     // Per-line feedback smoothers - eliminates stepping when decay/puckY changes
     for (std::size_t i = 0; i < kNumLines; ++i)
     {
@@ -230,6 +238,8 @@ void UnravelReverb::reset() noexcept
     erGainSmoother.setCurrentAndTargetValue(erGainSmoother.getTargetValue());
     fdnSendSmoother.setCurrentAndTargetValue(fdnSendSmoother.getTargetValue());
     puckXBrightnessSmoother.setCurrentAndTargetValue(puckXBrightnessSmoother.getTargetValue());
+    detuneRatioSmoother.setCurrentAndTargetValue(detuneRatioSmoother.getTargetValue());
+    duckAmountSmoother.setCurrentAndTargetValue(duckAmountSmoother.getTargetValue());
     for (std::size_t i = 0; i < kNumLines; ++i)
         lineFeedbackSmoothers[i].setCurrentAndTargetValue(lineFeedbackSmoothers[i].getTargetValue());
     
@@ -739,8 +749,10 @@ void UnravelReverb::process(std::span<float> left,
     }
     
     // Pre-calculate parameter-dependent values once per block
-    const float inputGain = state.freeze ? 0.0f : 1.0f; // Input gain = 0 when frozen
-    const float duckAmount = juce::jlimit(0.0f, 1.0f, state.duck); // Ducking amount
+    // NOTE: inputGain is now derived from freezeInjectionGate per-sample (eliminates hard switch stepping)
+    
+    // Duck amount - now smoothed to prevent zipper noise when adjusting duck parameter
+    duckAmountSmoother.setTargetValue(juce::jlimit(0.0f, 1.0f, state.duck));
     
     // ═════════════════════════════════════════════════════════════════════════
     // PRE-CALCULATE PER-BLOCK VALUES (Performance optimization)
@@ -756,9 +768,11 @@ void UnravelReverb::process(std::span<float> left,
         lineFeedbackSmoothers[i].setTargetValue(targetFeedback);
     }
     
-    // Pre-calculate freeze detuning (avoids pow() per sample)
+    // Pre-calculate freeze detuning target (avoids pow() per sample)
+    // NOW SMOOTHED: Prevents stepping when puckY changes
     const float puckYWobble = juce::jmap(puckY, -1.0f, 1.0f, 1.0f, 15.0f);
-    const float detuneRatio = std::pow(2.0f, puckYWobble / 1200.0f);
+    const float targetDetuneRatio = std::pow(2.0f, puckYWobble / 1200.0f);
+    detuneRatioSmoother.setTargetValue(targetDetuneRatio);
     
     // Pre-calculate constants
     constexpr float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
@@ -801,6 +815,12 @@ void UnravelReverb::process(std::span<float> left,
         const float currentErGain = erGainSmoother.getNextValue();
         const float currentFdnSend = fdnSendSmoother.getNextValue();
         const float currentPuckXBrightness = puckXBrightnessSmoother.getNextValue();
+        const float currentDetuneRatio = detuneRatioSmoother.getNextValue();
+        const float currentDuckAmount = duckAmountSmoother.getNextValue();
+        
+        // Calculate freeze injection gate per-sample (used for input gating)
+        // This replaces the block-rate inputGain variable to eliminate stepping
+        const float freezeInjectionGate = 1.0f - currentFreezeAmount;
         
         // Calculate drift amount using smoothed PuckX macro depth (20-80 samples)
         // Smoothing prevents clicks when moving puck horizontally!
@@ -880,8 +900,9 @@ void UnravelReverb::process(std::span<float> left,
                 erWriteHead = 0;
         }
         
-        // B. Record input into Ghost History (with input gain applied)
-        const float gainedInput = monoInput * inputGain;
+        // B. Record input into Ghost History (with smoothed freeze gate applied)
+        // Uses freezeInjectionGate (derived from smoothed freeze amount) instead of block-rate inputGain
+        const float gainedInput = monoInput * freezeInjectionGate;
         
         if (!ghostHistory.empty())
         {
@@ -921,7 +942,7 @@ void UnravelReverb::process(std::span<float> left,
         // Disable ER and ghost injection during freeze to prevent energy drain when input stops
         // NOTE: Ghost output is already gain-scaled per grain at spawn time (based on ghostAmount)
         //       so we don't multiply by currentGhost again here (was causing double-gain/clipping)
-        const float freezeInjectionGate = 1.0f - currentFreezeAmount;
+        // NOTE: freezeInjectionGate is now calculated earlier (uses smoothed freeze amount)
         const float fdnInputRaw = freezeInjectionGate * (
             (gainedInput * currentFdnSend) +  // Now smoothed per-sample
             ghostMono + 
@@ -1122,9 +1143,9 @@ void UnravelReverb::process(std::span<float> left,
                     head.modPhase += head.modInc;
                     if (head.modPhase >= kTwoPi) head.modPhase -= kTwoPi;
                     
-                    // Calculate speed with subtle pitch modulation
+                    // Calculate speed with subtle pitch modulation (now uses smoothed detune ratio)
                     const float modAmount = fastSin(head.modPhase);
-                    head.speedMod = 1.0f + (detuneRatio - 1.0f) * modAmount;
+                    head.speedMod = 1.0f + (currentDetuneRatio - 1.0f) * modAmount;
                     
                     // Wrap position
                     float pos = head.readPos;
@@ -1222,8 +1243,8 @@ void UnravelReverb::process(std::span<float> left,
         const float duckCoeff = (duckTarget > duckingEnvelope) ? duckAttackCoeff : duckReleaseCoeff;
         duckingEnvelope = duckTarget + duckCoeff * (duckingEnvelope - duckTarget);
         
-        // Apply ducking to wet signal (duckAmount pre-calculated per block)
-        float duckGain = 1.0f - (duckAmount * duckingEnvelope);
+        // Apply ducking to wet signal (now uses smoothed duckAmount per-sample)
+        float duckGain = 1.0f - (currentDuckAmount * duckingEnvelope);
         duckGain = juce::jlimit(threadbare::tuning::Ducking::kMinWetFactor, 1.0f, duckGain);
         
         wetL *= duckGain;
