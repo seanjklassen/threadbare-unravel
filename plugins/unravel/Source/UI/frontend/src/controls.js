@@ -1,3 +1,5 @@
+import { PARAMS } from './generated/params.js'
+
 const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max)
 
 const DECAY_RANGE = { min: 0, max: 1 }
@@ -377,16 +379,18 @@ export class Controls {
     // Settings drawer state
     this.elasticSliders = {}  // New elastic slider instances
     this.sliders = {}  // Legacy reference (deprecated)
+    
+    // Build paramMetadata from generated PARAMS with formatting functions
     this.paramMetadata = {
-      decay: { min: 0.4, max: 50.0, format: this.formatDecay.bind(this) },
-      erPreDelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
-      size: { min: 0.5, max: 2.0, format: this.formatSize.bind(this) },
-      tone: { min: -1.0, max: 1.0, format: this.formatTone.bind(this) },
-      drift: { min: 0, max: 1, format: this.formatPercent.bind(this) },
-      ghost: { min: 0, max: 1, format: this.formatPercent.bind(this) },
-      duck: { min: 0, max: 1, format: this.formatPercent.bind(this) },
-      mix: { min: 0, max: 1, format: this.formatPercent.bind(this) },
-      output: { min: -24, max: 12, format: this.formatDb.bind(this) }
+      decay: { ...PARAMS.decay, format: this.formatDecay.bind(this) },
+      erPreDelay: { ...PARAMS.erPreDelay, format: this.formatPredelay.bind(this) },
+      size: { ...PARAMS.size, format: this.formatSize.bind(this) },
+      tone: { ...PARAMS.tone, format: this.formatTone.bind(this) },
+      drift: { ...PARAMS.drift, format: this.formatPercent.bind(this) },
+      ghost: { ...PARAMS.ghost, format: this.formatPercent.bind(this) },
+      duck: { ...PARAMS.duck, format: this.formatPercent.bind(this) },
+      mix: { ...PARAMS.mix, format: this.formatPercent.bind(this) },
+      output: { ...PARAMS.output, format: this.formatDb.bind(this) }
     }
 
     this.handlePointerDown = this.handlePointerDown.bind(this)

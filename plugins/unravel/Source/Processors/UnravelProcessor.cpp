@@ -1,6 +1,7 @@
 #include "UnravelProcessor.h"
 #include "UI/UnravelEditor.h"
 #include "../UnravelTuning.h"
+#include "../UnravelGeneratedParams.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <memory>
@@ -240,33 +241,8 @@ void UnravelProcessor::pushCurrentState() noexcept
 
 juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createParameterLayout()
 {
-    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("puckX", "Puck X", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("puckY", "Puck Y", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("size", "Size", 
-                                                                  threadbare::tuning::Fdn::kSizeMin, 
-                                                                  threadbare::tuning::Fdn::kSizeMax, 
-                                                                  1.0f));
-
-    auto decayRange = juce::NormalisableRange<float>(threadbare::tuning::Decay::kT60Min, 
-                                                      threadbare::tuning::Decay::kT60Max);
-    decayRange.setSkewForCentre(2.0f);
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("decay", "Decay", decayRange, 5.0f));
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("tone", "Tone", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("drift", "Drift", 0.0f, 1.0f, 0.2f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("ghost", "Ghost", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("duck", "Duck", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("erPreDelay", "ER Pre-Delay", 
-                                                                  0.0f, 
-                                                                  threadbare::tuning::EarlyReflections::kMaxPreDelayMs, 
-                                                                  0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("freeze", "Freeze", false));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", -24.0f, 12.0f, 0.0f));
-
-    return { params.begin(), params.end() };
+    // Use generated parameter layout from params.json
+    return threadbare::unravel::UnravelGeneratedParams::createParameterLayout();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
