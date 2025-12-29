@@ -54,6 +54,12 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> freezeAmountSmoother; // Smooth freeze transitions
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> preDelaySmoother;     // Smooth pre-delay changes
     
+    // Additional smoothers to eliminate block-rate stepping artifacts
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> erGainSmoother;       // ER gain from puckX
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> fdnSendSmoother;      // FDN send from puckX
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> puckXBrightnessSmoother; // Freeze loop filter coef
+    std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>, kNumLines> lineFeedbackSmoothers; // Per-line feedback
+    
     // 8 delay lines for the FDN
     std::array<std::vector<float>, kNumLines> delayLines;
     std::array<int, kNumLines> writeIndices;
