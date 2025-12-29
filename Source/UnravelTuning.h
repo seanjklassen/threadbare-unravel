@@ -206,7 +206,7 @@ struct Safety {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DEBUG SWITCHES: Toggle subsystems to isolate crackling sources
+// DEBUG SWITCHES: Toggle subsystems to isolate crackling/distortion sources
 // Set to false to disable each subsystem during debugging
 // ═══════════════════════════════════════════════════════════════════════════
 struct Debug {
@@ -216,15 +216,35 @@ struct Debug {
     // (2) Delay modulation (LFO-based read position modulation)
     static constexpr bool kEnableDelayModulation = true;
     
-    // (3) Nonlinear feedback limiting (tanh saturation)
+    // (3) Nonlinear feedback limiting (tanh saturation in FDN write path)
     static constexpr bool kEnableFeedbackNonlinearity = true;
     
     // (4) EQ / Ducking (tone filters, ducking envelope)
     static constexpr bool kEnableEqAndDuck = true;
     
     // (5) Ghost engine (granular clouds)
-    // TEST 2: Disabled to check for granular artifacts
-    static constexpr bool kEnableGhostEngine = false;
+    static constexpr bool kEnableGhostEngine = true;
+    
+    // === DISTORTION DEBUGGING (loud transient aliasing) ===
+    
+    // (6) FDN input soft limiting (tanh before feedback loop)
+    static constexpr bool kEnableFdnInputLimiting = true;
+    
+    // (7) Final output soft clipping (tanh on mix output)
+    static constexpr bool kEnableOutputClipping = true;
+    
+    // (8) Shimmer grains only (disable normal/reverse grains for isolation)
+    static constexpr bool kShimmerGrainsOnly = false;
+    
+    // (9) Limit max active grains (0 = unlimited, 1-8 for testing)
+    static constexpr int kMaxActiveGrains = 0; // 0 = use full pool
+    
+    // (10) Ghost injection gain reduction in dB (0 = normal, -6 or -12 for testing)
+    static constexpr float kGhostInjectionGainDb = 0.0f;
+    
+    // (11) Internal headroom boost (scales down before nonlinearities, up after)
+    // Higher values = more headroom, less saturation/aliasing
+    static constexpr float kInternalHeadroomDb = 6.0f; // 6dB extra headroom
 };
 
 } // namespace threadbare::tuning

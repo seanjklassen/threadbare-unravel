@@ -359,6 +359,19 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
 
+    // Debug: enforce max active grain limit (0 = unlimited)
+    if constexpr (threadbare::tuning::Debug::kMaxActiveGrains > 0)
+    {
+        int activeCount = 0;
+        for (const auto& grain : grainPool)
+        {
+            if (grain.active)
+                ++activeCount;
+        }
+        if (activeCount >= threadbare::tuning::Debug::kMaxActiveGrains)
+            return; // Cap reached
+    }
+
     // Find an inactive grain
     Grain* inactiveGrain = nullptr;
     for (auto& grain : grainPool)
@@ -436,24 +449,34 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
     inactiveGrain->windowPhase = 0.0f;
 
     // Pitch/speed: mostly subtle detune, with prominent shimmer
-    float detuneSemi = juce::jmap(ghostRng.nextFloat(),
-                                  0.0f,
-                                  1.0f,
-                                  -threadbare::tuning::Ghost::kDetuneSemi,
-                                   threadbare::tuning::Ghost::kDetuneSemi);
+    float detuneSemi = 0.0f;
     
-    // === SPECTRAL FREEZE SHIMMER ENHANCEMENT (Phase 4) ===
-    // Increase shimmer probability when frozen to add variation from limited source material
-    const float shimmerProb = ghostFreezeActive 
-                              ? threadbare::tuning::Ghost::kFreezeShimmerProbability 
-                              : threadbare::tuning::Ghost::kShimmerProbability;
-    
-    if (ghostRng.nextFloat() < shimmerProb)
-        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Octave up
+    // Debug: shimmer-only mode forces all grains to octave-up for isolation testing
+    if constexpr (threadbare::tuning::Debug::kShimmerGrainsOnly)
+    {
+        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Always octave up
+    }
+    else
+    {
+        detuneSemi = juce::jmap(ghostRng.nextFloat(),
+                                0.0f,
+                                1.0f,
+                                -threadbare::tuning::Ghost::kDetuneSemi,
+                                 threadbare::tuning::Ghost::kDetuneSemi);
+        
+        // === SPECTRAL FREEZE SHIMMER ENHANCEMENT (Phase 4) ===
+        // Increase shimmer probability when frozen to add variation from limited source material
+        const float shimmerProb = ghostFreezeActive 
+                                  ? threadbare::tuning::Ghost::kFreezeShimmerProbability 
+                                  : threadbare::tuning::Ghost::kShimmerProbability;
+        
+        if (ghostRng.nextFloat() < shimmerProb)
+            detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Octave up
 
-    // 10% chance of octave down for thickness
-    else if (ghostRng.nextFloat() < 0.1f)
-        detuneSemi = -12.0f;
+        // 10% chance of octave down for thickness
+        else if (ghostRng.nextFloat() < 0.1f)
+            detuneSemi = -12.0f;
+    }
     
     // Calculate speed ratio from detune
     float speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
@@ -980,7 +1003,11 @@ void UnravelReverb::process(std::span<float> left,
         // Scale down ghost sum based on expected density to prevent input clipping
         // Multiple overlapping grains can create massive peaks before hitting the FDN
         constexpr float kGhostHeadroom = 0.5f;
-        const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR) * kGhostHeadroom;
+        
+        // Apply debug ghost injection gain (0dB normal, -6 or -12 for testing)
+        const float ghostDebugGain = juce::Decibels::decibelsToGain(
+            threadbare::tuning::Debug::kGhostInjectionGainDb);
+        const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR) * kGhostHeadroom * ghostDebugGain;
         const float erMono = 0.5f * (erOutputL + erOutputR);
         
         // Disable ER and ghost injection during freeze to prevent energy drain when input stops
@@ -995,7 +1022,19 @@ void UnravelReverb::process(std::span<float> left,
         
         // Soft-limit FDN input to prevent feedback runaway with high ghost + high decay
         // This catches peaks before they enter the recirculating feedback loop
-        const float fdnInput = std::tanh(fdnInputRaw);
+        // Can be disabled via debug switch to test for aliasing
+        float fdnInput = fdnInputRaw;
+        if constexpr (threadbare::tuning::Debug::kEnableFdnInputLimiting)
+        {
+            // Apply internal headroom: scale down before tanh, scale up after
+            // This reduces saturation/aliasing on loud transients
+            // 6dB headroom = 0.5x before tanh, 2x after
+            const float headroomGain = juce::Decibels::decibelsToGain(
+                -threadbare::tuning::Debug::kInternalHeadroomDb);
+            const float headroomCompensation = juce::Decibels::decibelsToGain(
+                threadbare::tuning::Debug::kInternalHeadroomDb);
+            fdnInput = std::tanh(fdnInputRaw * headroomGain) * headroomCompensation;
+        }
         
         // Step A: Read from all 8 delay lines with modulation
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
@@ -1080,10 +1119,18 @@ void UnravelReverb::process(std::span<float> left,
             }
             
             // Soft limit - tanh provides smooth saturation (can be disabled via debug switch)
+            // With internal headroom to reduce aliasing on loud transients
             float limitedSample = processedSample;
             if constexpr (threadbare::tuning::Debug::kEnableFeedbackNonlinearity)
             {
-                limitedSample = std::tanh(processedSample * 0.8f) * 1.25f;
+                // Apply headroom: scale down before tanh (reduces harmonic generation),
+                // then scale back up. Old: 0.8f drive, 1.25f makeup
+                // With 6dB headroom: effectively 0.4f drive (less saturation)
+                const float headroomGain = juce::Decibels::decibelsToGain(
+                    -threadbare::tuning::Debug::kInternalHeadroomDb);
+                const float driveWithHeadroom = 0.8f * headroomGain;
+                const float makeupWithHeadroom = 1.25f / headroomGain;
+                limitedSample = std::tanh(processedSample * driveWithHeadroom) * makeupWithHeadroom;
             }
             
             delayLines[i][static_cast<std::size_t>(writeIndices[i])] = limitedSample;
@@ -1303,8 +1350,19 @@ void UnravelReverb::process(std::span<float> left,
         float outR = inputR * dry + wetR * currentMix + erOutputR;
         
         // Final safety: soft clip to catch any summation peaks
-        float clippedL = std::tanh(outL);
-        float clippedR = std::tanh(outR);
+        // Can be disabled via debug switch to test for aliasing
+        float clippedL = outL;
+        float clippedR = outR;
+        if constexpr (threadbare::tuning::Debug::kEnableOutputClipping)
+        {
+            // Apply headroom before final clipping to reduce aliasing
+            const float headroomGain = juce::Decibels::decibelsToGain(
+                -threadbare::tuning::Debug::kInternalHeadroomDb);
+            const float headroomCompensation = juce::Decibels::decibelsToGain(
+                threadbare::tuning::Debug::kInternalHeadroomDb);
+            clippedL = std::tanh(outL * headroomGain) * headroomCompensation;
+            clippedR = std::tanh(outR * headroomGain) * headroomCompensation;
+        }
         
         // Remove any DC offset from final output (very gentle 1-pole HPF @ ~3Hz)
         // This prevents slow DC drift without affecting audio frequency content
