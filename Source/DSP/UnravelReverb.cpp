@@ -102,20 +102,24 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     
     // === ANTI-CRACKLING SMOOTHERS ===
     // These eliminate block-rate stepping that causes periodic HF artifacts
+    // Initialize to EXACT values for default puck position (0.0, 0.0) to prevent startup ramps
+    
+    // puckX = 0.0 → normX = 0.5 → erGain = 0.5, fdnSend = 0.6
     erGainSmoother.reset(sampleRate, smoothingTimeSec);
-    erGainSmoother.setCurrentAndTargetValue(0.5f);
+    erGainSmoother.setCurrentAndTargetValue(0.5f); // 1.0 - 0.5 = 0.5
     
     fdnSendSmoother.reset(sampleRate, smoothingTimeSec);
-    fdnSendSmoother.setCurrentAndTargetValue(0.6f);
+    fdnSendSmoother.setCurrentAndTargetValue(0.6f); // 0.2 + (0.8 * 0.5) = 0.6
     
+    // puckX = 0.0 → puckXBrightness = jmap(0.0, -1, 1, 0.05, 0.5) = 0.275
     puckXBrightnessSmoother.reset(sampleRate, smoothingTimeSec);
-    puckXBrightnessSmoother.setCurrentAndTargetValue(0.275f); // Center value
+    puckXBrightnessSmoother.setCurrentAndTargetValue(0.275f);
     
-    // Detune ratio smoother - eliminates stepping in freeze loop pitch modulation
+    // puckY = 0.0 → puckYWobble = jmap(0.0, -1, 1, 1, 15) = 8 → detuneRatio = pow(2, 8/1200) ≈ 1.0046
     detuneRatioSmoother.reset(sampleRate, smoothingTimeSec);
-    detuneRatioSmoother.setCurrentAndTargetValue(1.0f); // Default: no detune
+    detuneRatioSmoother.setCurrentAndTargetValue(std::pow(2.0f, 8.0f / 1200.0f)); // ~1.0046
     
-    // Duck amount smoother - eliminates stepping when duck parameter changes
+    // duck defaults to 0.0 in UnravelState
     duckAmountSmoother.reset(sampleRate, smoothingTimeSec);
     duckAmountSmoother.setCurrentAndTargetValue(0.0f);
     
@@ -853,12 +857,13 @@ void UnravelReverb::process(std::span<float> left,
             erBufferL[static_cast<std::size_t>(erWriteHead)] = inputL;
             erBufferR[static_cast<std::size_t>(erWriteHead)] = inputR;
             
+            // ALWAYS advance pre-delay smoother to keep it in sync (even when ERs are silent)
+            // This prevents sudden jumps when ERs become audible again
+            const float preDelaySamples = preDelaySmoother.getNextValue() * 0.001f * static_cast<float>(sampleRate);
+            
             // Only process taps when ER gain is significant (optimization)
             if (currentErGain > 0.001f)
             {
-                // Get smoothed pre-delay for this sample (prevents clicks when changing pre-delay)
-                const float preDelaySamples = preDelaySmoother.getNextValue() * 0.001f * static_cast<float>(sampleRate);
-                
                 // Sum all taps for left and right channels with interpolated reads
                 for (std::size_t tap = 0; tap < threadbare::tuning::EarlyReflections::kNumTaps; ++tap)
                 {
@@ -912,21 +917,25 @@ void UnravelReverb::process(std::span<float> left,
                 ghostWriteHead = 0;
         }
         
-        // C. Spawn grains at high density for smooth overlap
-        ++samplesSinceLastSpawn;
-        if (samplesSinceLastSpawn >= grainSpawnInterval && currentGhost > 0.01f)
-        {
-            // Probabilistic spawning based on ghost amount
-            if (ghostRng.nextFloat() < (currentGhost * 0.9f)) // Higher ghost = more grains
-                trySpawnGrain(currentGhost, puckX);
-            
-            samplesSinceLastSpawn = 0;
-        }
-        
-        // D. Process Ghost Engine (stereo output)
+        // C. Spawn grains at high density for smooth overlap (can be disabled via debug switch)
         float ghostOutputL = 0.0f;
         float ghostOutputR = 0.0f;
-        processGhostEngine(currentGhost, ghostOutputL, ghostOutputR);
+        
+        if constexpr (threadbare::tuning::Debug::kEnableGhostEngine)
+        {
+            ++samplesSinceLastSpawn;
+            if (samplesSinceLastSpawn >= grainSpawnInterval && currentGhost > 0.01f)
+            {
+                // Probabilistic spawning based on ghost amount
+                if (ghostRng.nextFloat() < (currentGhost * 0.9f)) // Higher ghost = more grains
+                    trySpawnGrain(currentGhost, puckX);
+                
+                samplesSinceLastSpawn = 0;
+            }
+            
+            // D. Process Ghost Engine (stereo output)
+            processGhostEngine(currentGhost, ghostOutputL, ghostOutputR);
+        }
         
         // E. Mix dry + ghost + ERs into FDN input with proximity control
         //    fdnSend: 0.2 (Left/Physical) → 1.0 (Right/Ethereal)
@@ -957,25 +966,18 @@ void UnravelReverb::process(std::span<float> left,
         // TAPE WARP MAGIC: currentSize changes smoothly per-sample, causing read head to slide
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
-            // During freeze: apply tiny per-sample LFO rate perturbation to prevent sync artifacts
-            // This replaces the problematic block-rate perturbation that caused crackling
-            float currentLfoInc = lfoInc[i];
-            if (currentFreezeAmount > 0.01f)
-            {
-                // Tiny per-sample jitter (0.01% vs the old 0.1% per-block)
-                // Accumulates organically without block-rate stepping
-                const float microPerturbation = 1.0f + (ghostRng.nextFloat() - 0.5f) * 0.0002f;
-                currentLfoInc *= microPerturbation;
-            }
-            
-            // Update LFO phase with safe wrapping (prevents accumulation drift)
-            // Using "if" instead of "while" - faster and safer for small increments
-            lfoPhases[i] += currentLfoInc;
+            // Update LFO phase - no random jitter, just the base rate
+            // Random jitter was causing subtle grain artifacts in the tail
+            lfoPhases[i] += lfoInc[i];
             if (lfoPhases[i] >= kTwoPi) lfoPhases[i] -= kTwoPi;
             if (lfoPhases[i] < 0.0f) lfoPhases[i] += kTwoPi;
             
-            // Calculate modulation offset
-            const float modOffset = fastSin(lfoPhases[i]) * driftAmount;
+            // Calculate modulation offset (can be disabled via debug switch)
+            float modOffset = 0.0f;
+            if constexpr (threadbare::tuning::Debug::kEnableDelayModulation)
+            {
+                modOffset = fastSin(lfoPhases[i]) * driftAmount;
+            }
             
             // Calculate read position with smoothly changing size (creates pitch shift!)
             // As currentSize changes, this read position slides, creating Doppler effect
@@ -1017,27 +1019,37 @@ void UnravelReverb::process(std::span<float> left,
         // Using coefficient interpolation for smooth freeze transitions (no output blending)
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
-            // Interpolate LPF coefficient (toneCoef → kFreezeLpfCoef as freeze increases)
-            const float lpCoef = toneCoef + currentFreezeAmount * 
-                (threadbare::tuning::Freeze::kFreezeLpfCoef - toneCoef);
+            float processedSample = nextInputs[i];
             
-            // HPF contribution fades to zero during freeze (warm bass-heavy pad)
-            const float hpMix = 1.0f - currentFreezeAmount;
+            // EQ/Tone filtering (can be disabled via debug switch)
+            if constexpr (threadbare::tuning::Debug::kEnableEqAndDuck)
+            {
+                // Interpolate LPF coefficient (toneCoef → kFreezeLpfCoef as freeze increases)
+                const float lpCoef = toneCoef + currentFreezeAmount * 
+                    (threadbare::tuning::Freeze::kFreezeLpfCoef - toneCoef);
+                
+                // HPF contribution fades to zero during freeze (warm bass-heavy pad)
+                const float hpMix = 1.0f - currentFreezeAmount;
+                
+                // Single filter path with interpolated behavior
+                lpState[i] += (nextInputs[i] - lpState[i]) * lpCoef;
+                constexpr float hpCoef = 0.006f;
+                hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
+                
+                // NOTE: Anti-denormal additive noise REMOVED from feedback path
+                // ScopedNoDenormals at function start + FTZ/DAZ handles denormals
+                // Adding noise here caused audible grain in reverb tail
+                
+                // HPF removed during freeze, present during normal operation
+                processedSample = lpState[i] - (hpState[i] * hpMix);
+            }
             
-            // Single filter path with interpolated behavior
-            lpState[i] += (nextInputs[i] - lpState[i]) * lpCoef;
-            constexpr float hpCoef = 0.006f;
-            hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
-            
-            // Anti-denormal flushing to prevent CPU spikes when decaying to silence
-            lpState[i] += threadbare::tuning::Safety::kAntiDenormal;
-            hpState[i] += threadbare::tuning::Safety::kAntiDenormal;
-            
-            // HPF removed during freeze, present during normal operation
-            const float processedSample = lpState[i] - (hpState[i] * hpMix);
-            
-            // Soft limit - tanh provides smooth saturation that sounds natural
-            const float limitedSample = std::tanh(processedSample * 0.8f) * 1.25f;
+            // Soft limit - tanh provides smooth saturation (can be disabled via debug switch)
+            float limitedSample = processedSample;
+            if constexpr (threadbare::tuning::Debug::kEnableFeedbackNonlinearity)
+            {
+                limitedSample = std::tanh(processedSample * 0.8f) * 1.25f;
+            }
             
             delayLines[i][static_cast<std::size_t>(writeIndices[i])] = limitedSample;
             
@@ -1174,9 +1186,7 @@ void UnravelReverb::process(std::span<float> left,
                 freezeLpfStateL += (loopL - freezeLpfStateL) * currentPuckXBrightness;
                 freezeLpfStateR += (loopR - freezeLpfStateR) * currentPuckXBrightness;
                 
-                // Anti-denormal flushing for freeze filter states
-                freezeLpfStateL += threadbare::tuning::Safety::kAntiDenormal;
-                freezeLpfStateR += threadbare::tuning::Safety::kAntiDenormal;
+                // NOTE: Anti-denormal noise REMOVED - ScopedNoDenormals handles this
                 
                 loopL = freezeLpfStateL;
                 loopR = freezeLpfStateR;
@@ -1214,9 +1224,7 @@ void UnravelReverb::process(std::span<float> left,
                 freezeLpfStateL += (loopL - freezeLpfStateL) * currentPuckXBrightness;
                 freezeLpfStateR += (loopR - freezeLpfStateR) * currentPuckXBrightness;
                 
-                // Anti-denormal flushing
-                freezeLpfStateL += threadbare::tuning::Safety::kAntiDenormal;
-                freezeLpfStateR += threadbare::tuning::Safety::kAntiDenormal;
+                // NOTE: Anti-denormal noise REMOVED - ScopedNoDenormals handles this
                 
                 loopL = freezeLpfStateL;
                 loopR = freezeLpfStateR;
@@ -1235,20 +1243,23 @@ void UnravelReverb::process(std::span<float> left,
             wetR = wetR * (1.0f - freezeTransitionAmount) + loopR * freezeTransitionAmount;
         }
         
-        // BUG FIX 2: Implement ducking (sidechain-style)
-        // Envelope follower on input signal
-        const float duckTarget = std::abs(monoInput);
-        constexpr float duckAttackCoeff = 0.9990f;  // Fast attack (~10ms)
-        constexpr float duckReleaseCoeff = 0.9995f; // Slower release (~250ms)
-        const float duckCoeff = (duckTarget > duckingEnvelope) ? duckAttackCoeff : duckReleaseCoeff;
-        duckingEnvelope = duckTarget + duckCoeff * (duckingEnvelope - duckTarget);
-        
-        // Apply ducking to wet signal (now uses smoothed duckAmount per-sample)
-        float duckGain = 1.0f - (currentDuckAmount * duckingEnvelope);
-        duckGain = juce::jlimit(threadbare::tuning::Ducking::kMinWetFactor, 1.0f, duckGain);
-        
-        wetL *= duckGain;
-        wetR *= duckGain;
+        // BUG FIX 2: Implement ducking (sidechain-style) - can be disabled via debug switch
+        if constexpr (threadbare::tuning::Debug::kEnableEqAndDuck)
+        {
+            // Envelope follower on input signal
+            const float duckTarget = std::abs(monoInput);
+            constexpr float duckAttackCoeff = 0.9990f;  // Fast attack (~10ms)
+            constexpr float duckReleaseCoeff = 0.9995f; // Slower release (~250ms)
+            const float duckCoeff = (duckTarget > duckingEnvelope) ? duckAttackCoeff : duckReleaseCoeff;
+            duckingEnvelope = duckTarget + duckCoeff * (duckingEnvelope - duckTarget);
+            
+            // Apply ducking to wet signal (now uses smoothed duckAmount per-sample)
+            float duckGain = 1.0f - (currentDuckAmount * duckingEnvelope);
+            duckGain = juce::jlimit(threadbare::tuning::Ducking::kMinWetFactor, 1.0f, duckGain);
+            
+            wetL *= duckGain;
+            wetR *= duckGain;
+        }
         
         // Mix: Dry + Wet FDN + Early Reflections
         // ERs are added directly (already scaled by erGain/proximity control)

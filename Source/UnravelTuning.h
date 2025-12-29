@@ -200,8 +200,30 @@ struct Metering {
 };
 
 struct Safety {
-    // Tiny noise to avoid denormal CPU spikes in FDN feedback.
-    static constexpr float kAntiDenormal = 1.0e-18f;
+    // Anti-denormal is now handled by ScopedNoDenormals + FTZ/DAZ
+    // No additive noise needed in feedback path
+    static constexpr float kAntiDenormal = 0.0f; // DISABLED - was causing audible grain
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEBUG SWITCHES: Toggle subsystems to isolate crackling sources
+// Set to false to disable each subsystem during debugging
+// ═══════════════════════════════════════════════════════════════════════════
+struct Debug {
+    // (1) Additive noise in feedback path (anti-denormal, LFO jitter)
+    static constexpr bool kEnableNoiseInjection = false;
+    
+    // (2) Delay modulation (LFO-based read position modulation)
+    static constexpr bool kEnableDelayModulation = true;
+    
+    // (3) Nonlinear feedback limiting (tanh saturation)
+    static constexpr bool kEnableFeedbackNonlinearity = true;
+    
+    // (4) EQ / Ducking (tone filters, ducking envelope)
+    static constexpr bool kEnableEqAndDuck = true;
+    
+    // (5) Ghost engine (granular clouds)
+    static constexpr bool kEnableGhostEngine = true;
 };
 
 } // namespace threadbare::tuning
