@@ -516,17 +516,49 @@ void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& ou
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
     
+    const int historySize = static_cast<int>(ghostHistory.size());
+    const float historySizeF = static_cast<float>(historySize);
+    
+    // Safety zones to prevent shimmer grains (2x speed) from catching up to write head
+    // Danger zone: 10ms - grains here are reading near-fresh data, crossfade to silence
+    // Kill zone: 2ms - grains here are too close, kill them (should already be faded)
+    const float dangerZoneSamples = 0.010f * static_cast<float>(sampleRate); // 10ms crossfade
+    const float killZoneSamples = 0.002f * static_cast<float>(sampleRate);   // 2ms hard stop
+    
     for (auto& grain : grainPool)
     {
         if (!grain.active)
             continue;
+        
+        // Calculate distance from write head (accounting for circular buffer)
+        float distanceFromHead = static_cast<float>(ghostWriteHead) - grain.pos;
+        if (distanceFromHead < 0.0f)
+            distanceFromHead += historySizeF;
+        if (distanceFromHead > historySizeF * 0.5f)
+            distanceFromHead = historySizeF - distanceFromHead; // Handle wrap-around
+        
+        // Kill zone: too close, already should be silent from crossfade
+        if (distanceFromHead < killZoneSamples)
+        {
+            grain.active = false;
+            grain.windowPhase = 0.0f;
+            continue;
+        }
         
         // Read from history with cubic interpolation (essential for smooth pitch shifting!)
         const float sample = readGhostHistory(grain.pos);
         
         // Apply Hann window with proper formula: 0.5 * (1 - cos(2*PI*phase))
         // Phase is normalized 0 to 1, creating smooth bell curve that reaches ZERO at both ends
-        const float window = 0.5f * (1.0f - fastCos(kTwoPi * grain.windowPhase));
+        float window = 0.5f * (1.0f - fastCos(kTwoPi * grain.windowPhase));
+        
+        // Danger zone crossfade: smoothly reduce amplitude as grain approaches write head
+        // This prevents discontinuities when shimmer grains catch up
+        if (distanceFromHead < dangerZoneSamples)
+        {
+            const float fadeAmount = distanceFromHead / dangerZoneSamples; // 0 at kill, 1 at edge
+            window *= fadeAmount * fadeAmount; // Quadratic fade for smooth tail
+        }
         
         // Apply window and amplitude
         const float windowedSample = sample * window * grain.amp;
@@ -543,8 +575,11 @@ void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& ou
         grain.pos += grain.speed;
         grain.windowPhase += grain.windowInc;
         
+        // Wrap position within buffer bounds
+        while (grain.pos < 0.0f) grain.pos += historySizeF;
+        while (grain.pos >= historySizeF) grain.pos -= historySizeF;
+        
         // Deactivate ONLY when window FULLY completes (ensures zero amplitude)
-        // Adding small epsilon to ensure we reach true zero
         if (grain.windowPhase >= 1.0f)
         {
             grain.active = false;

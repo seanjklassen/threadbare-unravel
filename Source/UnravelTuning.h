@@ -223,7 +223,8 @@ struct Debug {
     static constexpr bool kEnableEqAndDuck = true;
     
     // (5) Ghost engine (granular clouds)
-    static constexpr bool kEnableGhostEngine = true;
+    // TEST 2: Disabled to check for granular artifacts
+    static constexpr bool kEnableGhostEngine = false;
 };
 
 } // namespace threadbare::tuning
