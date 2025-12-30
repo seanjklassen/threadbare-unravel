@@ -1,69 +1,18 @@
 #include "UnravelProcessor.h"
 #include "UI/UnravelEditor.h"
 #include "../UnravelTuning.h"
+#include "../UnravelGeneratedParams.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <memory>
 #include <vector>
 
-namespace
-{
-constexpr int kStateFifoChunk = 1;
-}
-
-void UnravelProcessor::StateQueue::reset() noexcept
-{
-    fifo.reset();
-}
-
-bool UnravelProcessor::StateQueue::push(const threadbare::dsp::UnravelState& state) noexcept
-{
-    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
-    fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
-
-    if (size1 == 0)
-    {
-        discardOldest();
-        fifo.prepareToWrite(kStateFifoChunk, start1, size1, start2, size2);
-
-        if (size1 == 0)
-            return false;
-    }
-
-    buffer[static_cast<std::size_t>(start1)] = state;
-    fifo.finishedWrite(kStateFifoChunk);
-    return true;
-}
-
-bool UnravelProcessor::StateQueue::pop(threadbare::dsp::UnravelState& state) noexcept
-{
-    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
-    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
-
-    if (size1 == 0)
-        return false;
-
-    state = buffer[static_cast<std::size_t>(start1)];
-    fifo.finishedRead(kStateFifoChunk);
-    return true;
-}
-
-void UnravelProcessor::StateQueue::discardOldest() noexcept
-{
-    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
-    fifo.prepareToRead(kStateFifoChunk, start1, size1, start2, size2);
-
-    if (size1 == 0)
-        return;
-
-    fifo.finishedRead(kStateFifoChunk);
-}
-
 UnravelProcessor::UnravelProcessor()
-    : juce::AudioProcessor(BusesProperties()
-                               .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                               .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "Params", createParameterLayout())
+    : threadbare::core::ProcessorBase(
+          BusesProperties()
+              .withInput("Input", juce::AudioChannelSet::stereo(), true)
+              .withOutput("Output", juce::AudioChannelSet::stereo(), true),
+          createParameterLayout())
 {
     initialiseFactoryPresets();
 
@@ -109,13 +58,6 @@ void UnravelProcessor::reset()
 {
     reverbEngine.reset();
     stateQueue.reset();
-}
-
-bool UnravelProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
-{
-    const auto& main = layouts.getMainOutputChannelSet();
-    return layouts.getMainInputChannelSet() == main && (main == juce::AudioChannelSet::mono()
-                                                        || main == juce::AudioChannelSet::stereo());
 }
 
 void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -192,9 +134,6 @@ bool UnravelProcessor::hasEditor() const { return true; }
 
 //==============================================================================
 const juce::String UnravelProcessor::getName() const { return "UnravelProcessor"; }
-bool UnravelProcessor::acceptsMidi() const { return false; }
-bool UnravelProcessor::producesMidi() const { return false; }
-bool UnravelProcessor::isMidiEffect() const { return false; }
 double UnravelProcessor::getTailLengthSeconds() const { return 20.0; }
 
 //==============================================================================
@@ -229,33 +168,29 @@ const juce::String UnravelProcessor::getProgramName(int index)
 void UnravelProcessor::changeProgramName(int, const juce::String&) {}
 
 //==============================================================================
-void UnravelProcessor::getStateInformation(juce::MemoryBlock& destData)
+// State persistence hooks (ProcessorBase)
+void UnravelProcessor::onSaveState(juce::ValueTree& state)
 {
-    auto state = apvts.copyState();
-    
     // Save current preset index alongside parameters
     state.setProperty("currentPreset", currentProgramIndex, nullptr);
-    
-    juce::MemoryOutputStream stream(destData, false);
-    state.writeToStream(stream);
 }
 
-void UnravelProcessor::setStateInformation(const void* data, int sizeInBytes)
+void UnravelProcessor::onRestoreState(const juce::ValueTree& tree)
 {
-    auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes));
-    if (tree.isValid())
+    // Restore preset index if saved
+    if (tree.hasProperty("currentPreset"))
     {
-        // Restore preset index if saved
-        if (tree.hasProperty("currentPreset"))
-        {
-            currentProgramIndex = static_cast<int>(tree.getProperty("currentPreset"));
-        }
-        
-        apvts.replaceState(tree);
-        pushCurrentState();  // Push restored state to UI queue
+        currentProgramIndex = static_cast<int>(tree.getProperty("currentPreset"));
     }
 }
 
+void UnravelProcessor::onStateRestored()
+{
+    // Push restored state to UI queue
+    pushCurrentState();
+}
+
+//==============================================================================
 bool UnravelProcessor::popVisualState(threadbare::dsp::UnravelState& state) noexcept
 {
     threadbare::dsp::UnravelState latest{};
@@ -306,33 +241,8 @@ void UnravelProcessor::pushCurrentState() noexcept
 
 juce::AudioProcessorValueTreeState::ParameterLayout UnravelProcessor::createParameterLayout()
 {
-    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("puckX", "Puck X", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("puckY", "Puck Y", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("mix", "Mix", 0.0f, 1.0f, 0.5f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("size", "Size", 
-                                                                  threadbare::tuning::Fdn::kSizeMin, 
-                                                                  threadbare::tuning::Fdn::kSizeMax, 
-                                                                  1.0f));
-
-    auto decayRange = juce::NormalisableRange<float>(threadbare::tuning::Decay::kT60Min, 
-                                                      threadbare::tuning::Decay::kT60Max);
-    decayRange.setSkewForCentre(2.0f);
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("decay", "Decay", decayRange, 5.0f));
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("tone", "Tone", -1.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("drift", "Drift", 0.0f, 1.0f, 0.2f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("ghost", "Ghost", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("duck", "Duck", 0.0f, 1.0f, 0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("erPreDelay", "ER Pre-Delay", 
-                                                                  0.0f, 
-                                                                  threadbare::tuning::EarlyReflections::kMaxPreDelayMs, 
-                                                                  0.0f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("freeze", "Freeze", false));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", -24.0f, 12.0f, 0.0f));
-
-    return { params.begin(), params.end() };
+    // Use generated parameter layout from params.json
+    return threadbare::unravel::UnravelGeneratedParams::createParameterLayout();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
@@ -514,4 +424,3 @@ void UnravelProcessor::applyPreset(const Preset& preset)
         }
     }
 }
-

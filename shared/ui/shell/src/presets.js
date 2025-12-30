@@ -1,25 +1,26 @@
-// Helper to get native functions via our polyfill
-const getNativeFn = (name) => {
-  if (typeof window.__getNativeFunction === 'function') {
-    return window.__getNativeFunction(name)
-  }
-  return null
-}
+// =============================================================================
+// PRESETS - Shared UI component
+// Dropdown preset manager with robust open/close handling for DAW WebViews
+// =============================================================================
 
 /**
  * Presets dropdown manager with robust open/close handling.
  * Uses a state-based approach to prevent race conditions.
+ * 
+ * @param {Object} options
+ * @param {Function} options.getNativeFn - Function to get native backend functions
  */
 export class Presets {
-  constructor() {
+  constructor(options = {}) {
+    // Dependency injection for native function access
+    this.getNativeFn = options.getNativeFn || (() => null)
+
     // Manual regression checklist:
     // - Mouse: click pill toggles open/close; click option selects and closes; click outside closes; no flash on release.
     // - Mouse: press option, drag off, release => should NOT select.
     // - Keyboard: Enter/Space toggles; Esc closes; Arrow keys navigate while open; focus stays sensible.
     // - Rapid: repeated quick clicks on pill/option/outside => no reopen/flash.
     // - Other UI: puck/orb dragging and other controls behave unchanged.
-    //
-    // NOTE: During diagnosis we temporarily log event sequences; removed before final.
 
     this.presetPill = document.querySelector('.preset-pill')
     this.presetDropdown = document.querySelector('.preset-dropdown')
@@ -53,21 +54,15 @@ export class Presets {
     this.onPillPointerUp = this.onPillPointerUp.bind(this)
     this.onPillPointerDown = this.onPillPointerDown.bind(this)
     
-    // Delay init to allow main.js to set up window.__getNativeFunction
+    // Delay init to allow main.js to set up native functions
     setTimeout(() => this.init(), 0)
   }
   
   async init() {
-    // If native functions aren't ready yet, retry
-    if (typeof window.__getNativeFunction !== 'function') {
-      setTimeout(() => this.init(), 100)
-      return
-    }
-    
     if (this.initialized) return
     this.initialized = true
     
-    const getPresetListFn = getNativeFn('getPresetList')
+    const getPresetListFn = this.getNativeFn('getPresetList')
     
     // Get preset list from backend
     if (typeof getPresetListFn === 'function') {
@@ -428,7 +423,7 @@ export class Presets {
   }
   
   async loadPreset(index) {
-    const loadPresetFn = getNativeFn('loadPreset')
+    const loadPresetFn = this.getNativeFn('loadPreset')
     
     if (typeof loadPresetFn === 'function') {
       try {
@@ -470,3 +465,4 @@ export class Presets {
     }
   }
 }
+

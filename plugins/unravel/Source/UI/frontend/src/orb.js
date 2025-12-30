@@ -7,14 +7,14 @@ const CONFIG = {
   pointCount: 60,
   curveWraps: 1.0618,  // How many TWO_PI rotations the curve spans
 
-  // Colors
-  lineColor: '#FFB59F',
-  trailColor: { r: 255, g: 181, b: 159 },
+  // Colors (dustier coral for wistful/spectral aesthetic)
+  lineColor: '#E8B8A8',
+  trailColor: { r: 232, g: 184, b: 168 },
 
-  // Stroke
+  // Stroke (thinner for more spectral/ethereal feel)
   stroke: {
-    baseWidth: 3,       // Minimum stroke width
-    widthRange: 4,      // How much tailLevel adds (so max = base + range)
+    baseWidth: 2,       // Minimum stroke width
+    widthRange: 2,      // How much tailLevel adds (so max = base + range)
     baseAlpha: 0.7,     // Minimum opacity
     alphaRange: 0.3,    // How much tailLevel adds
     referenceSize: 400, // Normalize stroke to this canvas dimension

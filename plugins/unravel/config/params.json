@@ -1,0 +1,114 @@
+{
+  "$schema": "https://threadbare.audio/schemas/params.json",
+  "version": "1.0.0",
+  "plugin": "unravel",
+  "parameters": [
+    {
+      "id": "puckX",
+      "name": "Puck X",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "puckY",
+      "name": "Puck Y",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "mix",
+      "name": "Mix",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "unit": ""
+    },
+    {
+      "id": "size",
+      "name": "Size",
+      "type": "float",
+      "min": 0.5,
+      "max": 2.0,
+      "default": 1.0,
+      "unit": ""
+    },
+    {
+      "id": "decay",
+      "name": "Decay",
+      "type": "float",
+      "min": 0.4,
+      "max": 50.0,
+      "default": 5.0,
+      "skewCentre": 2.0,
+      "unit": "s"
+    },
+    {
+      "id": "tone",
+      "name": "Tone",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "drift",
+      "name": "Drift",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.2,
+      "unit": ""
+    },
+    {
+      "id": "ghost",
+      "name": "Ghost",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.15,
+      "unit": ""
+    },
+    {
+      "id": "duck",
+      "name": "Duck",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "erPreDelay",
+      "name": "Distance",
+      "type": "float",
+      "min": 0.0,
+      "max": 100.0,
+      "default": 0.0,
+      "unit": "ms"
+    },
+    {
+      "id": "freeze",
+      "name": "Freeze",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "id": "output",
+      "name": "Output",
+      "type": "float",
+      "min": -24.0,
+      "max": 12.0,
+      "default": 0.0,
+      "unit": "dB"
+    }
+  ]
+}
+

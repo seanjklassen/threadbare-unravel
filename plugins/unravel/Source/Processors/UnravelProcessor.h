@@ -6,8 +6,9 @@
 #include <vector>
 
 #include "../DSP/UnravelReverb.h"
+#include "ProcessorBase.h"
 
-class UnravelProcessor final : public juce::AudioProcessor
+class UnravelProcessor final : public threadbare::core::ProcessorBase
 {
 public:
     UnravelProcessor();
@@ -17,7 +18,6 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     void reset() override;
-    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     //==============================================================================
@@ -26,9 +26,6 @@ public:
 
     //==============================================================================
     const juce::String getName() const override;
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;
 
     //==============================================================================
@@ -39,15 +36,18 @@ public:
     void changeProgramName(int index, const juce::String& newName) override;
 
     //==============================================================================
-    void getStateInformation(juce::MemoryBlock& destData) override;
-    void setStateInformation(const void* data, int sizeInBytes) override;
-
-    juce::AudioProcessorValueTreeState& getValueTreeState() noexcept { return apvts; }
     const threadbare::dsp::UnravelState& getCurrentState() const noexcept { return currentState; }
     bool popVisualState(threadbare::dsp::UnravelState& state) noexcept;
     void pushCurrentState() noexcept;  // Force immediate state update (for preset changes)
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+protected:
+    //==============================================================================
+    // ProcessorBase hooks for state persistence
+    void onSaveState(juce::ValueTree& state) override;
+    void onRestoreState(const juce::ValueTree& tree) override;
+    void onStateRestored() override;
 
 private:
     struct Preset
@@ -59,24 +59,8 @@ private:
     threadbare::dsp::UnravelReverb reverbEngine;
     threadbare::dsp::UnravelState currentState;
 
-    juce::AudioProcessorValueTreeState apvts;
-
-    struct StateQueue
-    {
-        static constexpr int kCapacity = 16;
-
-        void reset() noexcept;
-        bool push(const threadbare::dsp::UnravelState& state) noexcept;
-        bool pop(threadbare::dsp::UnravelState& state) noexcept;
-
-    private:
-        void discardOldest() noexcept;
-
-        std::array<threadbare::dsp::UnravelState, kCapacity> buffer{};
-        juce::AbstractFifo fifo { kCapacity };
-    };
-
-    StateQueue stateQueue;
+    // Use shared StateQueue template
+    threadbare::core::StateQueue<threadbare::dsp::UnravelState> stateQueue;
 
     juce::AudioParameterFloat* puckXParam = nullptr;
     juce::AudioParameterFloat* puckYParam = nullptr;
@@ -99,4 +83,3 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UnravelProcessor)
 };
-

@@ -1,7 +1,16 @@
+/* =============================================================================
+ * THREADBARE UI SHELL - Shared Styles
+ * 
+ * Theme tokens can be overridden by setting CSS variables on :root before
+ * this stylesheet loads, or by calling applyThemeTokens() from initShell().
+ * ============================================================================= */
+
 :root {
+  /* Default theme (Unravel) - can be overridden per-plugin */
   --bg: #31312b;
   --text: #C8C7B8;
   --accent: #E0E993;
+  --accent-hover: #E8B8A8;
   --puck-shadow: 
     /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
     0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
@@ -756,7 +765,7 @@ body {
 
 /* Scale fill bar on hover - subtle and refined */
 .elastic-slider:hover .elastic-slider__fill {
-  background: #FFB59F;
+  background: var(--accent-hover);
   transform: scaleY(1.12);
 }
 
