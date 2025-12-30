@@ -2,7 +2,7 @@
 
 ## 0. Snapshot
 
-* **Plugin:** Threadbare – Unravel
+* **Plugin:** Unravel by Threadbare
 * **Role:** Lush, characterful “memory cloud” reverb for guitars, synths, and vocals.
 * **Core DSP:**
     * 8×8 FDN (Feedback Delay Network) with damping + modulation.
@@ -21,7 +21,7 @@
 ## 1. Concept, Emotional Targets & Scope
 
 ### 1.1 Concept
-Unravel turns audio into a slowly dissolving, modulated cloud that remembers what you played a moment ago.
+Unravel turns audio into a slowly dissolving, modulated cloud with memories of what you played a moment ago.
 
 * Not a “do-everything” room reverb.
 * It’s for:
@@ -32,10 +32,14 @@ Unravel turns audio into a slowly dissolving, modulated cloud that remembers wha
 ### 1.2 Emotional Targets
 Everything should lean toward:
 
-* **Nostalgic** – like a memory, not a studio.
-* **Bittersweet** – tension between comfort and ache.
-* **Weightless** – hovering around the source, not glued to walls.
-* **Soft** – no icepick highs or metallic zing in normal use.
+* **Spectral**
+Reverb should feel like a fading memory, not a physical room. It is transparent and "weightless," hovering around the source rather than being anchored by early reflections or walls.
+
+* **Wistful**
+A permanent tension between comfort and ache. The decay should have a bittersweet "bloom" that feels emotionally evocative and haunting, rather than just a technical tail.
+
+* **Diffuse**
+The sound is soft and vaporous. There is no "icepick" high-end or metallic zing; reflections are so dense they become a uniform, cloud-like wash that evaporates gently.
 
 *Use this as the north star when tuning constants and presets.*
 

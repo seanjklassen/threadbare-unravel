@@ -1,4 +1,10 @@
 // =============================================================================
+// UNRAVEL - Main Entry Point
+// 
+// This is the plugin-specific entry point that uses the shared Threadbare shell.
+// =============================================================================
+
+// =============================================================================
 // JUCE 8 Native Function Integration - MUST BE FIRST
 // =============================================================================
 
@@ -63,125 +69,85 @@ const getNativeFunction = (name) => {
 // Make it globally available IMMEDIATELY
 window.__getNativeFunction = getNativeFunction
 
-// Listen for state updates from C++ backend
-// CRITICAL: JUCE 8 uses event-based communication, NOT global function calls
-if (window.__JUCE__?.backend?.addEventListener) {
-  window.__JUCE__.backend.addEventListener('updateState', (payload) => {
-    // Forward to the updateState handler (defined below)
-    if (typeof window.updateState === 'function') {
-      window.updateState(payload)
-    }
-  })
+// Cache native setParameter function
+let nativeSetParameter = null
+
+const sendParam = (id, val) => {
+  // Lazily get the native function using our polyfill
+  if (!nativeSetParameter && window.__getNativeFunction) {
+    nativeSetParameter = window.__getNativeFunction('setParameter')
+  }
+  
+  if (typeof nativeSetParameter === 'function') {
+    nativeSetParameter(id, val)
+  }
+  // Silently skip if not available - reduces console spam
 }
 
 
 // =============================================================================
-// Application Code - Wait for DOM to be ready
+// UNRAVEL PLUGIN SETUP
 // =============================================================================
 
-import './style.css'
+// Import shared shell (using Vite alias)
+import { initShell } from '@threadbare/shell/index.js'
+
+// Import shell styles (shared)
+import '@threadbare/shell/shell.css'
+
+// Import plugin-specific visualization
 import { Orb } from './orb.js'
-import { Controls } from './controls.js'
-import { Presets } from './presets.js'
 
-// App state (declared at module scope so updateState can access them)
-let orb = null
-let controls = null
-let presets = null
-let uiState = null
-let currentState = null
+// Import generated parameters (plugin-specific, single source of truth)
+import { PARAMS, PARAM_IDS } from './generated/params.js'
 
+// Unravel theme tokens (override shell defaults if desired)
+// Using dustier coral for wistful/spectral aesthetic per 1.2 emotional targets
+const UNRAVEL_THEME = {
+  bg: '#31312b',
+  text: '#C8C7B8',
+  accent: '#E0E993',
+  'accent-hover': '#E8B8A8',
+}
+
+// Shell instance reference
+let shell = null
+
+// Initialize the app
 const initApp = () => {
-  const canvas = document.getElementById('orb')
-  const shell = document.querySelector('.tb-canvas-shell')
-  
-  if (!canvas || !shell) {
-    console.error('Required DOM elements not found!')
-    return
-  }
-  
-  orb = new Orb(canvas)
-
-  controls = new Controls({
-    onPuckChange: ({ puckX, puckY }) => {
-      currentState = { ...currentState, puckX, puckY }
-      orb.update(currentState)
-    },
-    onFreezeChange: (isFrozen) => {
-      uiState.frozen = isFrozen
-      currentState = { ...currentState, freeze: isFrozen }
-    },
+  // Initialize the shared shell with Unravel-specific config
+  shell = initShell({
+    VizClass: Orb,
+    params: PARAMS,
+    paramOrder: PARAM_IDS,
+    themeTokens: UNRAVEL_THEME,
+    getNativeFn: getNativeFunction,
+    sendParam: sendParam,
   })
 
-  presets = new Presets()
-
-  uiState = {
-    frozen: false,
-    canvasRect: shell.getBoundingClientRect(),
+  if (!shell) {
+    console.error('Failed to initialize Threadbare shell!')
+    return
   }
 
-  currentState = {
-    inLevel: 0.35,
-    tailLevel: 0.4,
-    puckX: 0.5,
-    puckY: 0.5,
-    drift: 0.2,
-    ghost: 0.2,
-    decay: 0.4,
-    size: 0.6,
-    freeze: false,
-  }
-
-  const resizeCanvas = () => {
-    uiState.canvasRect = shell.getBoundingClientRect()
-    orb.resize()
-    controls.refresh()
-  }
-
-  window.addEventListener('resize', resizeCanvas)
-
-  const animate = () => {
-    if (!uiState.frozen) {
-      orb.update(currentState)
-      orb.draw()
-    }
-    requestAnimationFrame(animate)
-  }
-
-  resizeCanvas()
-  controls.update(currentState)
-  animate()
+  console.log('Unravel initialized with Threadbare shell')
 }
 
 // Handler for state updates from C++ backend
-window.updateState = (payload) => {
-  if (payload == null) return
-  if (!orb || !controls || !presets) return // App not initialized yet
-
-  let parsed = payload
-  if (typeof payload === 'string') {
-    try {
-      parsed = JSON.parse(payload)
-    } catch (error) {
-      console.warn('Invalid updateState payload', error)
-      return
+// CRITICAL: JUCE 8 uses event-based communication, NOT global function calls
+if (window.__JUCE__?.backend?.addEventListener) {
+  window.__JUCE__.backend.addEventListener('updateState', (payload) => {
+    if (shell) {
+      shell.updateState(payload)
     }
-  }
+  })
+}
 
-  if (typeof parsed !== 'object') return
-
-  // Skip puckX/puckY updates while user is dragging to prevent flicker
-  // (backend echoes can conflict with drag position, causing "two orbs" effect)
-  if (controls?.isDragging) {
-    const { puckX, puckY, ...rest } = parsed
-    currentState = { ...currentState, ...rest }
-  } else {
-    currentState = { ...currentState, ...parsed }
+// Also expose globally for compatibility
+window.updateState = (payload) => {
+  if (shell) {
+    shell.updateState(payload)
   }
-  
-  orb.update(currentState)
-  controls.update(currentState)
-  presets.update(currentState)
 }
 
 // Wait for DOM to be ready before initializing

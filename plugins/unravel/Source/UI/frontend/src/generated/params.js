@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2025-12-29T20:37:52.479Z
+// Generated at: 2025-12-30T02:59:02.789Z
 // =============================================================================
 
 /**
@@ -74,7 +74,7 @@ export const PARAMS = {
     type: 'float',
     min: 0,
     max: 1,
-    default: 0
+    default: 0.15
   },
   duck: {
     id: 'duck',
@@ -86,7 +86,7 @@ export const PARAMS = {
   },
   erPreDelay: {
     id: 'erPreDelay',
-    name: 'ER Pre-Delay',
+    name: 'Distance',
     type: 'float',
     min: 0,
     max: 100,

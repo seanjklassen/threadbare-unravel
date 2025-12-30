@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2025-12-29T20:37:52.475Z
+// Generated at: 2025-12-30T02:59:02.784Z
 // =============================================================================
 #pragma once
 
@@ -36,11 +36,11 @@ struct UnravelGeneratedParams
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>("drift", "Drift", 0.0f, 1.0f, 0.2f));
 
-        params.push_back(std::make_unique<juce::AudioParameterFloat>("ghost", "Ghost", 0.0f, 1.0f, 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("ghost", "Ghost", 0.0f, 1.0f, 0.15f));
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>("duck", "Duck", 0.0f, 1.0f, 0.0f));
 
-        params.push_back(std::make_unique<juce::AudioParameterFloat>("erPreDelay", "ER Pre-Delay", 0.0f, 100.0f, 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("erPreDelay", "Distance", 0.0f, 100.0f, 0.0f));
 
         params.push_back(std::make_unique<juce::AudioParameterBool>("freeze", "Freeze", false));
 
@@ -93,7 +93,7 @@ struct UnravelGeneratedParams
         static constexpr float kDRIFT_DEFAULT = 0.2f;
         static constexpr float kGHOST_MIN = 0.0f;
         static constexpr float kGHOST_MAX = 1.0f;
-        static constexpr float kGHOST_DEFAULT = 0.0f;
+        static constexpr float kGHOST_DEFAULT = 0.15f;
         static constexpr float kDUCK_MIN = 0.0f;
         static constexpr float kDUCK_MAX = 1.0f;
         static constexpr float kDUCK_DEFAULT = 0.0f;
