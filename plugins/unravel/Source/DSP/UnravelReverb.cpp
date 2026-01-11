@@ -1058,18 +1058,23 @@ void UnravelReverb::process(std::span<float> left,
         entropySmoother.setTargetValue(entropyAmount);
         const float smoothedEntropy = entropySmoother.getCurrentValue();
         
-        // ═══════════════════════════════════════════════════════════════════
-        // PHASE 3: AZIMUTH DRIFT - Calculate separate L/R entropy values
-        // Each channel degrades at a slightly different rate (tape head misalignment)
-        // ═══════════════════════════════════════════════════════════════════
-        const float entropyL = std::clamp(smoothedEntropy + azimuthOffsetL * smoothedEntropy, 0.0f, 1.0f);
-        const float entropyR = std::clamp(smoothedEntropy + azimuthOffsetR * smoothedEntropy, 0.0f, 1.0f);
-        
         // Focus: puckX controls character of disintegration
         // puckX = -1.0 (left, Ghost): Spectral thinning, emphasize highs
         // puckX = +1.0 (right, Fog): Diffuse smearing, preserve lows
         const float focus = state.puckX;  // -1 to +1
         const float focusAmount = std::abs(focus);
+        const float focusNormBlock = (focus + 1.0f) * 0.5f;  // 0 (Ghost) to 1 (Fog)
+        
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 3: AZIMUTH DRIFT - Calculate separate L/R entropy values
+        // Each channel degrades at a slightly different rate (tape head misalignment)
+        // Focus: Ghost (left) = wider stereo tear (1.5x), Fog (right) = narrower (0.3x)
+        // ═══════════════════════════════════════════════════════════════════
+        const float azimuthFocusScale = 1.5f - focusNormBlock * 1.2f;  // 1.5 at Ghost, 0.3 at Fog
+        const float scaledAzimuthL = azimuthOffsetL * azimuthFocusScale;
+        const float scaledAzimuthR = azimuthOffsetR * azimuthFocusScale;
+        const float entropyL = std::clamp(smoothedEntropy + scaledAzimuthL * smoothedEntropy, 0.0f, 1.0f);
+        const float entropyR = std::clamp(smoothedEntropy + scaledAzimuthR * smoothedEntropy, 0.0f, 1.0f);
         
         // Helper lambda to calculate filter frequencies for a given entropy value
         auto calcFilterFreqs = [&](float entropy) -> std::pair<float, float> {
@@ -1446,8 +1451,8 @@ void UnravelReverb::process(std::span<float> left,
                 disintLoopL[static_cast<std::size_t>(loopRecordHead)] = captureL;
                 disintLoopR[static_cast<std::size_t>(loopRecordHead)] = captureR;
                 loopRecordHead++;
-            }
-            
+                }
+                
             // Update progress for UI (protect against division by zero)
             state.loopProgress = (targetLoopLength > 0) 
                 ? static_cast<float>(loopRecordHead) / static_cast<float>(targetLoopLength)
@@ -1472,13 +1477,23 @@ void UnravelReverb::process(std::span<float> left,
             entropyAmount = std::min(1.0f, entropyAmount + entropyRate);
             const float currentEntropy = entropyAmount;  // Cache for this sample
             
+            // === FOCUS (puckX) controls Phase 3 character ===
+            // Left (Ghost/Spectral): More dropouts, less pitch drag, wider stereo tear
+            // Right (Fog/Diffuse): Fewer dropouts, more pitch drag, narrower stereo
+            const float focus = puckX;  // -1 to +1
+            const float focusNorm = (focus + 1.0f) * 0.5f;  // 0 (Ghost) to 1 (Fog)
+            
             // ═══════════════════════════════════════════════════════════════
             // PHASE 3B: MOTOR DEATH (Asymmetric Pitch Drag via Brownian Noise)
             // Modulates the read head position with downward-biased random walk
+            // Focus: Fog (right) = more drag, Ghost (left) = less drag
             // ═══════════════════════════════════════════════════════════════
             
+            // Focus scales motor drag: 0.3x at Ghost, 1.7x at Fog
+            const float motorFocusScale = 0.3f + focusNorm * 1.4f;
+            
             // Update Brownian walk (per channel for stereo width)
-            const float dragStep = Disintegration::kMotorDragStepSize;
+            const float dragStep = Disintegration::kMotorDragStepSize * motorFocusScale;
             const float dragInertia = Disintegration::kMotorDragInertia;
             const float dragBias = Disintegration::kMotorDragBias;
             
@@ -1494,7 +1509,8 @@ void UnravelReverb::process(std::span<float> left,
             
             // Convert cents deviation to speed ratio: 2^(cents/1200)
             // Scale by entropy so effect intensifies over time
-            const float maxCents = Disintegration::kMotorDragMaxCents * currentEntropy;
+            // Focus also scales max cents: more at Fog, less at Ghost
+            const float maxCents = Disintegration::kMotorDragMaxCents * currentEntropy * motorFocusScale;
             // Fast approximation: 2^x ≈ 1 + 0.693*x for small x (cents/1200 < 0.03)
             const float centsL = motorDragValueL * maxCents;
             const float centsR = motorDragValueR * maxCents;
@@ -1502,7 +1518,7 @@ void UnravelReverb::process(std::span<float> left,
             const float xR = centsR / 1200.0f;
             const float speedRatioL = 1.0f + 0.693147f * xL + 0.240226f * xL * xL;
             const float speedRatioR = 1.0f + 0.693147f * xR + 0.240226f * xR * xR;
-            
+                
             // Accumulate fractional read offset
             motorDragReadOffsetL += (speedRatioL - 1.0f);
             motorDragReadOffsetR += (speedRatioR - 1.0f);
@@ -1513,15 +1529,15 @@ void UnravelReverb::process(std::span<float> left,
             if (motorDragReadOffsetL < -loopLenF) motorDragReadOffsetL += loopLenF;
             if (motorDragReadOffsetR > loopLenF) motorDragReadOffsetR -= loopLenF;
             if (motorDragReadOffsetR < -loopLenF) motorDragReadOffsetR += loopLenF;
-            
+                    
             // Calculate modulated read positions
             const float readPosL = static_cast<float>(loopPlayHead) + motorDragReadOffsetL;
             const float readPosR = static_cast<float>(loopPlayHead) + motorDragReadOffsetR;
-            
+                    
             // Wrap positions (handle negative values correctly)
             const float wrappedPosL = std::fmod(std::fmod(readPosL, loopLenF) + loopLenF, loopLenF);
             const float wrappedPosR = std::fmod(std::fmod(readPosR, loopLenF) + loopLenF, loopLenF);
-            
+                    
             // Linear interpolation for sub-sample accuracy (prevents aliasing)
             const int idxL0 = static_cast<int>(wrappedPosL) % actualLoopLength;
             const int idxL1 = (idxL0 + 1) % actualLoopLength;
@@ -1540,7 +1556,11 @@ void UnravelReverb::process(std::span<float> left,
             // PHASE 3C: OXIDE SHEDDING (Stochastic Dropouts)
             // Random gain cuts that become more frequent as entropy increases
             // CORRECTION #1: Timer-based trigger instead of per-sample
+            // Focus: Ghost (left) = more dropouts, Fog (right) = fewer dropouts
             // ═══════════════════════════════════════════════════════════════
+            
+            // Focus scales oxide dropout: 1.8x probability at Ghost, 0.4x at Fog
+            const float oxideFocusScale = 1.8f - focusNorm * 1.4f;
             
             // Only check for new dropout on timer intervals (~40ms)
             oxideCheckTimer++;
@@ -1551,8 +1571,8 @@ void UnravelReverb::process(std::span<float> left,
                 // Only consider dropout if not already in one
                 if (oxideDropoutCounter <= 0)
                 {
-                    // Probability scales with entropy (0 at start, max at full entropy)
-                    const float dropoutProbability = currentEntropy * Disintegration::kOxideDropoutProbabilityMax;
+                    // Probability scales with entropy AND focus
+                    const float dropoutProbability = currentEntropy * Disintegration::kOxideDropoutProbabilityMax * oxideFocusScale;
                     const float rand = fastRand01();
                     
                     if (rand < dropoutProbability)
@@ -1565,7 +1585,7 @@ void UnravelReverb::process(std::span<float> left,
                     }
                 }
             }
-            
+                
             // Count down dropout duration
             if (oxideDropoutCounter > 0)
             {
@@ -1651,8 +1671,8 @@ void UnravelReverb::process(std::span<float> left,
                     const int samplesFromEnd = actualLoopLength - loopPlayHead;
                     crossfadeGain = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
                 }
-            }
-            
+                }
+                
             // === GRADUAL FADE based on entropy ===
             // As entropy increases 0→1, volume decreases smoothly
             // Using a curve that keeps most volume until later in the cycle
@@ -1661,7 +1681,7 @@ void UnravelReverb::process(std::span<float> left,
             // Apply loop gain with crossfade and entropy fade
             disintL *= loopGain * crossfadeGain * entropyFade;
             disintR *= loopGain * crossfadeGain * entropyFade;
-            
+                
             // === EXIT BEHAVIOR: Return to Idle when entropy reaches 1.0 ===
             if (entropyAmount >= 1.0f)
             {
@@ -1670,16 +1690,16 @@ void UnravelReverb::process(std::span<float> left,
                 exitFadeAmount = std::max(0.0f, exitFadeAmount - fadeRate);
                 
                 if (exitFadeAmount <= 0.0f)
-                {
+            {
                     currentLooperState = LooperState::Idle;
                     loopRecordHead = 0;
                     loopPlayHead = 0;
                     actualLoopLength = 0;
                     entropyAmount = 0.0f;
                     exitFadeAmount = 1.0f;
-                }
             }
-            
+        }
+        
             // === NaN PROTECTION ===
             if (std::isnan(disintL) || std::isinf(disintL)) disintL = 0.0f;
             if (std::isnan(disintR) || std::isinf(disintR)) disintR = 0.0f;

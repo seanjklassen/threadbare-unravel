@@ -650,7 +650,7 @@ export class Controls {
     // When Recording or Looping, the looperState controls the visual
     if (typeof state.freeze !== 'undefined') {
       if (this.looperState === 'idle') {
-        this.setFreezeVisual(Boolean(state.freeze))
+      this.setFreezeVisual(Boolean(state.freeze))
       }
     }
 

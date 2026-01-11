@@ -54,7 +54,7 @@ const CONFIG = {
     driftMin: 0.5,    // Min phase multiplier
     driftRange: 1.5,  // Phase multiplier range based on drift param
   },
-  
+
   // === DISINTEGRATION LOOPER: Entropy Visual Effects ===
   // As entropy increases, the orb fades and slows (stays centered for smooth transitions)
   entropy: {

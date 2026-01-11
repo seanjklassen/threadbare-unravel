@@ -132,8 +132,8 @@ export function initShell(options = {}) {
 
   // Animation loop - always runs (disintegration looper uses entropy effects, not freeze)
   const animate = () => {
-    viz?.update(currentState)
-    viz?.draw()
+      viz?.update(currentState)
+      viz?.draw()
     requestAnimationFrame(animate)
   }
 
