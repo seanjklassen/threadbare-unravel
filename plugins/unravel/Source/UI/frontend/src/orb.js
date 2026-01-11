@@ -56,12 +56,11 @@ const CONFIG = {
   },
   
   // === DISINTEGRATION LOOPER: Entropy Visual Effects ===
-  // As entropy increases, the orb evaporates upward and fades
+  // As entropy increases, the orb fades and slows (stays centered for smooth transitions)
   entropy: {
     maxAlphaReduction: 0.5,     // How much alpha fades at full entropy (50%)
     maxRadiusReduction: 0.25,   // How much radius shrinks at full entropy (25%)
     maxSpeedReduction: 0.6,     // How much animation slows at full entropy (60%)
-    maxAscension: 0.18,         // Max vertical lift as fraction of canvas height (18%)
     maxTrailReduction: 0.7,     // How much trail shortens at full entropy (70%)
     colorShift: {
       r: 255,  // Target R at full entropy (warmer)
@@ -246,13 +245,8 @@ export class Orb {
     }
     this.maxHistory = Math.max(1, Math.floor(trailHistoryMax))
     
-    // === DISINTEGRATION LOOPER: Vertical Ascension ===
-    // Orb rises toward the top as entropy increases (evaporating upward)
-    let drawCenterY = this.centerY
-    if (looperActive && entropy > 0) {
-      const ascensionOffset = entropy * E.maxAscension * this.height
-      drawCenterY = this.centerY - ascensionOffset
-    }
+    // Orb stays centered during disintegration for smooth state transitions
+    const drawCenterY = this.centerY
 
     // Lissajous frequencies using CONFIG
     const { frequency: F } = CONFIG

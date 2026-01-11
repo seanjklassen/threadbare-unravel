@@ -471,6 +471,10 @@ export class Controls {
       this.setPuckPositionImmediate(this.targetPuckX, this.targetPuckY)
       this.puckAnimationFrame = null
       this.renderReadoutsFromNorm(this.targetPuckX, this.targetPuckY)
+      // Send final DSP params when animation completes
+      this.sendParam('puckX', toDsp(this.targetPuckX))
+      this.sendParam('puckY', toDsp(1 - this.targetPuckY))
+      this.onPuckChange({ puckX: this.targetPuckX, puckY: this.targetPuckY })
       return
     }
     
@@ -479,6 +483,10 @@ export class Controls {
     const nextY = this.state.puckY + dy * this.lerpSpeed
     this.setPuckPositionImmediate(nextX, nextY)
     this.renderReadoutsFromNorm(nextX, nextY)
+    
+    // Send DSP params during animation for smooth audio changes
+    this.sendParam('puckX', toDsp(nextX))
+    this.sendParam('puckY', toDsp(1 - nextY))
     
     // Notify orb of position change during animation
     this.onPuckChange({ puckX: nextX, puckY: nextY })
@@ -609,6 +617,30 @@ export class Controls {
       const newLooperState = stateMap[state.looperState] || 'idle'
       
       if (newLooperState !== this.looperState) {
+        const wasLooping = this.looperState === 'looping'
+        const nowLooping = newLooperState === 'looping'
+        
+        // Save puck position when ENTERING looping mode
+        if (!wasLooping && nowLooping) {
+          this._savedPuckX = this.state.puckX
+          this._savedPuckY = this.state.puckY
+          // Smoothly animate puck to center for looping mode
+          this._loopingPuckTarget = { x: 0.5, y: 0.5 }
+          this.animatePuckTo(0.5, 0.5)
+          // Sync freeze state: we entered via falling edge, so freeze=0
+          this._lastSentFreeze = false
+        }
+        
+        // Restore puck position when EXITING looping mode
+        if (wasLooping && !nowLooping && this._savedPuckX !== undefined) {
+          // Smoothly animate puck back to saved position
+          this.animatePuckTo(this._savedPuckX, this._savedPuckY)
+          // Sync freeze state: we exited, DSP is now in Idle with freeze=0
+          this._lastSentFreeze = false
+          this._savedPuckX = undefined
+          this._savedPuckY = undefined
+        }
+        
         this.looperState = newLooperState
         this.updateLooperVisual()
       }

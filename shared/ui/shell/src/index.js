@@ -91,7 +91,8 @@ export function initShell(options = {}) {
       viz?.update(currentState)
     },
     onFreezeChange: (isFrozen) => {
-      uiState.frozen = isFrozen
+      // Note: We don't stop the orb animation for disintegration looper
+      // The orb uses entropy effects instead of freezing
       currentState = { ...currentState, freeze: isFrozen }
     },
   })
@@ -129,12 +130,10 @@ export function initShell(options = {}) {
 
   window.addEventListener('resize', resizeCanvas)
 
-  // Animation loop
+  // Animation loop - always runs (disintegration looper uses entropy effects, not freeze)
   const animate = () => {
-    if (!uiState.frozen) {
-      viz?.update(currentState)
-      viz?.draw()
-    }
+    viz?.update(currentState)
+    viz?.draw()
     requestAnimationFrame(animate)
   }
 
