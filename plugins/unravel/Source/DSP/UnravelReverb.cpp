@@ -91,10 +91,6 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     mixSmoother.setCurrentAndTargetValue(0.5f);
     ghostSmoother.setCurrentAndTargetValue(0.0f);
     
-    // Freeze transition smoother - prevents clicks when entering/exiting freeze
-    freezeAmountSmoother.reset(sampleRate, threadbare::tuning::Freeze::kRampTimeSec);
-    freezeAmountSmoother.setCurrentAndTargetValue(0.0f);
-    
     // Pre-delay smoother - prevents zipper noise when adjusting pre-delay
     // Uses longer ramp (2x) because pre-delay is smoothed per-block, not per-sample
     preDelaySmoother.reset(sampleRate, smoothingTimeSec * 2.0f);
@@ -110,14 +106,6 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     
     fdnSendSmoother.reset(sampleRate, smoothingTimeSec);
     fdnSendSmoother.setCurrentAndTargetValue(0.6f); // 0.2 + (0.8 * 0.5) = 0.6
-    
-    // puckX = 0.0 → puckXBrightness = jmap(0.0, -1, 1, 0.05, 0.5) = 0.275
-    puckXBrightnessSmoother.reset(sampleRate, smoothingTimeSec);
-    puckXBrightnessSmoother.setCurrentAndTargetValue(0.275f);
-    
-    // puckY = 0.0 → puckYWobble = jmap(0.0, -1, 1, 1, 15) = 8 → detuneRatio = pow(2, 8/1200) ≈ 1.0046
-    detuneRatioSmoother.reset(sampleRate, smoothingTimeSec);
-    detuneRatioSmoother.setCurrentAndTargetValue(std::pow(2.0f, 8.0f / 1200.0f)); // ~1.0046
     
     // duck defaults to 0.0 in UnravelState
     duckAmountSmoother.reset(sampleRate, smoothingTimeSec);
@@ -196,35 +184,6 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     // Pre-calculate grain spawn interval (every 15ms for dense texture)
     grainSpawnInterval = static_cast<int>(sampleRate * 0.015f);
     
-    // Initialize freeze loop buffers (multi-head smooth bed)
-    const auto freezeLoopSize = static_cast<std::size_t>(
-        threadbare::tuning::Freeze::kLoopBufferSeconds * sampleRate);
-    freezeLoopL.resize(freezeLoopSize);
-    freezeLoopR.resize(freezeLoopSize);
-    std::fill(freezeLoopL.begin(), freezeLoopL.end(), 0.0f);
-    std::fill(freezeLoopR.begin(), freezeLoopR.end(), 0.0f);
-    freezeLoopLength = 0;
-    freezeLoopActive = false;
-    freezeTransitionAmount = 0.0f;
-    freezeLpfStateL = 0.0f;
-    freezeLpfStateR = 0.0f;
-    
-    // Initialize multi-head state with staggered positions and alternating directions
-    juce::Random headRng(42); // Fixed seed for consistent behavior
-    for (int h = 0; h < kFreezeNumHeads; ++h)
-    {
-        freezeHeads[static_cast<std::size_t>(h)].readPos = 0.0f;
-        // Alternate forward/reverse: heads 0,2,4 forward, heads 1,3,5 reverse
-        freezeHeads[static_cast<std::size_t>(h)].direction = (h % 2 == 0) ? 1.0f : -1.0f;
-        freezeHeads[static_cast<std::size_t>(h)].modPhase = headRng.nextFloat() * kTwoPi;
-        // Random mod rate within range (slow drift)
-        const float modRate = juce::jmap(headRng.nextFloat(), 
-            threadbare::tuning::Freeze::kHeadModRateMin,
-            threadbare::tuning::Freeze::kHeadModRateMax);
-        freezeHeads[static_cast<std::size_t>(h)].modInc = kTwoPi * modRate / static_cast<float>(sampleRate);
-        freezeHeads[static_cast<std::size_t>(h)].speedMod = 1.0f;
-    }
-    
     // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER INITIALIZATION
     // ═══════════════════════════════════════════════════════════════════════
@@ -265,6 +224,13 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     currentLpfK = 0.0f;
     currentSatAmount = 0.0f;
     
+    // Initialize separate diffuse LPF state for disintegration
+    disintDiffuseLpfL = 0.0f;
+    disintDiffuseLpfR = 0.0f;
+    
+    // Initialize exit fade (used when entropy reaches 1.0)
+    exitFadeAmount = 1.0f;
+    
     // Initialize disintegration smoothers
     loopGainSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
     loopGainSmoother.setCurrentAndTargetValue(1.0f);  // Full volume initially
@@ -285,14 +251,11 @@ void UnravelReverb::reset() noexcept
     driftSmoother.setCurrentAndTargetValue(driftSmoother.getTargetValue());
     mixSmoother.setCurrentAndTargetValue(mixSmoother.getTargetValue());
     ghostSmoother.setCurrentAndTargetValue(ghostSmoother.getTargetValue());
-    freezeAmountSmoother.setCurrentAndTargetValue(0.0f);
     preDelaySmoother.setCurrentAndTargetValue(preDelaySmoother.getTargetValue());
     
     // Reset anti-crackling smoothers
     erGainSmoother.setCurrentAndTargetValue(erGainSmoother.getTargetValue());
     fdnSendSmoother.setCurrentAndTargetValue(fdnSendSmoother.getTargetValue());
-    puckXBrightnessSmoother.setCurrentAndTargetValue(puckXBrightnessSmoother.getTargetValue());
-    detuneRatioSmoother.setCurrentAndTargetValue(detuneRatioSmoother.getTargetValue());
     duckAmountSmoother.setCurrentAndTargetValue(duckAmountSmoother.getTargetValue());
     for (std::size_t i = 0; i < kNumLines; ++i)
         lineFeedbackSmoothers[i].setCurrentAndTargetValue(lineFeedbackSmoothers[i].getTargetValue());
@@ -320,24 +283,6 @@ void UnravelReverb::reset() noexcept
     inputMeterState = 0.0f;
     tailMeterState = 0.0f;
     duckingEnvelope = 0.0f;
-    
-    // Reset freeze loop state
-    if (!freezeLoopL.empty())
-        std::fill(freezeLoopL.begin(), freezeLoopL.end(), 0.0f);
-    if (!freezeLoopR.empty())
-        std::fill(freezeLoopR.begin(), freezeLoopR.end(), 0.0f);
-    freezeLoopLength = 0;
-    freezeLoopActive = false;
-    freezeTransitionAmount = 0.0f;
-    freezeLpfStateL = 0.0f;
-    freezeLpfStateR = 0.0f;
-    
-    // Reset multi-head state
-    for (auto& head : freezeHeads)
-    {
-        head.readPos = 0.0f;
-        head.speedMod = 1.0f;
-    }
     
     // Reset DC offset tracking
     dcOffsetL = 0.0f;
@@ -381,6 +326,13 @@ void UnravelReverb::reset() noexcept
     currentLpfG = 0.0f;
     currentLpfK = 0.0f;
     currentSatAmount = 0.0f;
+    
+    // Reset separate diffuse LPF state for disintegration
+    disintDiffuseLpfL = 0.0f;
+    disintDiffuseLpfR = 0.0f;
+    
+    // Reset exit fade
+    exitFadeAmount = 1.0f;
     
     // Reset disintegration smoothers
     loopGainSmoother.setCurrentAndTargetValue(1.0f);
@@ -797,19 +749,6 @@ void UnravelReverb::process(std::span<float> left,
         }
         
         ghostFreezeActive = true;
-        
-        // === MULTI-HEAD LOOP BUFFER: Start capturing ===
-        // Reset loop buffer state to begin capturing wet output
-        freezeLoopLength = 0;
-        freezeLoopActive = false;  // Not playing yet, still capturing
-        freezeTransitionAmount = 0.0f;
-        
-        // Reset head positions (will be staggered once capture completes)
-        for (auto& head : freezeHeads)
-        {
-            head.readPos = 0.0f;
-            head.speedMod = 1.0f;
-        }
     }
     
     if (freezeDeactivating)
@@ -817,19 +756,7 @@ void UnravelReverb::process(std::span<float> left,
         // Clear frozen state
         numFrozenPositions = 0;
         ghostFreezeActive = false;
-        
-        // === CROSSFADE LOOP BUFFER: Start transitioning back to FDN ===
-        // freezeTransitionAmount will ramp down to 0 in the sample loop
     }
-    
-    // ═════════════════════════════════════════════════════════════════════════
-    // INFINITE CLOUD: Freeze smoother + LFO perturbation for organic drift
-    // ═════════════════════════════════════════════════════════════════════════
-    freezeAmountSmoother.setTargetValue(state.freeze ? 1.0f : 0.0f);
-    
-    // LFO perturbation during freeze is now applied per-sample in the loop
-    // to prevent block-rate stepping artifacts. See the LFO update section below.
-    (void)freezeTransition; // Suppress unused variable warning
     
     // ═════════════════════════════════════════════════════════════════════════
     // PUCK X MACRO: "Physical/Close → Ethereal/Distant" (Proximity Control)
@@ -900,8 +827,6 @@ void UnravelReverb::process(std::span<float> left,
     }
     
     // Pre-calculate parameter-dependent values once per block
-    // NOTE: inputGain is now derived from freezeInjectionGate per-sample (eliminates hard switch stepping)
-    
     // Duck amount - now smoothed to prevent zipper noise when adjusting duck parameter
     duckAmountSmoother.setTargetValue(juce::jlimit(0.0f, 1.0f, state.duck));
     
@@ -919,53 +844,87 @@ void UnravelReverb::process(std::span<float> left,
         lineFeedbackSmoothers[i].setTargetValue(targetFeedback);
     }
     
-    // Pre-calculate freeze detuning target (avoids pow() per sample)
-    // NOW SMOOTHED: Prevents stepping when puckY changes
-    const float puckYWobble = juce::jmap(puckY, -1.0f, 1.0f, 1.0f, 15.0f);
-    const float targetDetuneRatio = std::pow(2.0f, puckYWobble / 1200.0f);
-    detuneRatioSmoother.setTargetValue(targetDetuneRatio);
-    
-    // Pre-calculate constants
-    constexpr float headGain = 1.0f / static_cast<float>(kFreezeNumHeads);
-    const int minPlaybackLength = static_cast<int>(0.5f * static_cast<float>(sampleRate));
-    
-    // puckXBrightness NOW SMOOTHED: Prevents freeze loop filter coefficient stepping
-    const float targetPuckXBrightness = juce::jmap(puckX, -1.0f, 1.0f, 0.05f, 0.5f);
-    puckXBrightnessSmoother.setTargetValue(targetPuckXBrightness);
-    
-    // Pre-calculate freeze coefficients for smooth interpolation
-    constexpr float normalMixCoeff = -0.2f;
-    constexpr float freezeMixCoeff = -0.25f;
-    
     // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER STATE MACHINE
-    // State-owned trigger logic: button advances state regardless of current position
+    // Responds to BOTH rising and falling edges for proper toggle button behavior:
+    //   - Rising edge (0→1) while Idle: Start Recording
+    //   - Rising edge (0→1) while Recording: Force transition to Looping
+    //   - ANY edge while Looping: Cancel and return to Idle
+    // Looping also auto-exits when entropy reaches 1.0
     // ═══════════════════════════════════════════════════════════════════════
     using namespace threadbare::tuning;
-    const bool buttonPressed = state.freeze;
+    const bool buttonOn = state.freeze;
     
-    // Detect button press (rising edge) using state-owned logic
-    if (buttonPressed && !lastButtonState)
+    // Detect edges
+    const bool risingEdge = buttonOn && !lastButtonState;
+    const bool fallingEdge = !buttonOn && lastButtonState;
+    const bool anyEdge = risingEdge || fallingEdge;
+    
+    // Handle toggle button edges
+    if (anyEdge && currentLooperState == LooperState::Looping)
+    {
+        // ANY click while Looping → cancel and return to Idle
+        currentLooperState = LooperState::Idle;
+        loopRecordHead = 0;
+        loopPlayHead = 0;
+        actualLoopLength = 0;
+        entropyAmount = 0.0f;
+        exitFadeAmount = 1.0f;
+    }
+    else if (fallingEdge && currentLooperState == LooperState::Recording)
+    {
+        // Click during Recording → COMMIT what we have and start looping
+        // This allows custom/truncated loop lengths (manual "punch out")
+        if (loopRecordHead > crossfadeSamples * 2)  // Must have enough for crossfade
+        {
+            actualLoopLength = loopRecordHead;
+            currentLooperState = LooperState::Looping;
+            loopPlayHead = 0;
+            
+            // Apply "Subliminal" transition (duck + diffuse)
+            loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
+            diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
+        }
+        else
+        {
+            // Not enough recorded - cancel instead
+            currentLooperState = LooperState::Idle;
+            loopRecordHead = 0;
+            loopPlayHead = 0;
+            actualLoopLength = 0;
+            entropyAmount = 0.0f;
+            exitFadeAmount = 1.0f;
+        }
+    }
+    else if (risingEdge)
     {
         // Advance state machine based on current state
         switch (currentLooperState)
         {
             case LooperState::Idle:
                 // Idle → Recording: Start capturing
+                // Calculate target loop length from tempo (4 bars in 4/4 time)
+                {
+                    constexpr int kBeatsPerBar = 4;  // 4/4 time signature
+                    const float tempo = state.tempo > 0.0f ? state.tempo : Disintegration::kFallbackTempo;
+                    const float beatsPerSecond = tempo / 60.0f;
+                    const float barsInSeconds = static_cast<float>(kBeatsPerBar * Disintegration::kDefaultBars) / beatsPerSecond;
+                    targetLoopLength = static_cast<int>(barsInSeconds * sampleRate);
+                    targetLoopLength = std::min(targetLoopLength, static_cast<int>(disintLoopL.size()));
+                    
+                    // Safety: abort if we can't allocate a valid loop
+                    if (targetLoopLength < crossfadeSamples * 2 || disintLoopL.empty())
+                    {
+                        break;  // Stay in Idle state
+                    }
+                }
+                
                 currentLooperState = LooperState::Recording;
                 loopRecordHead = 0;
                 inputDetected = false;
                 silentSampleCount = 0;
                 entropyAmount = 0.0f;
-                
-                // Calculate target loop length from tempo (4 bars)
-                {
-                    const float tempo = state.tempo > 0.0f ? state.tempo : Disintegration::kFallbackTempo;
-                    const float beatsPerSecond = tempo / 60.0f;
-                    const float barsInSeconds = (4.0f * Disintegration::kDefaultBars) / beatsPerSecond;
-                    targetLoopLength = static_cast<int>(barsInSeconds * sampleRate);
-                    targetLoopLength = std::min(targetLoopLength, static_cast<int>(disintLoopL.size()));
-                }
+                exitFadeAmount = 1.0f;
                 
                 // Reset SVF filter state for clean start
                 hpfSvfL = {0.0f, 0.0f};
@@ -973,40 +932,46 @@ void UnravelReverb::process(std::span<float> left,
                 lpfSvfL = {0.0f, 0.0f};
                 lpfSvfR = {0.0f, 0.0f};
                 
+                // Reset diffuse LPF state
+                disintDiffuseLpfL = 0.0f;
+                disintDiffuseLpfR = 0.0f;
+                
                 // Set transition smoothers for Recording → Looping transition
                 loopGainSmoother.setTargetValue(1.0f);  // Full volume during recording
                 diffuseAmountSmoother.setTargetValue(0.0f);  // No diffuse during recording
                 break;
                 
             case LooperState::Recording:
-                // Recording → Looping: Manual trigger (before auto-switch)
+                // NOTE: With toggle button, this case won't be hit on second click
+                // because button goes OFF (not ON). Kept for completeness.
                 if (loopRecordHead > crossfadeSamples)
                 {
-                    // Commit what we have
                     actualLoopLength = loopRecordHead;
                     currentLooperState = LooperState::Looping;
                     loopPlayHead = 0;
                     
-                    // Transition: duck and add diffuse ("Subliminal" mix)
                     loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
                     diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
                 }
                 break;
                 
             case LooperState::Looping:
-                // Looping → Idle: Stop and reset
+                // User clicked button while Looping: cancel and return to Idle
                 currentLooperState = LooperState::Idle;
                 loopRecordHead = 0;
                 loopPlayHead = 0;
                 actualLoopLength = 0;
                 entropyAmount = 0.0f;
+                exitFadeAmount = 1.0f;
                 break;
         }
     }
-    lastButtonState = buttonPressed;
+    lastButtonState = buttonOn;
     
-    // Auto-transition: Recording → Looping when buffer is full
-    if (currentLooperState == LooperState::Recording && loopRecordHead >= targetLoopLength)
+    // Auto-transition: Recording → Looping when buffer is full AND we actually recorded something
+    if (currentLooperState == LooperState::Recording && 
+        loopRecordHead >= targetLoopLength && 
+        inputDetected)  // Only transition if we detected input
     {
         actualLoopLength = targetLoopLength;
         currentLooperState = LooperState::Looping;
@@ -1015,6 +980,12 @@ void UnravelReverb::process(std::span<float> left,
         // Apply "Subliminal" transition
         loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
         diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
+    }
+    
+    // Safety: If somehow in Looping with no content, return to Idle
+    if (currentLooperState == LooperState::Looping && actualLoopLength == 0)
+    {
+        currentLooperState = LooperState::Idle;
     }
     
     // === BLOCK-RATE SVF COEFFICIENT CALCULATION (Ascension Filter) ===
@@ -1033,10 +1004,10 @@ void UnravelReverb::process(std::span<float> left,
         
         // Focus: puckX controls character of disintegration
         // puckX = -1.0 (left, Ghost): Spectral thinning, emphasize highs
-        // puckX = +1.0 (right, Fog): Diffuse smearing, preserve mids
+        // puckX = +1.0 (right, Fog): Diffuse smearing, preserve lows
         const float focus = state.puckX;  // -1 to +1
         
-        // Calculate filter frequencies based on entropy and focus
+        // Calculate filter frequencies based on entropy
         // HPF rises with entropy (removes lows = "evaporating")
         // LPF falls with entropy (removes highs = "fading")
         float baseHpfHz = Disintegration::kHpfStartHz + 
@@ -1044,16 +1015,23 @@ void UnravelReverb::process(std::span<float> left,
         float baseLpfHz = Disintegration::kLpfStartHz - 
                           smoothedEntropy * (Disintegration::kLpfStartHz - Disintegration::kLpfEndHz);
         
-        // Focus modifier: left = boost HPF (ghostly), right = cut HPF (foggy)
+        // Focus effect is ALWAYS audible, not just with entropy
+        // Ghost mode (left): aggressively boost HPF, thin out the sound
+        // Fog mode (right): aggressively cut LPF, make it duller
+        const float focusAmount = std::abs(focus);
         if (focus < 0.0f)
         {
-            // Ghost mode (left): boost HPF frequency
-            baseHpfHz *= 1.0f + (-focus) * (Disintegration::kFocusGhostHpfBoost - 1.0f);
+            // Ghost mode: thin out bass even at low entropy
+            const float ghostHpf = Disintegration::kFocusBaseHpfHz + 
+                                   focusAmount * (Disintegration::kHpfEndHz - Disintegration::kFocusBaseHpfHz);
+            baseHpfHz = std::max(baseHpfHz, ghostHpf);
         }
-        else
+        else if (focus > 0.0f)
         {
-            // Fog mode (right): lower LPF frequency
-            baseLpfHz *= 1.0f - focus * (1.0f - Disintegration::kFocusFogLpfBoost);
+            // Fog mode: cut highs even at low entropy
+            const float fogLpf = Disintegration::kLpfStartHz - 
+                                 focusAmount * (Disintegration::kLpfStartHz - Disintegration::kFocusBaseLpfHz);
+            baseLpfHz = std::min(baseLpfHz, fogLpf);
         }
         
         // Clamp frequencies to safe range
@@ -1061,14 +1039,20 @@ void UnravelReverb::process(std::span<float> left,
         baseLpfHz = juce::jlimit(500.0f, 20000.0f, baseLpfHz);
         
         // Calculate SVF coefficients (Cytomic/Vadim TPT topology)
-        // g = tan(π * fc / fs), k = 1/Q
+        // g = tan(π * fc / fs)
+        // k = 2 - 2*resonance gives Q from 0.5 (res=0) to infinity (res=1)
+        // For subtle musical resonance, we map kFilterResonance (0-1) to k (2 down to ~0.5)
         const float hpfNorm = Disintegration::kPi * baseHpfHz / static_cast<float>(sampleRate);
         const float lpfNorm = Disintegration::kPi * baseLpfHz / static_cast<float>(sampleRate);
         
         currentHpfG = std::tan(hpfNorm);
-        currentHpfK = 1.0f / (1.0f + Disintegration::kFilterResonance);
         currentLpfG = std::tan(lpfNorm);
-        currentLpfK = 1.0f / (1.0f + Disintegration::kFilterResonance);
+        
+        // k = 2 - 2*res gives: res=0 → k=2 (Q=0.5), res=0.3 → k=1.4 (Q≈0.7), res=1 → k=0 (infinite Q)
+        // Clamp k >= 0.1 to prevent instability at high resonance
+        const float kValue = std::max(0.1f, 2.0f - 2.0f * Disintegration::kFilterResonance);
+        currentHpfK = kValue;
+        currentLpfK = kValue;
         
         // Saturation amount scales with entropy (warm blanket feeling)
         currentSatAmount = Disintegration::kSaturationMin + 
@@ -1100,36 +1084,14 @@ void UnravelReverb::process(std::span<float> left,
         // Calculate tone coefficient from smoothed value
         const float toneCoef = juce::jmap(currentTone, -1.0f, 1.0f, 0.1f, 0.9f);
         
-        // Get smoothed freeze amount for crossfading behaviors
-        const float currentFreezeAmount = freezeAmountSmoother.getNextValue();
-        
         // Get smoothed puckX-derived values (eliminates block-rate crackling)
         const float currentErGain = erGainSmoother.getNextValue();
         const float currentFdnSend = fdnSendSmoother.getNextValue();
-        const float currentPuckXBrightness = puckXBrightnessSmoother.getNextValue();
-        const float currentDetuneRatio = detuneRatioSmoother.getNextValue();
         const float currentDuckAmount = duckAmountSmoother.getNextValue();
-        
-        // Calculate freeze injection gate per-sample (used for input gating)
-        // This replaces the block-rate inputGain variable to eliminate stepping
-        const float freezeInjectionGate = 1.0f - currentFreezeAmount;
         
         // Calculate drift amount using smoothed PuckX macro depth (20-80 samples)
         // Smoothing prevents clicks when moving puck horizontally!
-        float driftAmount = currentDrift * currentDriftDepth;
-        
-        // INFINITE CLOUD: Enhance drift during freeze to prevent standing waves
-        // This creates the "tape warble" that smears metallic resonances into organic warmth
-        if (currentFreezeAmount > 0.01f)
-        {
-            driftAmount *= juce::jmap(currentFreezeAmount, 0.0f, 1.0f, 
-                                      1.0f, threadbare::tuning::Freeze::kFreezeDriftMultiplier);
-            
-            // Ensure minimum drift even if user has drift knob at 0
-            // Without this, frozen tails at drift=0 sound metallic
-            driftAmount = std::max(driftAmount, 
-                                   currentFreezeAmount * threadbare::tuning::Freeze::kFreezeMinDriftSamples);
-        }
+        const float driftAmount = currentDrift * currentDriftDepth;
         
         // ═════════════════════════════════════════════════════════════════════
         // A. EARLY REFLECTIONS (Proximity - Physical to Ethereal)
@@ -1193,9 +1155,8 @@ void UnravelReverb::process(std::span<float> left,
                 erWriteHead = 0;
         }
         
-        // B. Record input into Ghost History (with smoothed freeze gate applied)
-        // Uses freezeInjectionGate (derived from smoothed freeze amount) instead of block-rate inputGain
-        const float gainedInput = monoInput * freezeInjectionGate;
+        // B. Record input into Ghost History
+        const float gainedInput = monoInput;
         
         if (!ghostHistory.empty())
         {
@@ -1240,15 +1201,13 @@ void UnravelReverb::process(std::span<float> left,
         const float ghostMono = 0.5f * (ghostOutputL + ghostOutputR) * kGhostHeadroom * ghostDebugGain;
         const float erMono = 0.5f * (erOutputL + erOutputR);
         
-        // Disable ER and ghost injection during freeze to prevent energy drain when input stops
+        // E. Mix dry + ghost + ERs into FDN input with proximity control
         // NOTE: Ghost output is already gain-scaled per grain at spawn time (based on ghostAmount)
         //       so we don't multiply by currentGhost again here (was causing double-gain/clipping)
-        // NOTE: freezeInjectionGate is now calculated earlier (uses smoothed freeze amount)
-        const float fdnInputRaw = freezeInjectionGate * (
+        const float fdnInputRaw = 
             (gainedInput * currentFdnSend) +  // Now smoothed per-sample
             ghostMono + 
-            (erMono * threadbare::tuning::EarlyReflections::kErInjectionGain)
-        );
+            (erMono * threadbare::tuning::EarlyReflections::kErInjectionGain);
         
         // Soft-limit FDN input to prevent feedback runaway with high ghost + high decay
         // This catches peaks before they enter the recirculating feedback loop
@@ -1296,27 +1255,18 @@ void UnravelReverb::process(std::span<float> left,
         for (std::size_t i = 0; i < kNumLines; ++i)
             sumOfReads += readOutputs[i];
         
-        // INFINITE CLOUD: Interpolate mix coefficient for smooth freeze transitions
-        // Normal: -0.2 (intentionally lossy for natural decay)
-        // Freeze: -0.25 (mathematically energy-neutral Householder)
-        // Uses pre-calculated normalMixCoeff and freezeMixCoeff
-        const float mixCoeff = normalMixCoeff + currentFreezeAmount * (freezeMixCoeff - normalMixCoeff);
+        // Householder-style FDN mixing (intentionally lossy for natural decay)
+        constexpr float mixCoeff = -0.2f;
 
         for (std::size_t i = 0; i < kNumLines; ++i)
         {
             // Get smoothed per-line feedback (eliminates stepping when decay/puckY changes)
             const float smoothedLineFeedback = lineFeedbackSmoothers[i].getNextValue();
             
-            // Interpolate with freeze feedback
-            const float effectiveFeedback = smoothedLineFeedback + currentFreezeAmount * 
-                (threadbare::tuning::Freeze::kFrozenFeedback - smoothedLineFeedback);
-            
-            // Householder-style mixing (energy-neutral during freeze)
+            // Householder-style mixing
             const float crossMix = sumOfReads * mixCoeff + readOutputs[i];
             
-            // During freeze: no new input, just recirculate
-            // fdnInput is already gated by freezeInjectionGate
-            nextInputs[i] = fdnInput + (crossMix * effectiveFeedback);
+            nextInputs[i] = fdnInput + (crossMix * smoothedLineFeedback);
         }
         
         // Step C: Apply damping and write with safety clipping
@@ -1328,24 +1278,17 @@ void UnravelReverb::process(std::span<float> left,
             // EQ/Tone filtering (can be disabled via debug switch)
             if constexpr (threadbare::tuning::Debug::kEnableEqAndDuck)
             {
-                // Interpolate LPF coefficient (toneCoef → kFreezeLpfCoef as freeze increases)
-                const float lpCoef = toneCoef + currentFreezeAmount * 
-                    (threadbare::tuning::Freeze::kFreezeLpfCoef - toneCoef);
+                // Low-pass filter for tone control
+                lpState[i] += (nextInputs[i] - lpState[i]) * toneCoef;
                 
-                // HPF contribution fades to zero during freeze (warm bass-heavy pad)
-                const float hpMix = 1.0f - currentFreezeAmount;
-                
-                // Single filter path with interpolated behavior
-                lpState[i] += (nextInputs[i] - lpState[i]) * lpCoef;
+                // High-pass filter to prevent mud buildup
                 constexpr float hpCoef = 0.006f;
                 hpState[i] += (lpState[i] - hpState[i]) * hpCoef;
                 
                 // NOTE: Anti-denormal additive noise REMOVED from feedback path
                 // ScopedNoDenormals at function start + FTZ/DAZ handles denormals
-                // Adding noise here caused audible grain in reverb tail
                 
-                // HPF removed during freeze, present during normal operation
-                processedSample = lpState[i] - (hpState[i] * hpMix);
+                processedSample = lpState[i] - hpState[i];
             }
             
             // Soft limit - tanh provides smooth saturation (can be disabled via debug switch)
@@ -1389,193 +1332,17 @@ void UnravelReverb::process(std::span<float> left,
         wetR *= wetScale;
         
         // ═══════════════════════════════════════════════════════════════════════
-        // MULTI-HEAD LOOP: Smooth bed sound with gradual blend during capture
-        // Blends from FDN to loop gradually over the 5-second capture period
-        // ═══════════════════════════════════════════════════════════════════════
-        float loopL = 0.0f;
-        float loopR = 0.0f;
-        
-        if (state.freeze && !freezeLoopL.empty())
-        {
-            const int maxLoopLength = static_cast<int>(freezeLoopL.size());
-            const float loopLengthF = static_cast<float>(maxLoopLength);
-            
-            // Capture wet output to loop buffer (continues until full)
-            if (freezeLoopLength < maxLoopLength)
-            {
-                freezeLoopL[static_cast<std::size_t>(freezeLoopLength)] = wetL;
-                freezeLoopR[static_cast<std::size_t>(freezeLoopLength)] = wetR;
-                freezeLoopLength++;
-            }
-            
-            // Start playing from loop once we have at least 0.5 seconds captured
-            // This allows gradual blend during the capture phase (uses pre-calculated minPlaybackLength)
-            const bool canPlayLoop = (freezeLoopLength >= minPlaybackLength);
-            
-            // Activate loop playback and set up heads once we have enough content
-            if (canPlayLoop && !freezeLoopActive)
-            {
-                freezeLoopActive = true;
-                
-                // Stagger head positions evenly across captured content
-                const float capturedLength = static_cast<float>(freezeLoopLength);
-                const float stagger = capturedLength / static_cast<float>(kFreezeNumHeads);
-                for (int h = 0; h < kFreezeNumHeads; ++h)
-                {
-                    freezeHeads[static_cast<std::size_t>(h)].readPos = stagger * static_cast<float>(h);
-                }
-                
-                // Pre-charge warming filter (uses pre-calculated headGain)
-                float initL = 0.0f, initR = 0.0f;
-                for (int h = 0; h < kFreezeNumHeads; ++h)
-                {
-                    const int idx = static_cast<int>(freezeHeads[static_cast<std::size_t>(h)].readPos) % freezeLoopLength;
-                    initL += freezeLoopL[static_cast<std::size_t>(idx)] * headGain;
-                    initR += freezeLoopR[static_cast<std::size_t>(idx)] * headGain;
-                }
-                freezeLpfStateL = initL;
-                freezeLpfStateR = initR;
-            }
-            
-            // Gradual blend: transition amount increases as more content is captured
-            // At minPlaybackLength: 0%, at maxLoopLength: 100%
-            if (canPlayLoop)
-            {
-                const float captureProgress = static_cast<float>(freezeLoopLength - minPlaybackLength) 
-                                            / static_cast<float>(maxLoopLength - minPlaybackLength);
-                const float targetTransition = std::min(1.0f, captureProgress);
-                
-                // Smooth the transition to avoid any sudden jumps
-                const float transitionSpeed = 0.0001f; // Very smooth
-                if (freezeTransitionAmount < targetTransition)
-                    freezeTransitionAmount = std::min(targetTransition, freezeTransitionAmount + transitionSpeed);
-                else
-                    freezeTransitionAmount = targetTransition;
-            }
-            
-            // Multi-head loop playback (uses pre-calculated detuneRatio and headGain)
-            if (freezeLoopActive && freezeLoopLength > 0)
-            {
-                const float lengthF = static_cast<float>(freezeLoopLength);
-                
-                // Sum contributions from all heads (simple averaging, no windowing)
-                for (int h = 0; h < kFreezeNumHeads; ++h)
-                {
-                    auto& head = freezeHeads[static_cast<std::size_t>(h)];
-                    
-                    // Update pitch modulation LFO (slow drift)
-                    head.modPhase += head.modInc;
-                    if (head.modPhase >= kTwoPi) head.modPhase -= kTwoPi;
-                    
-                    // Calculate speed with subtle pitch modulation (now uses smoothed detune ratio)
-                    const float modAmount = fastSin(head.modPhase);
-                    head.speedMod = 1.0f + (currentDetuneRatio - 1.0f) * modAmount;
-                    
-                    // Wrap position
-                    float pos = head.readPos;
-                    while (pos < 0.0f) pos += lengthF;
-                    while (pos >= lengthF) pos -= lengthF;
-                    
-                    // Read from buffer with linear interpolation
-                    const int idx0 = static_cast<int>(pos);
-                    const int idx1 = (idx0 + 1) % freezeLoopLength;
-                    const float frac = pos - static_cast<float>(idx0);
-                    
-                    loopL += (freezeLoopL[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
-                            + freezeLoopL[static_cast<std::size_t>(idx1)] * frac) * headGain;
-                    loopR += (freezeLoopR[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
-                            + freezeLoopR[static_cast<std::size_t>(idx1)] * frac) * headGain;
-                    
-                    // Advance read position (forward or reverse, with pitch mod)
-                    head.readPos += head.direction * head.speedMod;
-                    
-                    // Wrap around
-                    while (head.readPos < 0.0f) head.readPos += lengthF;
-                    while (head.readPos >= lengthF) head.readPos -= lengthF;
-                }
-                
-                // Apply warming filter with smoothed puckXBrightness (eliminates stepping)
-                freezeLpfStateL += (loopL - freezeLpfStateL) * currentPuckXBrightness;
-                freezeLpfStateR += (loopR - freezeLpfStateR) * currentPuckXBrightness;
-                
-                // NOTE: Anti-denormal noise REMOVED - ScopedNoDenormals handles this
-                
-                loopL = freezeLpfStateL;
-                loopR = freezeLpfStateR;
-            }
-        }
-        else
-        {
-            // Not frozen - ramp down loop mix
-            const float transitionSpeed = 1.0f / (threadbare::tuning::Freeze::kTransitionSeconds * static_cast<float>(sampleRate));
-            freezeTransitionAmount = std::max(0.0f, freezeTransitionAmount - transitionSpeed);
-            
-            // Keep playing during fade-out (uses pre-calculated headGain and smoothed puckXBrightness)
-            if (freezeTransitionAmount > 0.0f && freezeLoopActive && freezeLoopLength > 0)
-            {
-                const float lengthF = static_cast<float>(freezeLoopLength);
-                
-                for (int h = 0; h < kFreezeNumHeads; ++h)
-                {
-                    auto& head = freezeHeads[static_cast<std::size_t>(h)];
-                    
-                    float pos = head.readPos;
-                    while (pos < 0.0f) pos += lengthF;
-                    while (pos >= lengthF) pos -= lengthF;
-                    
-                    const int idx = static_cast<int>(pos) % freezeLoopLength;
-                    loopL += freezeLoopL[static_cast<std::size_t>(idx)] * headGain;
-                    loopR += freezeLoopR[static_cast<std::size_t>(idx)] * headGain;
-                    
-                    head.readPos += head.direction * head.speedMod;
-                    while (head.readPos < 0.0f) head.readPos += lengthF;
-                    while (head.readPos >= lengthF) head.readPos -= lengthF;
-                }
-                
-                // Apply warming filter during fade-out (smoothed coefficient)
-                freezeLpfStateL += (loopL - freezeLpfStateL) * currentPuckXBrightness;
-                freezeLpfStateR += (loopR - freezeLpfStateR) * currentPuckXBrightness;
-                
-                // NOTE: Anti-denormal noise REMOVED - ScopedNoDenormals handles this
-                
-                loopL = freezeLpfStateL;
-                loopR = freezeLpfStateR;
-            }
-            else if (freezeTransitionAmount <= 0.0f)
-            {
-                freezeLoopActive = false;
-                freezeLoopLength = 0;
-            }
-        }
-        
-        // Blend FDN output with loop output based on transition amount
-        if (freezeTransitionAmount > 0.0f)
-        {
-            wetL = wetL * (1.0f - freezeTransitionAmount) + loopL * freezeTransitionAmount;
-            wetR = wetR * (1.0f - freezeTransitionAmount) + loopR * freezeTransitionAmount;
-        }
-        
-        // ═══════════════════════════════════════════════════════════════════════
         // DISINTEGRATION LOOPER PER-SAMPLE PROCESSING
         // ═══════════════════════════════════════════════════════════════════════
         
         if (currentLooperState == LooperState::Recording && !disintLoopL.empty())
         {
             // === RECORDING STATE ===
-            // Input gate: wait for signal before recording
-            const float inputLevel = std::max(std::abs(inputL), std::abs(inputR));
-            if (inputLevel > inputGateThreshold)
-            {
-                inputDetected = true;
-                silentSampleCount = 0;
-            }
-            else if (inputDetected)
-            {
-                silentSampleCount++;
-            }
+            // Record immediately - no input gate, captures whatever is on the track
+            // (live input, MIDI playback, audio clips, etc.)
+            inputDetected = true;  // Always consider input detected
             
-            // Record dry+wet mix if input detected
-            if (inputDetected && loopRecordHead < targetLoopLength)
+            if (loopRecordHead < targetLoopLength)
             {
                 // Capture mix: ensure minimum wet content for character
                 const float captureMix = std::max(currentMix, Disintegration::kMinCaptureWetMix);
@@ -1606,108 +1373,136 @@ void UnravelReverb::process(std::span<float> left,
                 loopRecordHead++;
             }
             
-            // Update progress for UI
-            state.loopProgress = static_cast<float>(loopRecordHead) / static_cast<float>(targetLoopLength);
+            // Update progress for UI (protect against division by zero)
+            state.loopProgress = (targetLoopLength > 0) 
+                ? static_cast<float>(loopRecordHead) / static_cast<float>(targetLoopLength)
+                : 0.0f;
         }
         else if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
         {
             // === LOOPING STATE with Disintegration ===
             
-            // Get smoothed values for smooth transitions
+            // Get smoothed loop gain
             const float loopGain = loopGainSmoother.getNextValue();
-            const float diffuseAmount = diffuseAmountSmoother.getNextValue();
-            const float currentEntropy = entropySmoother.getNextValue();
             
             // === ENTROPY ACCUMULATION (puckY controls rate) ===
-            // Rate math: entropyRate = 1.0 / (targetSeconds * sampleRate)
-            // puckY -1.0 = slow (~30s), puckY +1.0 = fast (~5s)
-            const float entropyRate = juce::jmap(puckY, -1.0f, 1.0f, 
-                                                 Disintegration::kEntropyRateMin, 
-                                                 Disintegration::kEntropyRateMax);
+            // Rate is based on LOOP ITERATIONS, not wall-clock time
+            // puckY -1.0 (bottom) = slow (1000 loops to full entropy - practically endless)
+            // puckY +1.0 (top) = fast (1 loop to full entropy)
+            const float targetLoops = juce::jmap(puckY, -1.0f, 1.0f, 
+                                                 Disintegration::kEntropyLoopsMax, 
+                                                 Disintegration::kEntropyLoopsMin);
+            // Entropy rate = 1.0 / (loopLength * targetLoops) so full entropy after targetLoops iterations
+            const float entropyRate = 1.0f / (static_cast<float>(actualLoopLength) * targetLoops);
             entropyAmount = std::min(1.0f, entropyAmount + entropyRate);
             
-            // Read from loop buffer with linear interpolation
-            const float lengthF = static_cast<float>(actualLoopLength);
-            float readPos = static_cast<float>(loopPlayHead);
+            // Read from loop buffer
+            const int idx = loopPlayHead % actualLoopLength;
+            float disintL = disintLoopL[static_cast<std::size_t>(idx)];
+            float disintR = disintLoopR[static_cast<std::size_t>(idx)];
             
-            // Ensure position is valid
-            while (readPos < 0.0f) readPos += lengthF;
-            while (readPos >= lengthF) readPos -= lengthF;
-            
-            const int idx0 = static_cast<int>(readPos);
-            const int idx1 = (idx0 + 1) % actualLoopLength;
-            const float frac = readPos - static_cast<float>(idx0);
-            
-            float disintL = disintLoopL[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
-                          + disintLoopL[static_cast<std::size_t>(idx1)] * frac;
-            float disintR = disintLoopR[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
-                          + disintLoopR[static_cast<std::size_t>(idx1)] * frac;
-            
-            // === ASCENSION FILTER (SVF HPF + LPF) ===
-            // Apply high-pass filter (removes lows, creates "evaporating" feel)
-            disintL = processSvfHp(disintL, hpfSvfL, currentHpfG, currentHpfK);
-            disintR = processSvfHp(disintR, hpfSvfR, currentHpfG, currentHpfK);
-            
-            // Apply low-pass filter (removes highs, creates "fading" feel)
-            disintL = processSvfLp(disintL, lpfSvfL, currentLpfG, currentLpfK);
-            disintR = processSvfLp(disintR, lpfSvfR, currentLpfG, currentLpfK);
+            // === ASCENSION FILTER (sound gets thinner as entropy increases) ===
+            // Only apply when entropy has accumulated (avoid filter transients at start)
+            if (entropyAmount > 0.05f && currentHpfG > 0.0001f && currentLpfG > 0.0001f)
+            {
+                // High-pass: removes bass, creates "evaporating" feel
+                disintL = processSvfHp(disintL, hpfSvfL, currentHpfG, currentHpfK);
+                disintR = processSvfHp(disintR, hpfSvfR, currentHpfG, currentHpfK);
+                
+                // Low-pass: removes highs, creates "fading" feel
+                disintL = processSvfLp(disintL, lpfSvfL, currentLpfG, currentLpfK);
+                disintR = processSvfLp(disintR, lpfSvfR, currentLpfG, currentLpfK);
+            }
             
             // === WARM SATURATION (increases with entropy) ===
-            // Soft-clip using tanh with makeup gain to maintain level
             if (currentSatAmount > 0.01f)
             {
-                const float drive = 1.0f + currentSatAmount;
-                const float makeup = 1.0f / (1.0f + currentSatAmount * 0.5f);
+                const float drive = 1.0f + currentSatAmount * 2.0f;
+                const float makeup = 1.0f / (1.0f + currentSatAmount);
                 disintL = std::tanh(disintL * drive) * makeup;
                 disintR = std::tanh(disintR * drive) * makeup;
             }
             
-            // === DIFFUSE BLUR (subtle smearing, part of "Subliminal" mix) ===
-            // Simple 1-pole LPF for diffusion
-            if (diffuseAmount > 0.01f)
+            // ═══════════════════════════════════════════════════════════════
+            // BUFFER DEGRADATION: Write processed audio back to the buffer
+            // This creates authentic "disintegration loops" behavior where
+            // each pass through the loop degrades the stored audio permanently.
+            // The amount of degradation scales with entropy.
+            // ═══════════════════════════════════════════════════════════════
+            if (entropyAmount > 0.1f)  // Start degrading after some entropy accumulates
             {
-                const float diffuseCoef = diffuseAmount * 0.3f;  // Subtle blur
-                disintL = freezeLpfStateL + (disintL - freezeLpfStateL) * (1.0f - diffuseCoef);
-                disintR = freezeLpfStateR + (disintR - freezeLpfStateR) * (1.0f - diffuseCoef);
-                freezeLpfStateL = disintL;
-                freezeLpfStateR = disintR;
+                // Degradation amount: how much of the processed audio replaces original
+                // Starts subtle (10%) and increases with entropy (up to 50%)
+                const float degradeAmount = juce::jmap(entropyAmount, 0.1f, 1.0f, 0.1f, 0.5f);
+                
+                // Only apply degradation in the middle of the loop (not at crossfade boundaries)
+                // This prevents clicks from accumulated boundary processing
+                const bool inSafeZone = (loopPlayHead > crossfadeSamples * 2) && 
+                                        (loopPlayHead < actualLoopLength - crossfadeSamples * 2);
+                
+                if (inSafeZone)
+                {
+                    // Store the filtered/saturated audio back (before output gains)
+                    // This creates cumulative degradation - each loop pass makes it worse
+                    const int writeIdx = loopPlayHead;
+                    disintLoopL[static_cast<std::size_t>(writeIdx)] = 
+                        disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - degradeAmount) + 
+                        disintL * degradeAmount;
+                    disintLoopR[static_cast<std::size_t>(writeIdx)] = 
+                        disintLoopR[static_cast<std::size_t>(writeIdx)] * (1.0f - degradeAmount) + 
+                        disintR * degradeAmount;
+                }
             }
-            
-            // Apply loop gain (ducked by -3dB for "Subliminal" effect)
-            disintL *= loopGain;
-            disintR *= loopGain;
             
             // === MICRO-CROSSFADE at loop boundary (prevents clicks) ===
-            if (loopPlayHead < crossfadeSamples && actualLoopLength > crossfadeSamples * 2)
+            float crossfadeGain = 1.0f;
+            if (actualLoopLength > crossfadeSamples * 2)
             {
-                // Crossfade: blend end of loop with start
-                const int endIdx = actualLoopLength - crossfadeSamples + loopPlayHead;
-                const float endL = disintLoopL[static_cast<std::size_t>(endIdx % actualLoopLength)];
-                const float endR = disintLoopR[static_cast<std::size_t>(endIdx % actualLoopLength)];
+                if (loopPlayHead < crossfadeSamples)
+                {
+                    crossfadeGain = static_cast<float>(loopPlayHead) / static_cast<float>(crossfadeSamples);
+                }
+                else if (loopPlayHead >= actualLoopLength - crossfadeSamples)
+                {
+                    const int samplesFromEnd = actualLoopLength - loopPlayHead;
+                    crossfadeGain = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
+                }
+            }
+            
+            // === GRADUAL FADE based on entropy ===
+            // As entropy increases 0→1, volume decreases smoothly
+            // Using a curve that keeps most volume until later in the cycle
+            const float entropyFade = 1.0f - (entropyAmount * entropyAmount);  // Quadratic curve
+            
+            // Apply loop gain with crossfade and entropy fade
+            disintL *= loopGain * crossfadeGain * entropyFade;
+            disintR *= loopGain * crossfadeGain * entropyFade;
+            
+            // === EXIT BEHAVIOR: Return to Idle when entropy reaches 1.0 ===
+            if (entropyAmount >= 1.0f)
+            {
+                // Give a brief moment at zero before returning to idle
+                const float fadeRate = 1.0f / (Disintegration::kFadeToReverbSeconds * static_cast<float>(sampleRate));
+                exitFadeAmount = std::max(0.0f, exitFadeAmount - fadeRate);
                 
-                const float fadeProgress = static_cast<float>(loopPlayHead) / static_cast<float>(crossfadeSamples);
-                disintL = disintL * fadeProgress + endL * (1.0f - fadeProgress) * loopGain;
-                disintR = disintR * fadeProgress + endR * (1.0f - fadeProgress) * loopGain;
+                if (exitFadeAmount <= 0.0f)
+                {
+                    currentLooperState = LooperState::Idle;
+                    loopRecordHead = 0;
+                    loopPlayHead = 0;
+                    actualLoopLength = 0;
+                    entropyAmount = 0.0f;
+                    exitFadeAmount = 1.0f;
+                }
             }
             
-            // === WRITE DISINTEGRATED AUDIO BACK TO BUFFER ===
-            // This creates the progressive degradation effect
-            // Only write if we have significant entropy (avoid altering loop early on)
-            if (currentEntropy > 0.05f)
-            {
-                const float writeAmount = currentEntropy * 0.7f;  // Gradual replacement
-                const int writeIdx = loopPlayHead;
-                disintLoopL[static_cast<std::size_t>(writeIdx)] = 
-                    disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - writeAmount) + 
-                    disintL * writeAmount / loopGain;  // Compensate for gain to store filtered version
-                disintLoopR[static_cast<std::size_t>(writeIdx)] = 
-                    disintLoopR[static_cast<std::size_t>(writeIdx)] * (1.0f - writeAmount) + 
-                    disintR * writeAmount / loopGain;
-            }
+            // === NaN PROTECTION ===
+            if (std::isnan(disintL) || std::isinf(disintL)) disintL = 0.0f;
+            if (std::isnan(disintR) || std::isinf(disintR)) disintR = 0.0f;
             
-            // Replace wet output with disintegrated loop
-            wetL = disintL;
-            wetR = disintR;
+            // MIX loop INTO reverb (additive)
+            wetL += disintL;
+            wetR += disintR;
             
             // Advance play head
             loopPlayHead++;
@@ -1715,7 +1510,9 @@ void UnravelReverb::process(std::span<float> left,
                 loopPlayHead = 0;
             
             // Update UI state
-            state.loopProgress = static_cast<float>(loopPlayHead) / static_cast<float>(actualLoopLength);
+            state.loopProgress = (actualLoopLength > 0)
+                ? static_cast<float>(loopPlayHead) / static_cast<float>(actualLoopLength)
+                : 0.0f;
         }
         
         // Update looper state for UI

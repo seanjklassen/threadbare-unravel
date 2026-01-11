@@ -1,0 +1,2 @@
+/usr/bin/ar qc libUnravelResources.a CMakeFiles/UnravelResources.dir/juce_binarydata_UnravelResources/JuceLibraryCode/BinaryData1.cpp.o CMakeFiles/UnravelResources.dir/juce_binarydata_UnravelResources/JuceLibraryCode/BinaryData2.cpp.o
+/usr/bin/ranlib libUnravelResources.a

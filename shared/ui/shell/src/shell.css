@@ -597,6 +597,43 @@ body {
   animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   DISINTEGRATION LOOPER STATES
+   Higher specificity to override aria-pressed styles
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Recording state: pulsating red glow */
+@keyframes recording-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.7); }
+  70% { box-shadow: 0 0 0 12px rgba(255, 80, 80, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0); }
+}
+
+.btn-freeze.recording,
+.btn-freeze.recording[aria-pressed='true'] {
+  color: var(--bg);
+}
+
+.btn-freeze.recording::before,
+.btn-freeze.recording[aria-pressed='true']::before {
+  background: #FF5050 !important; /* Warm red for recording */
+  animation: recording-pulse 1.2s ease-out infinite, btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+/* Looping state: puck pupil green for harmonious playback indicator */
+.btn-freeze.looping,
+.btn-freeze.looping[aria-pressed='true'],
+.btn-freeze.looping[aria-pressed='false'] {
+  color: var(--bg);
+}
+
+.btn-freeze.looping::before,
+.btn-freeze.looping[aria-pressed='true']::before,
+.btn-freeze.looping[aria-pressed='false']::before {
+  background: #C5CC7A !important;  /* Puck pupil green */
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 .btn-freeze svg,
 .btn-settings .icon-settings {
   width: 20px;

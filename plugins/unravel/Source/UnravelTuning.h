@@ -210,18 +210,19 @@ struct Disintegration {
     static constexpr float kSaturationMax = 0.4f;         // Warm blanket, not harsh
     
     // === FOCUS MAPPING (Puck X in loop mode) ===
-    // Left (Ghost): Spectral thinning, emphasize highs
-    // Right (Fog): Diffuse smearing, preserve mids
+    // Left (Ghost): Spectral thinning, emphasize highs - MORE DRAMATIC
+    // Right (Fog): Diffuse smearing, preserve mids - MORE DRAMATIC
     // Center: Wistful balance
-    static constexpr float kFocusGhostHpfBoost = 1.5f;    // HPF frequency multiplier
-    static constexpr float kFocusFogLpfBoost = 0.7f;      // LPF frequency multiplier
+    static constexpr float kFocusGhostHpfBoost = 4.0f;    // HPF frequency multiplier (was 1.5)
+    static constexpr float kFocusFogLpfBoost = 0.25f;     // LPF frequency multiplier (was 0.7)
+    static constexpr float kFocusBaseHpfHz = 100.0f;      // Minimum audible HPF effect
+    static constexpr float kFocusBaseLpfHz = 8000.0f;     // Maximum LPF in fog mode
     
-    // === ENTROPY RATE (per-sample increment) ===
-    // Math: rate = 1.0 / (targetSeconds * sampleRate)
-    // At 48kHz: 0.0000007 ≈ 30s, 0.000004 ≈ 5s
-    // CRITICAL: Original 0.0001 would disintegrate in 0.2s - way too fast!
-    static constexpr float kEntropyRateMin = 0.0000007f;  // ~30 seconds (puck Y bottom)
-    static constexpr float kEntropyRateMax = 0.000004f;   // ~5 seconds (puck Y top)
+    // === ENTROPY TIMING (in loop iterations, not wall-clock time) ===
+    // These define how many times the loop plays before full disintegration
+    // Rate is calculated at runtime based on actual loop length
+    static constexpr float kEntropyLoopsMin = 1.0f;      // Fastest: 1 loop iteration to full entropy (puck Y top)
+    static constexpr float kEntropyLoopsMax = 1000.0f;   // Slowest: 1000 iterations - practically endless (puck Y bottom)
     
     // === EXIT BEHAVIOR ===
     static constexpr float kFadeToReverbSeconds = 2.0f;   // Graceful fade when entropy=1

@@ -852,6 +852,17 @@ export class Controls {
   }
 
   update(state = {}) {
+    // DEBUG: Always show debug element
+    let debugEl = document.getElementById('looper-debug')
+    if (!debugEl) {
+      debugEl = document.createElement('div')
+      debugEl.id = 'looper-debug'
+      debugEl.style.cssText = 'position:fixed;top:10px;left:10px;background:rgba(0,0,0,0.9);color:#0f0;font-family:monospace;font-size:11px;padding:8px;z-index:9999;border-radius:4px;max-width:200px;'
+      document.body.appendChild(debugEl)
+    }
+    const hasLooper = typeof state.looperState !== 'undefined'
+    debugEl.innerHTML = `looperState: ${hasLooper ? state.looperState : 'MISSING'}<br>freeze: ${state.freeze}<br>keys: ${Object.keys(state).slice(0,5).join(',')}`
+    
     let nextX = this.state.puckX
     let nextY = this.state.puckY
 

@@ -70,14 +70,11 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> driftDepthSmoother; // PuckX macro depth
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> ghostSmoother;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> freezeAmountSmoother; // Smooth freeze transitions
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> preDelaySmoother;     // Smooth pre-delay changes
     
     // Additional smoothers to eliminate block-rate stepping artifacts
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> erGainSmoother;       // ER gain from puckX
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> fdnSendSmoother;      // FDN send from puckX
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> puckXBrightnessSmoother; // Freeze loop filter coef
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> detuneRatioSmoother;  // Freeze loop pitch mod
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> duckAmountSmoother;   // Ducking depth
     std::array<juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>, kNumLines> lineFeedbackSmoothers; // Per-line feedback
     
@@ -120,30 +117,6 @@ private:
     std::array<float, 8> frozenSpawnPositions;
     std::size_t numFrozenPositions = 0;
     
-    // === MULTI-HEAD LOOP (Legacy freeze - kept for compatibility) ===
-    // Multiple read heads at staggered positions for constant pad
-    static constexpr int kFreezeNumHeads = 6;
-    
-    std::vector<float> freezeLoopL;
-    std::vector<float> freezeLoopR;
-    int freezeLoopLength = 0;           // Actual captured length in samples
-    bool freezeLoopActive = false;      // True when playing from loop buffer
-    float freezeTransitionAmount = 0.0f; // 0 = FDN output, 1 = loop output
-    
-    // Warming filter state (removes icy highs from loop playback)
-    float freezeLpfStateL = 0.0f;
-    float freezeLpfStateR = 0.0f;
-    
-    // Per-head state: position, direction, modulation
-    struct FreezeHead {
-        float readPos = 0.0f;       // Current read position
-        float direction = 1.0f;     // 1.0 = forward, -1.0 = reverse
-        float modPhase = 0.0f;      // LFO phase for pitch modulation
-        float modInc = 0.0f;        // LFO increment (set in prepare)
-        float speedMod = 1.0f;      // Current playback speed (1.0 ± detune)
-    };
-    std::array<FreezeHead, kFreezeNumHeads> freezeHeads;
-    
     // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER STATE
     // ═══════════════════════════════════════════════════════════════════════
@@ -180,31 +153,57 @@ private:
     float currentLpfG = 0.0f, currentLpfK = 0.0f;  // LPF g and k coefficients
     float currentSatAmount = 0.0f;                  // Cached saturation amount
     
+    // Separate diffuse LPF state for disintegration (avoids interference with freeze)
+    float disintDiffuseLpfL = 0.0f;
+    float disintDiffuseLpfR = 0.0f;
+    
+    // Exit fade: when entropy reaches 1.0, fade out to reverb over kFadeToReverbSeconds
+    float exitFadeAmount = 1.0f;  // 1.0 = full loop, 0.0 = full reverb (then return to Idle)
+    
     // Disintegration transition smoothers
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> loopGainSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> diffuseAmountSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> entropySmoother;
     
     // === DISINTEGRATION DSP HELPERS ===
-    // SVF High-Pass implementation (Cytomic/Vadim style)
+    // SVF implementation (Cytomic/Vadim TPT topology - correct formula)
+    // g = tan(pi * fc / fs), k = 2 - 2*resonance (k=2 for no resonance)
     inline float processSvfHp(float input, SvfState& s, float g, float k) noexcept
     {
-        float v3 = input - s.ic2eq;
-        float v1 = s.ic1eq + g * v3 * k;
-        float v2 = s.ic2eq + g * v1;
+        // Coefficients
+        const float a1 = 1.0f / (1.0f + g * (g + k));
+        const float a2 = g * a1;
+        const float a3 = g * a2;
+        
+        // Process
+        const float v3 = input - s.ic2eq;
+        const float v1 = a1 * s.ic1eq + a2 * v3;
+        const float v2 = s.ic2eq + a2 * s.ic1eq + a3 * v3;
+        
+        // Update state
         s.ic1eq = 2.0f * v1 - s.ic1eq;
         s.ic2eq = 2.0f * v2 - s.ic2eq;
+        
         return input - k * v1 - v2;  // HP output
     }
     
     // SVF Low-Pass implementation
     inline float processSvfLp(float input, SvfState& s, float g, float k) noexcept
     {
-        float v3 = input - s.ic2eq;
-        float v1 = s.ic1eq + g * v3 * k;
-        float v2 = s.ic2eq + g * v1;
+        // Coefficients
+        const float a1 = 1.0f / (1.0f + g * (g + k));
+        const float a2 = g * a1;
+        const float a3 = g * a2;
+        
+        // Process
+        const float v3 = input - s.ic2eq;
+        const float v1 = a1 * s.ic1eq + a2 * v3;
+        const float v2 = s.ic2eq + a2 * s.ic1eq + a3 * v3;
+        
+        // Update state
         s.ic1eq = 2.0f * v1 - s.ic1eq;
         s.ic2eq = 2.0f * v2 - s.ic2eq;
+        
         return v2;  // LP output
     }
     

@@ -71,6 +71,7 @@ export class Controls {
     this.bounds = getBounds(this.surface)
     this.dimensions = null
     this.state = { puckX: 0.5, puckY: 0.5, freeze: false }
+    this.looperState = 'idle'  // 'idle' | 'recording' | 'looping'
     this.isDragging = false
     this.pointerId = null
     this.dragOffset = { x: 0, y: 0 }
@@ -221,11 +222,18 @@ export class Controls {
     }
 
     if (this.freezeBtn) {
+      // Track the freeze value we last sent to DSP (for edge detection)
+      this._lastSentFreeze = false
+      
       this.freezeBtn.addEventListener('click', () => {
-        const next = !this.freezeBtn.classList.contains('active')
-        this.setFreezeVisual(next)
-        this.sendParam('freeze', next ? 1 : 0)
-        this.onFreezeChange(next)
+        // Toggle freeze param to create an edge for the DSP state machine
+        // DSP responds to edges: rising edge (0→1) advances state
+        const nextFreeze = !this._lastSentFreeze
+        this._lastSentFreeze = nextFreeze
+        
+        this.sendParam('freeze', nextFreeze ? 1 : 0)
+        this.state.freeze = nextFreeze
+        this.onFreezeChange(nextFreeze)
       })
     }
 
@@ -494,6 +502,23 @@ export class Controls {
   }
 
   /**
+   * Update freeze button visual for disintegration looper states
+   * States: 'idle' | 'recording' | 'looping'
+   */
+  updateLooperVisual() {
+    if (!this.freezeBtn) return
+    
+    // Remove all looper state classes
+    this.freezeBtn.classList.remove('idle', 'recording', 'looping')
+    
+    // Add current state class
+    this.freezeBtn.classList.add(this.looperState)
+    
+    // Update aria for accessibility
+    this.freezeBtn.setAttribute('aria-pressed', String(this.looperState !== 'idle'))
+  }
+
+  /**
    * Toggle the full-screen settings view
    * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
    */
@@ -576,8 +601,25 @@ export class Controls {
       this.applyInertiaIfNeeded()
     }
 
+    // === DISINTEGRATION LOOPER STATE UPDATE ===
+    // looperState from backend: 0 = Idle, 1 = Recording, 2 = Looping
+    // Process looperState FIRST - it's authoritative for button visual
+    if (typeof state.looperState !== 'undefined') {
+      const stateMap = ['idle', 'recording', 'looping']
+      const newLooperState = stateMap[state.looperState] || 'idle'
+      
+      if (newLooperState !== this.looperState) {
+        this.looperState = newLooperState
+        this.updateLooperVisual()
+      }
+    }
+    
+    // Only update freeze visual when in Idle state
+    // When Recording or Looping, the looperState controls the visual
     if (typeof state.freeze !== 'undefined') {
-      this.setFreezeVisual(Boolean(state.freeze))
+      if (this.looperState === 'idle') {
+        this.setFreezeVisual(Boolean(state.freeze))
+      }
     }
 
     // Map backend state property names to frontend parameter IDs
