@@ -443,7 +443,7 @@ export class Presets {
     // Actually select the preset
     this.selectPreset(index)
 
-    // Wait for the dissolve + linger effect, then close
+    // Brief moment for the selection to register, then flow into close
     setTimeout(() => {
       // Clean up selecting classes
       this.app.classList.remove('selecting')
@@ -451,7 +451,7 @@ export class Presets {
       
       // Now close with normal spectral blur animation
       this.closeDropdown({ reason: 'option-effect', deferFocusToPill: true, suppressToggleMs: 250 })
-    }, 320) // 180ms dissolve + 140ms linger
+    }, 120) // Quick acknowledgment, then seamless close
   }
   
   updateSelectedOption(index) {

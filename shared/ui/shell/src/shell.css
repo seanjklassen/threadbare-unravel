@@ -391,9 +391,9 @@ body {
     background 150ms ease;
 }
 
-/* Focus styling (keyboard nav) - no sibling defocus to avoid blur on open */
+/* Focus styling (keyboard nav) - soft radial glow, no sibling defocus */
 .tb-app.presets-open .preset-option:focus {
-  background: rgba(255, 255, 255, 0.06);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
   outline: none;
 }
 
@@ -415,7 +415,7 @@ body {
 }
 
 .tb-app.presets-open .preset-option:active {
-  background: rgba(255, 255, 255, 0.1);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
   transform: translateX(3px) scale(0.995);
 }
 
@@ -430,28 +430,28 @@ body {
 
 /* Selected item during selection - pulse and stay sharp */
 .tb-app.presets-open.selecting .preset-option.selecting-target {
-  transform: translateX(5px) translateY(0) scale(1.02);
+  transform: translateX(3px) translateY(0) scale(1.01);
   filter: blur(0px);
   opacity: 1;
-  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
   
   transition:
-    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
-    filter 100ms ease,
-    opacity 100ms ease,
-    background 150ms ease;
+    transform 100ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 80ms ease,
+    opacity 80ms ease,
+    background 100ms ease;
 }
 
-/* Non-selected items dissolve away */
+/* Non-selected items dissolve away - quick and airy */
 .tb-app.presets-open.selecting .preset-option:not(.selecting-target) {
   filter: blur(6px);
-  opacity: 0.25;
-  transform: translateY(-4px) translateX(0);
+  opacity: 0.3;
+  transform: translateY(-2px) translateX(0);
   
   transition:
-    filter 180ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+    filter 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 100ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Chevron rotation when open with bounce */
@@ -789,19 +789,19 @@ body {
 
 /* Title materializes first */
 .settings-view.open .settings-title {
-  transition-delay: 100ms;
+  transition-delay: 50ms;
 }
 
-/* Organic stagger: accelerating then decelerating rhythm */
-.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 150ms; }
-.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 195ms; }
-.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 235ms; }
-.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 270ms; }
-.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 300ms; }
-.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 328ms; }
-.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 354ms; }
-.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 378ms; }
-.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 400ms; }
+/* Organic stagger: accelerating then decelerating rhythm (matches preset menu) */
+.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 80ms; }
+.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 115ms; }
+.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 145ms; }
+.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 170ms; }
+.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 192ms; }
+.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 212ms; }
+.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 230ms; }
+.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 246ms; }
+.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 260ms; }
 
 /* ===== CONTROL ROWS ===== */
 /* Control rows (no cascade animation - DAW-friendly) */
@@ -832,6 +832,47 @@ body {
 .control-row:hover .param-label svg {
   opacity: 1;
 }
+
+/* ===== ICON TOOLTIPS ===== */
+/* Minimal tooltip using readout text styles, appears on hover after delay */
+.param-label {
+  position: relative;
+}
+
+.param-label[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  z-index: 10;
+  
+  /* Readout text style */
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+  
+  /* Subtle background for legibility */
+  background: rgba(49, 49, 43, 0.9);
+  padding: 4px 8px;
+  border-radius: 4px;
+  
+  /* Invisible by default */
+  opacity: 0;
+  pointer-events: none;
+  
+  /* Delay before appearing */
+  transition: opacity 180ms ease 400ms;
+}
+
+/* Show tooltip on hover (after delay) */
+.control-row:hover .param-label[data-tooltip]::after {
+  opacity: 0.6;
+}
+
+/* Edge protection: if tooltip would overflow right, position left instead */
+/* (Using CSS container queries would be ideal but fallback to JS if needed) */
 
 /* Screen reader only - keeps text accessible but visually hidden */
 .sr-only {
