@@ -268,6 +268,10 @@ body {
 }
 
 /* ===== PRESET DROPDOWN ===== */
+/* 
+ * Spectral blur materialization - elements emerge from ghostly blur
+ * Slow, dreamy timing with organic stagger
+ */
 .preset-dropdown {
   position: fixed;
   top: 80px;
@@ -282,57 +286,172 @@ body {
   padding: 0;
   margin: 0;
   list-style: none;
+  z-index: 500;
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: ghostly blur, faded, scaled down */
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-12px);
-  transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
-  z-index: 500;  /* Highest z-index to cover everything */
-  pointer-events: none;
-  will-change: transform, opacity;
+  transform: translateY(-8px) scale(0.988);
+  filter: blur(28px);
+  
+  /* Close: slow, lingering fade into blur */
+  transition: 
+    opacity 520ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 560ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 600ms;
 }
 
 .tb-app.presets-open .preset-dropdown {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
   pointer-events: auto;
+  
+  /* Open: emerge from blur, still unhurried */
+  transition: 
+    opacity 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 460ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms;
 }
 
-/* Preset options + open cascade (compositor-only) */
+/* Preset options - spectral cascade with organic stagger */
 .preset-option {
   padding: 13px 16px 14px 54px;
   font-size: 21px;
   color: var(--text);
   cursor: pointer;
   border-radius: 0;
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: blurred and faded */
   opacity: 0;
-  transform: translateY(-6px);
-  will-change: transform, opacity;
+  transform: translateY(-4px);
+  filter: blur(14px);
+  
+  /* Close: gentle simultaneous fade */
   transition:
-    opacity 220ms ease,
-    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 340ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 300ms cubic-bezier(0.4, 0, 0.1, 1),
     background 120ms ease;
-  transition-delay: calc(var(--i, 0) * 24ms);
 }
 
-/* Only visible when dropdown is open */
+/* Open: organic stagger - slower reveal, varied timing */
 .tb-app.presets-open .preset-option {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) translateX(0);
+  filter: blur(0px);
+  
+  transition:
+    opacity 380ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 520ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    background 120ms ease;
 }
 
-.preset-option:hover,
-.preset-option:focus {
-  background: rgba(255, 255, 255, 0.04);
+/* Organic stagger: accelerating then decelerating rhythm */
+.tb-app.presets-open .preset-option:nth-child(1) { transition-delay: 40ms; }
+.tb-app.presets-open .preset-option:nth-child(2) { transition-delay: 75ms; }
+.tb-app.presets-open .preset-option:nth-child(3) { transition-delay: 105ms; }
+.tb-app.presets-open .preset-option:nth-child(4) { transition-delay: 130ms; }
+.tb-app.presets-open .preset-option:nth-child(5) { transition-delay: 150ms; }
+.tb-app.presets-open .preset-option:nth-child(6) { transition-delay: 168ms; }
+.tb-app.presets-open .preset-option:nth-child(7) { transition-delay: 184ms; }
+.tb-app.presets-open .preset-option:nth-child(8) { transition-delay: 198ms; }
+.tb-app.presets-open .preset-option:nth-child(9) { transition-delay: 210ms; }
+.tb-app.presets-open .preset-option:nth-child(10) { transition-delay: 220ms; }
+
+/* ===== PRESET HOVER - "Focusing Attention" Effect ===== */
+/* 
+ * Hovering = directing attention to a memory
+ * Non-hovered items blur and fade (defocus)
+ * Hovered item drifts slightly into focus
+ * Asymmetric timing: fast in, slow out (lingering)
+ * Note: Only hover triggers defocus (not focus) to avoid blur on initial open
+ */
+
+/* Hovered item: drifts right, soft radial glow background */
+.tb-app.presets-open .preset-option:hover {
+  transform: translateX(3px) translateY(0);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.07) 0%, transparent 70%);
+  filter: blur(0px);
+  opacity: 1;
   outline: none;
+  
+  /* Fast focus IN */
+  transition:
+    opacity 160ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 200ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 180ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    background 150ms ease;
+}
+
+/* Focus styling (keyboard nav) - no sibling defocus to avoid blur on open */
+.tb-app.presets-open .preset-option:focus {
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+/* Sibling defocus: only on hover (not focus) to prevent blur on initial open */
+.tb-app.presets-open .preset-dropdown:has(.preset-option:hover) .preset-option:not(:hover) {
+  filter: blur(2px);
+  opacity: 0.7;
+  
+  /* Slow defocus OUT (lingering) */
+  transition:
+    opacity 500ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 550ms cubic-bezier(0.4, 0, 0.1, 1),
+    background 120ms ease;
 }
 
 .preset-option.selected {
   color: var(--accent);
 }
 
-.preset-option:active {
-  background: rgba(255, 255, 255, 0.12);
+.tb-app.presets-open .preset-option:active {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateX(3px) scale(0.995);
+}
+
+/* ===== SELECTION EFFECT - "Memory Lock-In" ===== */
+/*
+ * When selecting a preset:
+ * 1. Selected item pulses briefly (scale)
+ * 2. Non-selected items dissolve (blur + fade + drift up)
+ * 3. Brief linger moment
+ * 4. Then normal close animation
+ */
+
+/* Selected item during selection - pulse and stay sharp */
+.tb-app.presets-open.selecting .preset-option.selecting-target {
+  transform: translateX(5px) translateY(0) scale(1.02);
+  filter: blur(0px);
+  opacity: 1;
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  
+  transition:
+    transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 100ms ease,
+    opacity 100ms ease,
+    background 150ms ease;
+}
+
+/* Non-selected items dissolve away */
+.tb-app.presets-open.selecting .preset-option:not(.selecting-target) {
+  filter: blur(6px);
+  opacity: 0.25;
+  transform: translateY(-4px) translateX(0);
+  
+  transition:
+    filter 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Chevron rotation when open with bounce */
@@ -542,40 +661,52 @@ body {
  *         Larger = more dramatic entrance, smaller = more subtle.
  */
 
+/* 
+ * Settings drawer - spectral blur materialization
+ * Slow, dreamy emergence from deep blur
+ */
 .settings-view {
-  --settings-slide-distance: 24px;  /* Easy to tweak: try 16px, 32px, 48px */
-  
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 80px;  /* Leave space for footer */
+  bottom: 80px;
   background: rgba(49, 49, 43, 0.85);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  z-index: 600;  /* Sit on top of everything except maybe the footer */
+  z-index: 600;
   display: flex;
   flex-direction: column;
+  pointer-events: none;
+  will-change: transform, opacity, filter;
   
-  /* Hidden state */
+  /* Hidden: deep blur, faded, shifted */
   opacity: 0;
   visibility: hidden;
-  transform: translateY(var(--settings-slide-distance));
-  pointer-events: none;
-  will-change: transform, opacity;
+  transform: translateY(16px) scale(0.985);
+  filter: blur(36px);
   
-  /* Transition timing (matches preset dropdown feel) */
+  /* Close: slow, spectral fade into blur */
   transition: 
-    opacity 240ms ease,
-    transform 320ms ease,
-    visibility 320ms;
+    opacity 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 680ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 640ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 680ms;
 }
 
 .settings-view.open {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
   pointer-events: auto;
+  
+  /* Open: unhurried emergence from ghostly blur */
+  transition: 
+    opacity 480ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 540ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms;
 }
 
 /* Settings Body */
@@ -626,38 +757,51 @@ body {
   padding-top: 72px;
 }
 
-/* ===== SETTINGS OPEN CASCADE (compositor-only) ===== */
+/* ===== SETTINGS CASCADE - Spectral blur materialization ===== */
 .settings-title,
 .settings-content > .control-row {
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: blurred and shifted */
   opacity: 0;
-  transform: translateY(8px);
-  will-change: transform, opacity;
+  transform: translateY(6px);
+  filter: blur(18px);
+  
+  /* Close: gentle fade */
   transition:
-    opacity 220ms ease,
-    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 260ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 320ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 280ms cubic-bezier(0.4, 0, 0.1, 1);
 }
 
+/* Open: slower spectral materialization */
 .settings-view.open .settings-title,
 .settings-view.open .settings-content > .control-row {
   opacity: 1;
   transform: translateY(0);
+  filter: blur(0px);
+  
+  transition:
+    opacity 400ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1);
 }
 
-/* Title pops in first */
+/* Title materializes first */
 .settings-view.open .settings-title {
-  transition-delay: 60ms;
+  transition-delay: 100ms;
 }
 
-/* Static list: stagger each control row on open only */
-.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 90ms; }
-.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 112ms; }
-.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 136ms; }
-.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 160ms; }
-.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 184ms; }
-.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 208ms; }
-.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 232ms; }
-.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 256ms; }
-.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 280ms; }
+/* Organic stagger: accelerating then decelerating rhythm */
+.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 150ms; }
+.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 195ms; }
+.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 235ms; }
+.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 270ms; }
+.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 300ms; }
+.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 328ms; }
+.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 354ms; }
+.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 378ms; }
+.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 400ms; }
 
 /* ===== CONTROL ROWS ===== */
 /* Control rows (no cascade animation - DAW-friendly) */
@@ -797,11 +941,14 @@ body {
     transition-duration: 0.01ms !important;
   }
 
-  /* Disable stagger/cascade semantics under reduced motion */
+  /* Disable blur and stagger effects under reduced motion */
+  .preset-dropdown,
+  .settings-view,
   .settings-title,
   .settings-content > .control-row,
   .preset-option {
     transition-delay: 0ms !important;
     transform: none !important;
+    filter: none !important;
   }
 }

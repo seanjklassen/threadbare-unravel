@@ -64,21 +64,20 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
 **Structure:**
 1.  **Preset bar**
     * Left: preset dropdown.
-    * Right: small logo glyph.
 2.  **Main canvas**
     * Evolving lissajous orb.
     * Puck 48x48.
 3.  **Bottom strip**
-    * Left: two compact readouts with a range of 0.00-11.00 (e.g. Decay + Size).
+    * Left: x,y compact readouts with a range of 0.00-11.00.
     * Right: settings icon → opens advanced drawer.
     * Right: freeze icon to the left of the sliders icon → activates 2.3.3 Freeze mode.
 
 ### 2.2 Look & Feel
 * **Background:** `#31312b` (warm gray)
 * **Text and icons:** `#C8C7B8` (soft beige)
-* **Unravel accent:** `#E0E993` (lime/chartreuse, used for active states, Freeze on background).
+* **Unravel accent:** `#E0E993` (lime)
 * **Puck pupil:** `#C5CC7A` (olive green)
-* **Lissajous Orb:** `#FFB59F` (peach/salmon) line with soft anti-aliasing; faint "ghost" trail when Ghost > 0.
+* **Lissajous Orb:** `#E8B8A8` (dusty coral)
 
 ### 2.3 Controls
 
@@ -111,7 +110,7 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
 #### 2.3.4 Advanced Drawer
 **Contains:**
 1.  Decay (0.4–50 s).
-2.  Pre-delay (0–100 ms).
+2.  Distance (0–100 ms).
 3.  Size (0.5–2.0).
 4.  Tone (Dark ↔ Bright, −1..1).
 5.  Drift (0–1).

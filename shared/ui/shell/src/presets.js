@@ -159,8 +159,8 @@ export class Presets {
     e.stopPropagation()
     
     const index = parseInt(option.dataset.index, 10)
-    this.selectPreset(index)
-    this.closeDropdown({ reason: 'option-click', deferFocusToPill: true, suppressToggleMs: 250 })
+    // Use effect-based selection (handles its own close)
+    this.selectWithEffect(index)
   }
   
   handleKeyDown(e) {
@@ -318,9 +318,10 @@ export class Presets {
     if (upOption && upOption === this.downOption) {
       const index = parseInt(upOption.dataset.index, 10)
       if (!Number.isNaN(index)) {
-        this.selectPreset(index)
+        // Use effect-based selection
+        this.selectWithEffect(index)
       }
-      this.closeDropdown({ reason: 'option-pointer', deferFocusToPill: true, suppressToggleMs: 250 })
+      // Don't close here - selectWithEffect handles the delayed close
     } else {
       // Press-drag-release off the option => cancel.
       this.downOption = null
@@ -389,8 +390,18 @@ export class Presets {
       option.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
-          this.selectPreset(index)
-          this.closeDropdown({ reason: 'option-key', deferFocusToPill: true, suppressToggleMs: 250 })
+          // Use effect-based selection (handles its own close)
+          this.selectWithEffect(index)
+        }
+      })
+      
+      // Direct click handler as fallback for when pointer capture doesn't work
+      option.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        // Only trigger if not already handled by pointer model
+        if (!this.downWasOnOption) {
+          this.selectWithEffect(index)
         }
       })
       
@@ -403,6 +414,44 @@ export class Presets {
   selectPreset(index) {
     this.loadPreset(index)
     this.updateSelectedOption(index)
+  }
+
+  /**
+   * Select preset with visual "memory lock-in" effect
+   * Adds selecting classes, waits for effect, then closes
+   */
+  selectWithEffect(index) {
+    if (!this.app || !this.presetDropdown) {
+      // Fallback to simple select + close
+      this.selectPreset(index)
+      this.closeDropdown({ reason: 'option-fallback', deferFocusToPill: true, suppressToggleMs: 250 })
+      return
+    }
+
+    // Find the target option
+    const targetOption = this.presetDropdown.querySelector(`[data-index="${index}"]`)
+    if (!targetOption) {
+      this.selectPreset(index)
+      this.closeDropdown({ reason: 'option-no-target', deferFocusToPill: true, suppressToggleMs: 250 })
+      return
+    }
+
+    // Add selecting classes for CSS effect
+    this.app.classList.add('selecting')
+    targetOption.classList.add('selecting-target')
+
+    // Actually select the preset
+    this.selectPreset(index)
+
+    // Wait for the dissolve + linger effect, then close
+    setTimeout(() => {
+      // Clean up selecting classes
+      this.app.classList.remove('selecting')
+      targetOption.classList.remove('selecting-target')
+      
+      // Now close with normal spectral blur animation
+      this.closeDropdown({ reason: 'option-effect', deferFocusToPill: true, suppressToggleMs: 250 })
+    }, 320) // 180ms dissolve + 140ms linger
   }
   
   updateSelectedOption(index) {

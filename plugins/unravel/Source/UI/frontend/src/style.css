@@ -1,0 +1,798 @@
+:root {
+  --bg: #31312b;
+  --text: #C8C7B8;
+  --accent: #E0E993;
+  --puck-shadow: 
+    /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
+    0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
+    0 8.01px 11.21px -2.5px rgba(0, 0, 0, 0.25),
+    0 4.23px 5.92px -1.875px rgba(0, 0, 0, 0.25),
+    0 2.11px 2.95px -1.25px rgba(0, 0, 0, 0.25),
+    0 0.824px 1.15px -0.625px rgba(0, 0, 0, 0.25),
+    0 0.824px 1.154px -0.625px rgba(0, 0, 0, 0.26);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Inter',
+    sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background-color: var(--bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ===== FOCUS STATES ===== */
+.preset-pill:focus-visible,
+.btn-freeze:focus-visible,
+.btn-settings:focus-visible,
+.pupil-toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Focus state for settings button when in close mode */
+.tb-app.settings-open .btn-settings:focus-visible {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+}
+
+/* Elastic slider focus state */
+.elastic-slider:focus-visible {
+  outline: none;
+}
+
+.elastic-slider:focus-visible .elastic-slider__fill {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--accent);
+}
+
+/* ===== APP LOAD ANIMATION ===== */
+@keyframes app-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tb-app {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Staggered reveal for main UI sections */
+.tb-top-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+.tb-canvas-shell {
+  opacity: 0;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+.tb-bottom-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s forwards;
+}
+
+.tb-canvas-shell {
+  position: absolute;
+  top: 60px;
+  bottom: 80px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+  overflow: hidden;
+}
+
+#orb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+  background: transparent;
+}
+
+#puck {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  background: #fff;
+  box-shadow: var(--puck-shadow);
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+  overflow: hidden;
+  /* CSS fallback: center puck before JS positions it */
+  left: 50%;
+  top: 50%;
+}
+
+#puck.active,
+.puck.active {
+  cursor: grabbing;
+  transform: translate(-50%, -50%) scale(.97);
+}
+
+#puck::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 17px;
+  opacity: 0.4;
+  background: linear-gradient(313deg, #fff 35.88%, #d4d4d4 85.41%);
+  pointer-events: none;
+}
+
+.puck-pupil {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #C5CC7A;
+  display: block;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+    0 0 6px rgba(175, 211, 228, 0.4);
+  transition: background-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+#puck.active .puck-pupil,
+.puck.active .puck-pupil {
+  background-color: #C5CC7A;
+  box-shadow: 0 0 8px #C5CC7A;
+}
+
+.tb-top-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 16px;
+  pointer-events: none;
+  z-index: 400; /* Ensure top bar stays above canvas but below dropdown */
+}
+
+.tb-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 24px 24px 32px;
+  pointer-events: none;
+  z-index: 200;
+  background: var(--bg);
+}
+
+.preset-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 21px;
+  text-transform: lowercase;
+  cursor: pointer;
+  pointer-events: auto;
+  padding: 0 20px 0 12px;
+  border-radius: 21px;
+  transition: color 160ms ease;
+  z-index: 1;
+}
+
+/* Background pseudo-element for hover effects */
+.preset-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.preset-pill:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.02);
+}
+
+.preset-pill:active::before {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Active/open styling (consistency): preset pill uses accent background while dropdown is open */
+.tb-app.presets-open .preset-pill {
+  color: var(--bg);
+}
+
+.tb-app.presets-open .preset-pill::before {
+  background: var(--accent);
+  transform: scale(1.02);
+}
+
+.tb-app.presets-open .preset-pill:hover::before,
+.tb-app.presets-open .preset-pill:active::before {
+  background: var(--accent);
+}
+
+/* ===== PRESET DROPDOWN ===== */
+.preset-dropdown {
+  position: fixed;
+  top: 80px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  background: rgba(49, 49, 43, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-12px);
+  transition: opacity 240ms ease, transform 320ms ease, visibility 320ms;
+  z-index: 500;  /* Highest z-index to cover everything */
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.tb-app.presets-open .preset-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Preset options + open cascade (compositor-only) */
+.preset-option {
+  padding: 13px 16px 14px 54px;
+  font-size: 21px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  will-change: transform, opacity;
+  transition:
+    opacity 220ms ease,
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 120ms ease;
+  transition-delay: calc(var(--i, 0) * 24ms);
+}
+
+/* Only visible when dropdown is open */
+.tb-app.presets-open .preset-option {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.preset-option:hover,
+.preset-option:focus {
+  background: rgba(255, 255, 255, 0.04);
+  outline: none;
+}
+
+.preset-option.selected {
+  color: var(--accent);
+}
+
+.preset-option:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Chevron rotation when open with bounce */
+@keyframes chevron-flip {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(200deg); }
+  75% { transform: rotate(170deg); }
+  100% { transform: rotate(180deg); }
+}
+
+@keyframes chevron-unflip {
+  0% { transform: rotate(180deg); }
+  50% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.preset-pill .chevron {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tb-app.presets-open .preset-pill .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Only animate unflip if it was previously opened (has-opened class) */
+.preset-pill.has-opened:not(.open) .chevron {
+  animation: chevron-unflip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.tb-app.presets-open .preset-pill.has-opened .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.preset-pill .chevron {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+}
+
+.preset-pill .chevron svg {
+  width: 11px;
+  height: 7px;
+  display: block;
+}
+
+.preset-name {
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+
+.logo-glyph {
+  width: 48px;
+  height: 48px;
+  display: none;
+  justify-content: center;
+  align-items: center;
+}
+
+.logo-glyph svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+  color: var(--text);
+}
+
+.tb-bottom-bar .readouts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tb-bottom-bar .readouts span {
+  display: block;
+}
+
+.tb-control-cluster {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.btn-freeze,
+.btn-settings {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+/* Background pseudo-element for hover/active effects */
+.btn-freeze::before,
+.btn-settings::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-freeze:hover::before,
+.btn-settings:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.btn-freeze:active::before,
+.btn-settings:active::before {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Bounce animation for background on state toggle */
+@keyframes btn-bg-bounce {
+  0% { transform: scale(0.95); }
+  35% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+.btn-freeze[aria-pressed='true'] {
+  color: var(--bg);
+}
+
+.btn-freeze[aria-pressed='true']::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.btn-freeze svg,
+.btn-settings .icon-settings {
+  width: 20px;
+  height: auto;
+  display: block;
+  fill: currentColor;
+}
+
+/* Settings button icon toggle */
+.btn-settings .icon-close {
+  width: 14px;
+  height: 14px;
+  display: none;
+  fill: currentColor;
+}
+
+/* When settings is open, show close icon and hide settings icon */
+.tb-app.settings-open .btn-settings .icon-settings {
+  display: none;
+}
+
+.tb-app.settings-open .btn-settings .icon-close {
+  display: block;
+}
+
+/* Settings button transforms to close button when open (matches freeze active state) */
+.tb-app.settings-open .btn-settings {
+  color: var(--bg);
+}
+
+.tb-app.settings-open .btn-settings::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Hover state when settings is open - consistent with other buttons */
+.tb-app.settings-open .btn-settings:hover::before {
+  transform: scale(0.96);
+  animation: none;
+  background: var(--accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== SETTINGS VIEW (Overlay with fade + slide from bottom) ===== */
+
+/* 
+ * Overlay transition: Settings fades in over main content.
+ * Matches preset dropdown style but from the bottom.
+ * 
+ * TUNING: Adjust --settings-slide-distance to change how far it slides up.
+ *         Larger = more dramatic entrance, smaller = more subtle.
+ */
+
+.settings-view {
+  --settings-slide-distance: 24px;  /* Easy to tweak: try 16px, 32px, 48px */
+  
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 80px;  /* Leave space for footer */
+  background: rgba(49, 49, 43, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 600;  /* Sit on top of everything except maybe the footer */
+  display: flex;
+  flex-direction: column;
+  
+  /* Hidden state */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(var(--settings-slide-distance));
+  pointer-events: none;
+  will-change: transform, opacity;
+  
+  /* Transition timing (matches preset dropdown feel) */
+  transition: 
+    opacity 240ms ease,
+    transform 320ms ease,
+    visibility 320ms;
+}
+
+.settings-view.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Settings Body */
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 32px 32px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Settings Title */
+.settings-title {
+  position: absolute;
+  top: 24px;   /* matches .tb-top-bar padding-top */
+  left: 24px;  /* matches .tb-top-bar padding-left */
+
+  height: 48px; /* matches .preset-pill height */
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0 60px 0 0; /* matches .preset-pill padding */
+  border-radius: 21px;    /* matches .preset-pill radius */
+
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  color: var(--text);
+  margin: 0;
+  flex-shrink: 0;
+  
+  /* Always visible (settings view handles its own show/hide) */
+  opacity: 1;
+}
+
+/* Clear old padding hack (title is now absolutely positioned) */
+#settings-title { padding-bottom: 0; padding-left: 8px; }
+
+/* Settings Content - holds the control rows */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  padding-top: 72px;
+}
+
+/* ===== SETTINGS OPEN CASCADE (compositor-only) ===== */
+.settings-title,
+.settings-content > .control-row {
+  opacity: 0;
+  transform: translateY(8px);
+  will-change: transform, opacity;
+  transition:
+    opacity 220ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.settings-view.open .settings-title,
+.settings-view.open .settings-content > .control-row {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Title pops in first */
+.settings-view.open .settings-title {
+  transition-delay: 60ms;
+}
+
+/* Static list: stagger each control row on open only */
+.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 90ms; }
+.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 112ms; }
+.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 136ms; }
+.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 160ms; }
+.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 184ms; }
+.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 208ms; }
+.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 232ms; }
+.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 256ms; }
+.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 280ms; }
+
+/* ===== CONTROL ROWS ===== */
+/* Control rows (no cascade animation - DAW-friendly) */
+.control-row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  row-gap: 24px;
+  column-gap: 24px;
+  align-items: center;
+}
+
+.param-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.param-label svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+/* Hover effect for visual feedback */
+.control-row:hover .param-label svg {
+  opacity: 1;
+}
+
+/* Screen reader only - keeps text accessible but visually hidden */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== ELASTIC SLIDER ===== */
+.elastic-slider {
+  position: relative;
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Fine control mode indicator (when holding Shift) */
+.elastic-slider.fine-control {
+  cursor: ew-resize;
+}
+
+/* SVG Gooey filter - hidden, no longer needed without thumb */
+.elastic-slider-goo {
+  display: none;
+}
+
+/* Container - no gooey filter needed */
+.elastic-slider__goo-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* Track background (transparent) */
+.elastic-slider__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16px;
+  background: transparent;
+  border-radius: 12px;
+  overflow: visible;
+}
+
+/* Filled portion of track (beige color from --text) */
+.elastic-slider__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  min-width: 12px;  /* Minimum width so it's always visible with rounded ends */
+  background: var(--text);
+  border-radius: 12px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left center;
+}
+
+/* Thumb/handle - hidden, cleaner without it */
+.elastic-slider__thumb {
+  display: none;
+}
+
+/* Scale fill bar on hover - subtle and refined */
+.elastic-slider:hover .elastic-slider__fill {
+  background: #FFB59F;
+  transform: scaleY(1.12);
+}
+
+/* Active/dragging state - gentle squeeze */
+.elastic-slider.active .elastic-slider__fill {
+  transform: scaleY(1.0);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Hide legacy slider elements */
+.slider-container {
+  display: none;
+}
+
+.slider-track-bg,
+.slider-track-base,
+.slider-track-macro,
+.param-slider {
+  display: none;
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Disable stagger/cascade semantics under reduced motion */
+  .settings-title,
+  .settings-content > .control-row,
+  .preset-option {
+    transition-delay: 0ms !important;
+    transform: none !important;
+  }
+}
