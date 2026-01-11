@@ -172,6 +172,71 @@ struct Freeze {
     static constexpr float kFreezeLpfCoef = 0.75f;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DISINTEGRATION LOOPER
+// William Basinski-inspired loop degradation with "Ascension" filter model
+// The loop evaporates upward (HPF+LPF converge) with warm saturation
+// ═══════════════════════════════════════════════════════════════════════════
+struct Disintegration {
+    // === BUFFER ===
+    // 20 seconds supports 4 bars at 60 BPM with headroom
+    static constexpr float kLoopBufferSeconds = 20.0f;
+    
+    // === RECORDING ===
+    static constexpr int kDefaultBars = 4;
+    static constexpr float kFallbackTempo = 120.0f;
+    static constexpr float kMinCaptureWetMix = 0.3f;      // Ensure some reverb character
+    static constexpr float kInputGateThresholdDb = -60.0f; // Wait for signal before recording
+    static constexpr float kRecordingTimeoutSeconds = 5.0f; // Cancel if no input detected
+    
+    // === LOOP BOUNDARY CROSSFADE (prevents clicks) ===
+    static constexpr float kCrossfadeMs = 10.0f;  // 10ms micro-crossfade at loop point
+    
+    // === TRANSITION (Recording -> Looping) ===
+    static constexpr float kAutoDuckDb = -3.0f;           // Push loop to background
+    static constexpr float kTransitionTimeSeconds = 0.5f; // Smooth duck/diffuse ramp
+    static constexpr float kDiffuseAmount = 0.15f;        // Subtle blur on loop
+    
+    // === ASCENSION FILTER (converging HPF + LPF) ===
+    // Using SVF for resonance - creates "singing" sweep as frequencies converge
+    static constexpr float kHpfStartHz = 20.0f;
+    static constexpr float kHpfEndHz = 800.0f;            // Max HPF at full entropy
+    static constexpr float kLpfStartHz = 20000.0f;
+    static constexpr float kLpfEndHz = 2000.0f;           // Min LPF at full entropy
+    static constexpr float kFilterResonance = 0.3f;       // Subtle Q for musical sweep
+    
+    // === WARMTH (saturation increases with entropy) ===
+    static constexpr float kSaturationMin = 0.0f;
+    static constexpr float kSaturationMax = 0.4f;         // Warm blanket, not harsh
+    
+    // === FOCUS MAPPING (Puck X in loop mode) ===
+    // Left (Ghost): Spectral thinning, emphasize highs
+    // Right (Fog): Diffuse smearing, preserve mids
+    // Center: Wistful balance
+    static constexpr float kFocusGhostHpfBoost = 1.5f;    // HPF frequency multiplier
+    static constexpr float kFocusFogLpfBoost = 0.7f;      // LPF frequency multiplier
+    
+    // === ENTROPY RATE (per-sample increment) ===
+    // Math: rate = 1.0 / (targetSeconds * sampleRate)
+    // At 48kHz: 0.0000007 ≈ 30s, 0.000004 ≈ 5s
+    // CRITICAL: Original 0.0001 would disintegrate in 0.2s - way too fast!
+    static constexpr float kEntropyRateMin = 0.0000007f;  // ~30 seconds (puck Y bottom)
+    static constexpr float kEntropyRateMax = 0.000004f;   // ~5 seconds (puck Y top)
+    
+    // === EXIT BEHAVIOR ===
+    static constexpr float kFadeToReverbSeconds = 2.0f;   // Graceful fade when entropy=1
+    static constexpr float kButtonDebounceMs = 200.0f;    // Prevent rapid state spam
+    
+    // === MATH CONSTANTS ===
+    static constexpr float kPi = 3.14159265359f;
+    
+    // Helper: Convert desired duration to entropy rate
+    // Usage: secondsToEntropyRate(30.0f, 48000.0f) → ~0.0000007
+    static constexpr float secondsToEntropyRate(float seconds, float sampleRate) {
+        return 1.0f / (seconds * sampleRate);
+    }
+};
+
 struct Ducking {
     // Envelope times (seconds).
     static constexpr float kAttackSec  = 0.01f; // 10 ms: snappy enough

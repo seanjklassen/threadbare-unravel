@@ -346,6 +346,7 @@ export class Controls {
   constructor(options = {}) {
     this.onPuckChange = options.onPuckChange || (() => {})
     this.onFreezeChange = options.onFreezeChange || (() => {})
+    this.onEntropyChange = options.onEntropyChange || (() => {})  // Callback for orb entropy visual
 
     this.puck = document.getElementById('puck')
     this.surface = document.querySelector('.tb-canvas-shell')
@@ -373,6 +374,12 @@ export class Controls {
     this.targetPuckY = 0.5
     this.puckAnimationFrame = null
     this.lerpSpeed = 0.12  // Smoothing factor (0-1, lower = smoother)
+    
+    // === DISINTEGRATION LOOPER STATE ===
+    // looperState: 'idle' | 'recording' | 'looping'
+    this.looperState = 'idle'
+    this.loopProgress = 0
+    this.entropy = 0
 
     // Settings drawer state
     this.elasticSliders = {}  // New elastic slider instances
@@ -762,6 +769,32 @@ export class Controls {
     this.freezeBtn.setAttribute('aria-pressed', String(!!isActive))
     this.state.freeze = !!isActive
   }
+  
+  // === DISINTEGRATION LOOPER VISUAL STATE ===
+  updateLooperVisual() {
+    if (!this.freezeBtn) return
+    
+    // Clear all looper states
+    this.freezeBtn.classList.remove('recording', 'looping', 'active')
+    
+    switch (this.looperState) {
+      case 'recording':
+        this.freezeBtn.classList.add('recording')
+        this.freezeBtn.setAttribute('aria-label', `Recording... ${Math.round(this.loopProgress * 100)}%`)
+        break
+        
+      case 'looping':
+        this.freezeBtn.classList.add('looping')
+        // Show entropy level in aria-label for accessibility
+        this.freezeBtn.setAttribute('aria-label', `Looping - Entropy ${Math.round(this.entropy * 100)}%`)
+        break
+        
+      case 'idle':
+      default:
+        this.freezeBtn.setAttribute('aria-label', 'Disintegrate')
+        break
+    }
+  }
 
   /**
    * Toggle the full-screen settings view
@@ -846,7 +879,38 @@ export class Controls {
       this.applyInertiaIfNeeded()
     }
 
-    if (typeof state.freeze !== 'undefined') {
+    // === DISINTEGRATION LOOPER STATE UPDATE ===
+    // looperState from backend: 0 = Idle, 1 = Recording, 2 = Looping
+    if (typeof state.looperState !== 'undefined') {
+      const stateMap = ['idle', 'recording', 'looping']
+      const newState = stateMap[state.looperState] || 'idle'
+      
+      if (newState !== this.looperState) {
+        this.looperState = newState
+        this.updateLooperVisual()
+      }
+    }
+    
+    if (typeof state.loopProgress !== 'undefined') {
+      this.loopProgress = state.loopProgress
+      // Update visual during recording (progress indicator)
+      if (this.looperState === 'recording') {
+        this.updateLooperVisual()
+      }
+    }
+    
+    if (typeof state.entropy !== 'undefined') {
+      this.entropy = state.entropy
+      // Notify orb of entropy changes for visual feedback
+      this.onEntropyChange?.(state.entropy)
+      // Update aria-label during looping
+      if (this.looperState === 'looping') {
+        this.updateLooperVisual()
+      }
+    }
+    
+    // Legacy freeze visual (for backwards compatibility, though looper state takes precedence)
+    if (typeof state.freeze !== 'undefined' && this.looperState === 'idle') {
       this.setFreezeVisual(Boolean(state.freeze))
     }
 

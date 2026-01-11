@@ -235,6 +235,12 @@ void UnravelEditor::handleUpdate()
     // Tempo from DAW
     obj->setProperty("tempo", state.tempo);
     
+    // === DISINTEGRATION LOOPER STATE ===
+    // looperState: 0 = Idle, 1 = Recording, 2 = Looping
+    obj->setProperty("looperState", static_cast<int>(state.looperState));
+    obj->setProperty("loopProgress", state.loopProgress);
+    obj->setProperty("entropy", state.entropy);
+    
     // Current preset
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());
 

@@ -54,6 +54,21 @@ const CONFIG = {
     driftMin: 0.5,    // Min phase multiplier
     driftRange: 1.5,  // Phase multiplier range based on drift param
   },
+  
+  // === DISINTEGRATION LOOPER: Entropy Visual Effects ===
+  // As entropy increases, the orb evaporates upward and fades
+  entropy: {
+    maxAlphaReduction: 0.5,     // How much alpha fades at full entropy (50%)
+    maxRadiusReduction: 0.25,   // How much radius shrinks at full entropy (25%)
+    maxSpeedReduction: 0.6,     // How much animation slows at full entropy (60%)
+    maxAscension: 0.18,         // Max vertical lift as fraction of canvas height (18%)
+    maxTrailReduction: 0.7,     // How much trail shortens at full entropy (70%)
+    colorShift: {
+      r: 255,  // Target R at full entropy (warmer)
+      g: 240,  // Target G at full entropy
+      b: 220,  // Target B at full entropy (warmer tint)
+    },
+  },
 
   // Jitter/smoothing (ghost wobble)
   jitter: {
@@ -115,6 +130,9 @@ export class Orb {
       decay: 0.4,
       size: 0.6,
       tempo: 120,
+      // === DISINTEGRATION LOOPER STATE ===
+      entropy: 0,          // 0-1, how much the loop has disintegrated
+      looperActive: false, // true when looping (not idle/recording)
     }
 
     // Current smoothed state (used for rendering)
@@ -148,6 +166,13 @@ export class Orb {
         this.targetState[key] = patch[key]
       }
     }
+    
+    // === DISINTEGRATION LOOPER: Map looperState to looperActive ===
+    // looperState: 0 = Idle, 1 = Recording, 2 = Looping
+    // looperActive: true only when in Looping state (not recording)
+    if (typeof patch.looperState !== 'undefined') {
+      this.targetState.looperActive = (patch.looperState === 2)
+    }
   }
 
   draw() {
@@ -161,8 +186,8 @@ export class Orb {
     const keys = Object.keys(this.state)
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i]
-      if (key === 'tempo') {
-        // Tempo doesn't need smoothing - snap to target
+      if (key === 'tempo' || key === 'looperActive') {
+        // Tempo and looperActive don't need smoothing - snap to target
         this.state[key] = this.targetState[key]
       } else {
         this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
@@ -178,27 +203,56 @@ export class Orb {
     const ghost = clamp(this.state.ghost, 0, 1)
     const decay = clamp(this.state.decay, 0, 1)
     const size = clamp(this.state.size, 0, 1)
+    
+    // === DISINTEGRATION LOOPER: Entropy state ===
+    const entropy = clamp(this.state.entropy || 0, 0, 1)
+    const looperActive = this.state.looperActive || false
+    const { entropy: E } = CONFIG
 
     // Radius calculation using CONFIG
+    // With entropy: orb shrinks as it "evaporates"
     const { radius: R } = CONFIG
     const sizeMultiplier = R.sizeMin + size * R.sizeRange
-    const radiusBase = minDim * (
+    let radiusBase = minDim * (
       R.base + 
       puckY * R.puckYInfluence + 
       tailLevel * R.tailLevelInfluence + 
       inLevel * R.inLevelInfluence
     ) * sizeMultiplier
+    
+    // Apply entropy-based radius reduction (orb shrinks as it evaporates)
+    if (looperActive && entropy > 0) {
+      radiusBase *= (1 - entropy * E.maxRadiusReduction)
+    }
 
     // Stroke calculation using CONFIG
     // Floor at 3px to prevent thin lines on low-DPI WebViews (DAW environments)
     const { stroke: S } = CONFIG
     const strokeScale = minDim / S.referenceSize
     const strokeWidth = Math.max((S.baseWidth + tailLevel * S.widthRange) * strokeScale, 3)
-    const strokeAlpha = S.baseAlpha + tailLevel * S.alphaRange
+    let strokeAlpha = S.baseAlpha + tailLevel * S.alphaRange
+    
+    // Apply entropy-based alpha reduction (orb fades as it evaporates)
+    if (looperActive && entropy > 0) {
+      strokeAlpha *= (1 - entropy * E.maxAlphaReduction)
+    }
 
     // Ghost trail history using CONFIG
+    // With entropy: trail shortens (memory evaporates)
     const { trail: T } = CONFIG
-    this.maxHistory = Math.floor(T.minHistory + decay * T.historyRange)
+    let trailHistoryMax = T.minHistory + decay * T.historyRange
+    if (looperActive && entropy > 0) {
+      trailHistoryMax *= (1 - entropy * E.maxTrailReduction)
+    }
+    this.maxHistory = Math.max(1, Math.floor(trailHistoryMax))
+    
+    // === DISINTEGRATION LOOPER: Vertical Ascension ===
+    // Orb rises toward the top as entropy increases (evaporating upward)
+    let drawCenterY = this.centerY
+    if (looperActive && entropy > 0) {
+      const ascensionOffset = entropy * E.maxAscension * this.height
+      drawCenterY = this.centerY - ascensionOffset
+    }
 
     // Lissajous frequencies using CONFIG
     const { frequency: F } = CONFIG
@@ -218,13 +272,19 @@ export class Orb {
     this.lastTime = now
 
     const rotationsPerMs = (tempo / 60) * TP.division / 1000
-    const basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
+    let basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
+    
+    // Apply entropy-based speed reduction (orb slows as it evaporates)
+    if (looperActive && entropy > 0) {
+      basePhaseIncrement *= (1 - entropy * E.maxSpeedReduction)
+    }
+    
     this.phase += basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
 
     // Z-axis rotation (accumulates slower than phase for subtle spin)
     this.rotation += basePhaseIncrement * CONFIG.rotation.speed
 
-    // Generate curve points
+    // Generate curve points (using drawCenterY for vertical ascension)
     let prevRadius = radiusBase
     const totalRadians = TWO_PI * CONFIG.curveWraps
     for (let i = 0; i < CONFIG.pointCount; i += 1) {
@@ -236,7 +296,7 @@ export class Orb {
       prevRadius = radius
 
       const px = this.centerX + Math.cos(t * freqX + this.phase) * radius
-      const py = this.centerY + Math.sin(t * freqY + this.phase * F.yPhaseRatio) * radius * F.ySquash
+      const py = drawCenterY + Math.sin(t * freqY + this.phase * F.yPhaseRatio) * radius * F.ySquash
 
       const point = this.points[i]
       point.x = px
@@ -275,11 +335,11 @@ export class Orb {
       ctx.stroke()
     }
 
-    // Apply z-axis rotation around center
+    // Apply z-axis rotation around center (uses drawCenterY for ascension)
     ctx.save()
-    ctx.translate(this.centerX, this.centerY)
+    ctx.translate(this.centerX, drawCenterY)
     ctx.rotate(this.rotation)
-    ctx.translate(-this.centerX, -this.centerY)
+    ctx.translate(-this.centerX, -drawCenterY)
 
     // Draw ghost trail history
     const { trailColor: TC } = CONFIG

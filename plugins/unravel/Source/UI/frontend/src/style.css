@@ -469,6 +469,63 @@ body {
   animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* ===== DISINTEGRATION LOOPER BUTTON STATES ===== */
+
+/* Recording state: Red pulsating glow */
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(255, 82, 82, 0.4);
+    transform: scale(1.02);
+  }
+}
+
+@keyframes recording-icon-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.btn-freeze.recording {
+  color: #fff;
+}
+
+.btn-freeze.recording::before {
+  background: #E54D4D;
+  animation: recording-pulse 1.2s ease-in-out infinite;
+}
+
+.btn-freeze.recording svg {
+  animation: recording-icon-pulse 1.2s ease-in-out infinite;
+}
+
+/* Looping state: Accent color with soft glow that fades with entropy */
+@keyframes looping-breathe {
+  0%, 100% {
+    box-shadow: 0 0 8px 2px rgba(224, 233, 147, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px 4px rgba(224, 233, 147, 0.2);
+  }
+}
+
+.btn-freeze.looping {
+  color: var(--bg);
+}
+
+.btn-freeze.looping::before {
+  background: var(--accent);
+  animation: looping-breathe 3s ease-in-out infinite;
+}
+
+/* Override hover states for recording/looping modes */
+.btn-freeze.recording:hover::before,
+.btn-freeze.looping:hover::before {
+  transform: scale(1);
+}
+
 .btn-freeze svg,
 .btn-settings .icon-settings {
   width: 20px;

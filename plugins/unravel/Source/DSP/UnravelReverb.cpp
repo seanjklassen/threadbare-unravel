@@ -224,6 +224,56 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
         freezeHeads[static_cast<std::size_t>(h)].modInc = kTwoPi * modRate / static_cast<float>(sampleRate);
         freezeHeads[static_cast<std::size_t>(h)].speedMod = 1.0f;
     }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // DISINTEGRATION LOOPER INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Allocate 20-second loop buffers (supports 4 bars at 60 BPM)
+    const auto disintLoopSize = static_cast<std::size_t>(
+        threadbare::tuning::Disintegration::kLoopBufferSeconds * sampleRate);
+    disintLoopL.resize(disintLoopSize);
+    disintLoopR.resize(disintLoopSize);
+    std::fill(disintLoopL.begin(), disintLoopL.end(), 0.0f);
+    std::fill(disintLoopR.begin(), disintLoopR.end(), 0.0f);
+    
+    // Calculate crossfade samples from ms constant (prevents clicks at loop boundary)
+    crossfadeSamples = static_cast<int>(
+        threadbare::tuning::Disintegration::kCrossfadeMs * 0.001f * sampleRate);
+    
+    // Initialize looper state machine
+    currentLooperState = LooperState::Idle;
+    loopRecordHead = 0;
+    loopPlayHead = 0;
+    targetLoopLength = 0;
+    actualLoopLength = 0;
+    entropyAmount = 0.0f;
+    lastButtonState = false;
+    inputDetected = false;
+    silentSampleCount = 0;
+    
+    // Initialize SVF filter state (zero to prevent pops on engage)
+    hpfSvfL = {0.0f, 0.0f};
+    hpfSvfR = {0.0f, 0.0f};
+    lpfSvfL = {0.0f, 0.0f};
+    lpfSvfR = {0.0f, 0.0f};
+    
+    // Initialize block-rate filter coefficients
+    currentHpfG = 0.0f;
+    currentHpfK = 0.0f;
+    currentLpfG = 0.0f;
+    currentLpfK = 0.0f;
+    currentSatAmount = 0.0f;
+    
+    // Initialize disintegration smoothers
+    loopGainSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
+    loopGainSmoother.setCurrentAndTargetValue(1.0f);  // Full volume initially
+    
+    diffuseAmountSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
+    diffuseAmountSmoother.setCurrentAndTargetValue(0.0f);  // No diffuse initially
+    
+    entropySmoother.reset(sampleRate, smoothingTimeSec);
+    entropySmoother.setCurrentAndTargetValue(0.0f);
 }
 
 void UnravelReverb::reset() noexcept
@@ -297,6 +347,45 @@ void UnravelReverb::reset() noexcept
     std::fill(erBufferL.begin(), erBufferL.end(), 0.0f);
     std::fill(erBufferR.begin(), erBufferR.end(), 0.0f);
     erWriteHead = 0;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // DISINTEGRATION LOOPER RESET
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Clear loop buffers
+    if (!disintLoopL.empty())
+        std::fill(disintLoopL.begin(), disintLoopL.end(), 0.0f);
+    if (!disintLoopR.empty())
+        std::fill(disintLoopR.begin(), disintLoopR.end(), 0.0f);
+    
+    // Reset state machine to Idle
+    currentLooperState = LooperState::Idle;
+    loopRecordHead = 0;
+    loopPlayHead = 0;
+    targetLoopLength = 0;
+    actualLoopLength = 0;
+    entropyAmount = 0.0f;
+    lastButtonState = false;
+    inputDetected = false;
+    silentSampleCount = 0;
+    
+    // Reset SVF filter state (CRITICAL: prevents pop on next engage)
+    hpfSvfL = {0.0f, 0.0f};
+    hpfSvfR = {0.0f, 0.0f};
+    lpfSvfL = {0.0f, 0.0f};
+    lpfSvfR = {0.0f, 0.0f};
+    
+    // Reset block-rate coefficients
+    currentHpfG = 0.0f;
+    currentHpfK = 0.0f;
+    currentLpfG = 0.0f;
+    currentLpfK = 0.0f;
+    currentSatAmount = 0.0f;
+    
+    // Reset disintegration smoothers
+    loopGainSmoother.setCurrentAndTargetValue(1.0f);
+    diffuseAmountSmoother.setCurrentAndTargetValue(0.0f);
+    entropySmoother.setCurrentAndTargetValue(0.0f);
 }
 
 float UnravelReverb::readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept
@@ -848,6 +937,147 @@ void UnravelReverb::process(std::span<float> left,
     constexpr float normalMixCoeff = -0.2f;
     constexpr float freezeMixCoeff = -0.25f;
     
+    // ═══════════════════════════════════════════════════════════════════════
+    // DISINTEGRATION LOOPER STATE MACHINE
+    // State-owned trigger logic: button advances state regardless of current position
+    // ═══════════════════════════════════════════════════════════════════════
+    using namespace threadbare::tuning;
+    const bool buttonPressed = state.freeze;
+    
+    // Detect button press (rising edge) using state-owned logic
+    if (buttonPressed && !lastButtonState)
+    {
+        // Advance state machine based on current state
+        switch (currentLooperState)
+        {
+            case LooperState::Idle:
+                // Idle → Recording: Start capturing
+                currentLooperState = LooperState::Recording;
+                loopRecordHead = 0;
+                inputDetected = false;
+                silentSampleCount = 0;
+                entropyAmount = 0.0f;
+                
+                // Calculate target loop length from tempo (4 bars)
+                {
+                    const float tempo = state.tempo > 0.0f ? state.tempo : Disintegration::kFallbackTempo;
+                    const float beatsPerSecond = tempo / 60.0f;
+                    const float barsInSeconds = (4.0f * Disintegration::kDefaultBars) / beatsPerSecond;
+                    targetLoopLength = static_cast<int>(barsInSeconds * sampleRate);
+                    targetLoopLength = std::min(targetLoopLength, static_cast<int>(disintLoopL.size()));
+                }
+                
+                // Reset SVF filter state for clean start
+                hpfSvfL = {0.0f, 0.0f};
+                hpfSvfR = {0.0f, 0.0f};
+                lpfSvfL = {0.0f, 0.0f};
+                lpfSvfR = {0.0f, 0.0f};
+                
+                // Set transition smoothers for Recording → Looping transition
+                loopGainSmoother.setTargetValue(1.0f);  // Full volume during recording
+                diffuseAmountSmoother.setTargetValue(0.0f);  // No diffuse during recording
+                break;
+                
+            case LooperState::Recording:
+                // Recording → Looping: Manual trigger (before auto-switch)
+                if (loopRecordHead > crossfadeSamples)
+                {
+                    // Commit what we have
+                    actualLoopLength = loopRecordHead;
+                    currentLooperState = LooperState::Looping;
+                    loopPlayHead = 0;
+                    
+                    // Transition: duck and add diffuse ("Subliminal" mix)
+                    loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
+                    diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
+                }
+                break;
+                
+            case LooperState::Looping:
+                // Looping → Idle: Stop and reset
+                currentLooperState = LooperState::Idle;
+                loopRecordHead = 0;
+                loopPlayHead = 0;
+                actualLoopLength = 0;
+                entropyAmount = 0.0f;
+                break;
+        }
+    }
+    lastButtonState = buttonPressed;
+    
+    // Auto-transition: Recording → Looping when buffer is full
+    if (currentLooperState == LooperState::Recording && loopRecordHead >= targetLoopLength)
+    {
+        actualLoopLength = targetLoopLength;
+        currentLooperState = LooperState::Looping;
+        loopPlayHead = 0;
+        
+        // Apply "Subliminal" transition
+        loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
+        diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
+    }
+    
+    // === BLOCK-RATE SVF COEFFICIENT CALCULATION (Ascension Filter) ===
+    // CRITICAL: Calculate ONCE per block, not per-sample (saves CPU)
+    if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
+    {
+        // Get smoothed entropy for stable coefficient calculation
+        entropySmoother.setTargetValue(entropyAmount);
+        const float smoothedEntropy = entropySmoother.getCurrentValue();
+        
+        // === PUCK MAPPING: Entropy (Y) and Focus (X) ===
+        // Entropy rate: puckY controls how fast the loop disintegrates
+        // puckY = -1.0 (bottom): Slow disintegration (~30 seconds)
+        // puckY = +1.0 (top): Fast disintegration (~5 seconds)
+        // NOTE: entropyAmount is accumulated per-sample in the loop below
+        
+        // Focus: puckX controls character of disintegration
+        // puckX = -1.0 (left, Ghost): Spectral thinning, emphasize highs
+        // puckX = +1.0 (right, Fog): Diffuse smearing, preserve mids
+        const float focus = state.puckX;  // -1 to +1
+        
+        // Calculate filter frequencies based on entropy and focus
+        // HPF rises with entropy (removes lows = "evaporating")
+        // LPF falls with entropy (removes highs = "fading")
+        float baseHpfHz = Disintegration::kHpfStartHz + 
+                          smoothedEntropy * (Disintegration::kHpfEndHz - Disintegration::kHpfStartHz);
+        float baseLpfHz = Disintegration::kLpfStartHz - 
+                          smoothedEntropy * (Disintegration::kLpfStartHz - Disintegration::kLpfEndHz);
+        
+        // Focus modifier: left = boost HPF (ghostly), right = cut HPF (foggy)
+        if (focus < 0.0f)
+        {
+            // Ghost mode (left): boost HPF frequency
+            baseHpfHz *= 1.0f + (-focus) * (Disintegration::kFocusGhostHpfBoost - 1.0f);
+        }
+        else
+        {
+            // Fog mode (right): lower LPF frequency
+            baseLpfHz *= 1.0f - focus * (1.0f - Disintegration::kFocusFogLpfBoost);
+        }
+        
+        // Clamp frequencies to safe range
+        baseHpfHz = juce::jlimit(20.0f, 5000.0f, baseHpfHz);
+        baseLpfHz = juce::jlimit(500.0f, 20000.0f, baseLpfHz);
+        
+        // Calculate SVF coefficients (Cytomic/Vadim TPT topology)
+        // g = tan(π * fc / fs), k = 1/Q
+        const float hpfNorm = Disintegration::kPi * baseHpfHz / static_cast<float>(sampleRate);
+        const float lpfNorm = Disintegration::kPi * baseLpfHz / static_cast<float>(sampleRate);
+        
+        currentHpfG = std::tan(hpfNorm);
+        currentHpfK = 1.0f / (1.0f + Disintegration::kFilterResonance);
+        currentLpfG = std::tan(lpfNorm);
+        currentLpfK = 1.0f / (1.0f + Disintegration::kFilterResonance);
+        
+        // Saturation amount scales with entropy (warm blanket feeling)
+        currentSatAmount = Disintegration::kSaturationMin + 
+                          smoothedEntropy * (Disintegration::kSaturationMax - Disintegration::kSaturationMin);
+    }
+    
+    // Pre-calculate input gate threshold
+    const float inputGateThreshold = juce::Decibels::decibelsToGain(Disintegration::kInputGateThresholdDb);
+    
     // Temporary storage for FDN processing
     std::array<float, kNumLines> readOutputs;
     std::array<float, kNumLines> nextInputs;
@@ -1324,6 +1554,173 @@ void UnravelReverb::process(std::span<float> left,
             wetL = wetL * (1.0f - freezeTransitionAmount) + loopL * freezeTransitionAmount;
             wetR = wetR * (1.0f - freezeTransitionAmount) + loopR * freezeTransitionAmount;
         }
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // DISINTEGRATION LOOPER PER-SAMPLE PROCESSING
+        // ═══════════════════════════════════════════════════════════════════════
+        
+        if (currentLooperState == LooperState::Recording && !disintLoopL.empty())
+        {
+            // === RECORDING STATE ===
+            // Input gate: wait for signal before recording
+            const float inputLevel = std::max(std::abs(inputL), std::abs(inputR));
+            if (inputLevel > inputGateThreshold)
+            {
+                inputDetected = true;
+                silentSampleCount = 0;
+            }
+            else if (inputDetected)
+            {
+                silentSampleCount++;
+            }
+            
+            // Record dry+wet mix if input detected
+            if (inputDetected && loopRecordHead < targetLoopLength)
+            {
+                // Capture mix: ensure minimum wet content for character
+                const float captureMix = std::max(currentMix, Disintegration::kMinCaptureWetMix);
+                float captureL = inputL * (1.0f - captureMix) + wetL * captureMix;
+                float captureR = inputR * (1.0f - captureMix) + wetR * captureMix;
+                
+                // === MICRO-CROSSFADE at loop boundaries (prevents clicks) ===
+                // Fade in at the start
+                if (loopRecordHead < crossfadeSamples)
+                {
+                    const float fadeIn = static_cast<float>(loopRecordHead) / static_cast<float>(crossfadeSamples);
+                    captureL *= fadeIn;
+                    captureR *= fadeIn;
+                }
+                
+                // Fade out at the end (only if we're near target length)
+                const int samplesFromEnd = targetLoopLength - loopRecordHead;
+                if (samplesFromEnd < crossfadeSamples && samplesFromEnd > 0)
+                {
+                    const float fadeOut = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
+                    captureL *= fadeOut;
+                    captureR *= fadeOut;
+                }
+                
+                // Write to buffer
+                disintLoopL[static_cast<std::size_t>(loopRecordHead)] = captureL;
+                disintLoopR[static_cast<std::size_t>(loopRecordHead)] = captureR;
+                loopRecordHead++;
+            }
+            
+            // Update progress for UI
+            state.loopProgress = static_cast<float>(loopRecordHead) / static_cast<float>(targetLoopLength);
+        }
+        else if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
+        {
+            // === LOOPING STATE with Disintegration ===
+            
+            // Get smoothed values for smooth transitions
+            const float loopGain = loopGainSmoother.getNextValue();
+            const float diffuseAmount = diffuseAmountSmoother.getNextValue();
+            const float currentEntropy = entropySmoother.getNextValue();
+            
+            // === ENTROPY ACCUMULATION (puckY controls rate) ===
+            // Rate math: entropyRate = 1.0 / (targetSeconds * sampleRate)
+            // puckY -1.0 = slow (~30s), puckY +1.0 = fast (~5s)
+            const float entropyRate = juce::jmap(puckY, -1.0f, 1.0f, 
+                                                 Disintegration::kEntropyRateMin, 
+                                                 Disintegration::kEntropyRateMax);
+            entropyAmount = std::min(1.0f, entropyAmount + entropyRate);
+            
+            // Read from loop buffer with linear interpolation
+            const float lengthF = static_cast<float>(actualLoopLength);
+            float readPos = static_cast<float>(loopPlayHead);
+            
+            // Ensure position is valid
+            while (readPos < 0.0f) readPos += lengthF;
+            while (readPos >= lengthF) readPos -= lengthF;
+            
+            const int idx0 = static_cast<int>(readPos);
+            const int idx1 = (idx0 + 1) % actualLoopLength;
+            const float frac = readPos - static_cast<float>(idx0);
+            
+            float disintL = disintLoopL[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
+                          + disintLoopL[static_cast<std::size_t>(idx1)] * frac;
+            float disintR = disintLoopR[static_cast<std::size_t>(idx0)] * (1.0f - frac) 
+                          + disintLoopR[static_cast<std::size_t>(idx1)] * frac;
+            
+            // === ASCENSION FILTER (SVF HPF + LPF) ===
+            // Apply high-pass filter (removes lows, creates "evaporating" feel)
+            disintL = processSvfHp(disintL, hpfSvfL, currentHpfG, currentHpfK);
+            disintR = processSvfHp(disintR, hpfSvfR, currentHpfG, currentHpfK);
+            
+            // Apply low-pass filter (removes highs, creates "fading" feel)
+            disintL = processSvfLp(disintL, lpfSvfL, currentLpfG, currentLpfK);
+            disintR = processSvfLp(disintR, lpfSvfR, currentLpfG, currentLpfK);
+            
+            // === WARM SATURATION (increases with entropy) ===
+            // Soft-clip using tanh with makeup gain to maintain level
+            if (currentSatAmount > 0.01f)
+            {
+                const float drive = 1.0f + currentSatAmount;
+                const float makeup = 1.0f / (1.0f + currentSatAmount * 0.5f);
+                disintL = std::tanh(disintL * drive) * makeup;
+                disintR = std::tanh(disintR * drive) * makeup;
+            }
+            
+            // === DIFFUSE BLUR (subtle smearing, part of "Subliminal" mix) ===
+            // Simple 1-pole LPF for diffusion
+            if (diffuseAmount > 0.01f)
+            {
+                const float diffuseCoef = diffuseAmount * 0.3f;  // Subtle blur
+                disintL = freezeLpfStateL + (disintL - freezeLpfStateL) * (1.0f - diffuseCoef);
+                disintR = freezeLpfStateR + (disintR - freezeLpfStateR) * (1.0f - diffuseCoef);
+                freezeLpfStateL = disintL;
+                freezeLpfStateR = disintR;
+            }
+            
+            // Apply loop gain (ducked by -3dB for "Subliminal" effect)
+            disintL *= loopGain;
+            disintR *= loopGain;
+            
+            // === MICRO-CROSSFADE at loop boundary (prevents clicks) ===
+            if (loopPlayHead < crossfadeSamples && actualLoopLength > crossfadeSamples * 2)
+            {
+                // Crossfade: blend end of loop with start
+                const int endIdx = actualLoopLength - crossfadeSamples + loopPlayHead;
+                const float endL = disintLoopL[static_cast<std::size_t>(endIdx % actualLoopLength)];
+                const float endR = disintLoopR[static_cast<std::size_t>(endIdx % actualLoopLength)];
+                
+                const float fadeProgress = static_cast<float>(loopPlayHead) / static_cast<float>(crossfadeSamples);
+                disintL = disintL * fadeProgress + endL * (1.0f - fadeProgress) * loopGain;
+                disintR = disintR * fadeProgress + endR * (1.0f - fadeProgress) * loopGain;
+            }
+            
+            // === WRITE DISINTEGRATED AUDIO BACK TO BUFFER ===
+            // This creates the progressive degradation effect
+            // Only write if we have significant entropy (avoid altering loop early on)
+            if (currentEntropy > 0.05f)
+            {
+                const float writeAmount = currentEntropy * 0.7f;  // Gradual replacement
+                const int writeIdx = loopPlayHead;
+                disintLoopL[static_cast<std::size_t>(writeIdx)] = 
+                    disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - writeAmount) + 
+                    disintL * writeAmount / loopGain;  // Compensate for gain to store filtered version
+                disintLoopR[static_cast<std::size_t>(writeIdx)] = 
+                    disintLoopR[static_cast<std::size_t>(writeIdx)] * (1.0f - writeAmount) + 
+                    disintR * writeAmount / loopGain;
+            }
+            
+            // Replace wet output with disintegrated loop
+            wetL = disintL;
+            wetR = disintR;
+            
+            // Advance play head
+            loopPlayHead++;
+            if (loopPlayHead >= actualLoopLength)
+                loopPlayHead = 0;
+            
+            // Update UI state
+            state.loopProgress = static_cast<float>(loopPlayHead) / static_cast<float>(actualLoopLength);
+        }
+        
+        // Update looper state for UI
+        state.looperState = currentLooperState;
+        state.entropy = entropyAmount;
         
         // BUG FIX 2: Implement ducking (sidechain-style) - can be disabled via debug switch
         if constexpr (threadbare::tuning::Debug::kEnableEqAndDuck)

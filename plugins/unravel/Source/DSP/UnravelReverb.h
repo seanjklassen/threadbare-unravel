@@ -10,6 +10,15 @@
 namespace threadbare::dsp
 {
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DISINTEGRATION LOOPER STATE MACHINE
+// ═══════════════════════════════════════════════════════════════════════════
+enum class LooperState {
+    Idle,       // Normal reverb operation
+    Recording,  // Capturing dry+wet into loop buffer
+    Looping     // Playback with disintegration
+};
+
 struct UnravelState
 {
     float size = 1.0f;
@@ -24,8 +33,15 @@ struct UnravelState
     float erPreDelay = 0.0f; // Early Reflections pre-delay (0-100ms)
     float inLevel = 0.0f;
     float tailLevel = 0.0f;
-    bool freeze = false;
-    float tempo = 120.0f;  // BPM from DAW host
+    bool freeze = false;     // Legacy: used as trigger input from UI
+    float tempo = 120.0f;    // BPM from DAW host
+    
+    // === DISINTEGRATION LOOPER (output to UI) ===
+    LooperState looperState = LooperState::Idle;  // Current state for UI feedback
+    float loopProgress = 0.0f;      // 0-1 during recording (progress indicator)
+    float entropy = 0.0f;           // Current disintegration amount (0-1)
+    float loopLengthBars = 4.0f;    // Actual recorded length in bars
+    bool looperStateAdvance = false; // Signal from processor to advance state
 };
 
 class UnravelReverb
@@ -36,6 +52,9 @@ public:
     void prepare(const juce::dsp::ProcessSpec& spec);
     void reset() noexcept;
     void process(std::span<float> left, std::span<float> right, UnravelState& state) noexcept;
+    
+    // Disintegration looper state accessor (for processor to read current state)
+    LooperState getLooperState() const noexcept { return currentLooperState; }
 
 private:
     static constexpr std::size_t kNumLines = threadbare::tuning::Fdn::kNumLines;
@@ -101,7 +120,7 @@ private:
     std::array<float, 8> frozenSpawnPositions;
     std::size_t numFrozenPositions = 0;
     
-    // === MULTI-HEAD LOOP (Smooth bed sound) ===
+    // === MULTI-HEAD LOOP (Legacy freeze - kept for compatibility) ===
     // Multiple read heads at staggered positions for constant pad
     static constexpr int kFreezeNumHeads = 6;
     
@@ -124,6 +143,70 @@ private:
         float speedMod = 1.0f;      // Current playback speed (1.0 ± detune)
     };
     std::array<FreezeHead, kFreezeNumHeads> freezeHeads;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // DISINTEGRATION LOOPER STATE
+    // ═══════════════════════════════════════════════════════════════════════
+    LooperState currentLooperState = LooperState::Idle;
+    int loopRecordHead = 0;
+    int loopPlayHead = 0;
+    int targetLoopLength = 0;           // In samples (calculated from tempo)
+    int actualLoopLength = 0;           // May differ if truncated early
+    float entropyAmount = 0.0f;         // Current disintegration level (0-1)
+    int crossfadeSamples = 0;           // Calculated from kCrossfadeMs in prepare()
+    bool lastButtonState = false;       // For state-owned trigger logic
+    
+    // Disintegration loop buffers (20 seconds for 60 BPM support)
+    std::vector<float> disintLoopL;
+    std::vector<float> disintLoopR;
+    
+    // Recording gate
+    bool inputDetected = false;
+    int silentSampleCount = 0;
+    
+    // === ASCENSION SVF FILTER STATE ===
+    // State Variable Filter for resonant "singing" sweep
+    // Using Cytomic/Vadim topology for stability
+    struct SvfState {
+        float ic1eq = 0.0f;  // Integrator 1 state
+        float ic2eq = 0.0f;  // Integrator 2 state
+    };
+    SvfState hpfSvfL, hpfSvfR;  // High-pass filter state (stereo)
+    SvfState lpfSvfL, lpfSvfR;  // Low-pass filter state (stereo)
+    
+    // Block-rate filter coefficients (calculated ONCE per block, not per-sample)
+    // CRITICAL: Per-sample trig calculation would kill CPU
+    float currentHpfG = 0.0f, currentHpfK = 0.0f;  // HPF g and k coefficients
+    float currentLpfG = 0.0f, currentLpfK = 0.0f;  // LPF g and k coefficients
+    float currentSatAmount = 0.0f;                  // Cached saturation amount
+    
+    // Disintegration transition smoothers
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> loopGainSmoother;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> diffuseAmountSmoother;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> entropySmoother;
+    
+    // === DISINTEGRATION DSP HELPERS ===
+    // SVF High-Pass implementation (Cytomic/Vadim style)
+    inline float processSvfHp(float input, SvfState& s, float g, float k) noexcept
+    {
+        float v3 = input - s.ic2eq;
+        float v1 = s.ic1eq + g * v3 * k;
+        float v2 = s.ic2eq + g * v1;
+        s.ic1eq = 2.0f * v1 - s.ic1eq;
+        s.ic2eq = 2.0f * v2 - s.ic2eq;
+        return input - k * v1 - v2;  // HP output
+    }
+    
+    // SVF Low-Pass implementation
+    inline float processSvfLp(float input, SvfState& s, float g, float k) noexcept
+    {
+        float v3 = input - s.ic2eq;
+        float v1 = s.ic1eq + g * v3 * k;
+        float v2 = s.ic2eq + g * v1;
+        s.ic1eq = 2.0f * v1 - s.ic1eq;
+        s.ic2eq = 2.0f * v2 - s.ic2eq;
+        return v2;  // LP output
+    }
     
     // Early Reflections state (stereo multi-tap delay)
     std::vector<float> erBufferL;
