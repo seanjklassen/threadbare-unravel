@@ -228,6 +228,29 @@ struct Disintegration {
     static constexpr float kFadeToReverbSeconds = 2.0f;   // Graceful fade when entropy=1
     static constexpr float kButtonDebounceMs = 200.0f;    // Prevent rapid state spam
     
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 3: PHYSICAL DEGRADATION (William Basinski tape failure simulation)
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // --- OXIDE SHEDDING (Stochastic Dropouts) ---
+    // As entropy increases, random "dropouts" occur (oxide flaking off tape)
+    // Uses timer-based trigger (~40ms intervals) to avoid audio-rate noise
+    static constexpr int kOxideCheckIntervalSamples = 2000;     // Check for dropout every ~40ms at 48kHz
+    static constexpr float kOxideDropoutProbabilityMax = 0.35f; // Max probability per check at entropy=1
+    static constexpr float kOxideDropoutDurationMs = 15.0f;     // Max dropout "gasp" duration
+    static constexpr float kOxideDropoutSmoothMs = 5.0f;        // Gain reduction smoothing (prevents clicks)
+    
+    // --- MOTOR DEATH (Asymmetric Pitch Drag) ---
+    // Brownian noise modulates playback speed, biased downward (motor struggling)
+    static constexpr float kMotorDragMaxCents = 40.0f;          // Max pitch deviation at entropy=1
+    static constexpr float kMotorDragBias = -0.6f;              // Downward bias (-1 = always down, 0 = symmetric)
+    static constexpr float kMotorDragInertia = 0.9995f;         // Brownian walk smoothing (higher = slower drift)
+    static constexpr float kMotorDragStepSize = 0.002f;         // Per-sample random step magnitude
+    
+    // --- AZIMUTH DRIFT (Stereo Decoupling) ---
+    // L/R channels degrade at slightly different rates (tape head misalignment)
+    static constexpr float kAzimuthDriftMaxOffset = 0.08f;      // Max entropy offset between L/R (8%)
+    
     // === MATH CONSTANTS ===
     static constexpr float kPi = 3.14159265359f;
     

@@ -149,9 +149,12 @@ private:
     
     // Block-rate filter coefficients (calculated ONCE per block, not per-sample)
     // CRITICAL: Per-sample trig calculation would kill CPU
-    float currentHpfG = 0.0f, currentHpfK = 0.0f;  // HPF g and k coefficients
-    float currentLpfG = 0.0f, currentLpfK = 0.0f;  // LPF g and k coefficients
-    float currentSatAmount = 0.0f;                  // Cached saturation amount
+    // PHASE 3: Separate L/R coefficients for Azimuth Drift stereo decoupling
+    float currentHpfG_L = 0.0f, currentHpfK_L = 0.0f;  // HPF g and k coefficients (Left)
+    float currentHpfG_R = 0.0f, currentHpfK_R = 0.0f;  // HPF g and k coefficients (Right)
+    float currentLpfG_L = 0.0f, currentLpfK_L = 0.0f;  // LPF g and k coefficients (Left)
+    float currentLpfG_R = 0.0f, currentLpfK_R = 0.0f;  // LPF g and k coefficients (Right)
+    float currentSatAmount = 0.0f;                      // Cached saturation amount
     
     // Separate diffuse LPF state for disintegration (avoids interference with freeze)
     float disintDiffuseLpfL = 0.0f;
@@ -164,6 +167,42 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> loopGainSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> diffuseAmountSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> entropySmoother;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 3: PHYSICAL DEGRADATION STATE
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // --- Oxide Shedding (Stochastic Dropouts) ---
+    uint32_t oxideRngState = 0x12345678;           // LCG seed (fast PRNG)
+    float oxideGainL = 1.0f;                        // Current dropout gain L (smoothed)
+    float oxideGainR = 1.0f;                        // Current dropout gain R (smoothed)
+    float oxideGainTarget = 1.0f;                   // Target gain (0 during dropout)
+    float oxideGainSmoothCoef = 0.0f;               // 1-pole smoother coefficient
+    int oxideDropoutCounter = 0;                    // Samples remaining in current dropout
+    int oxideCheckTimer = 0;                        // Timer for dropout dice roll (CORRECTION #1)
+    
+    // --- Motor Death (Brownian Pitch Drag) ---
+    float motorDragValueL = 0.0f;                   // Current Brownian walk position L (-1 to +1)
+    float motorDragValueR = 0.0f;                   // Current Brownian walk position R
+    float motorDragReadOffsetL = 0.0f;              // Accumulated fractional read offset L
+    float motorDragReadOffsetR = 0.0f;              // Accumulated fractional read offset R
+    
+    // --- Azimuth Drift (Stereo Decoupling) ---
+    float azimuthOffsetL = 0.0f;                    // Entropy offset for left channel
+    float azimuthOffsetR = 0.0f;                    // Entropy offset for right channel
+    
+    // --- Fast LCG PRNG (real-time safe) ---
+    inline float fastRand01() noexcept
+    {
+        // Linear Congruential Generator (Numerical Recipes)
+        oxideRngState = oxideRngState * 1664525u + 1013904223u;
+        return static_cast<float>(oxideRngState) / 4294967296.0f;  // 0.0 to 1.0
+    }
+    
+    inline float fastRandBipolar() noexcept
+    {
+        return fastRand01() * 2.0f - 1.0f;  // -1.0 to +1.0
+    }
     
     // === DISINTEGRATION DSP HELPERS ===
     // SVF implementation (Cytomic/Vadim TPT topology - correct formula)

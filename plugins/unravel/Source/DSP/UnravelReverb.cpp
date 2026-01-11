@@ -217,16 +217,44 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     lpfSvfL = {0.0f, 0.0f};
     lpfSvfR = {0.0f, 0.0f};
     
-    // Initialize block-rate filter coefficients
-    currentHpfG = 0.0f;
-    currentHpfK = 0.0f;
-    currentLpfG = 0.0f;
-    currentLpfK = 0.0f;
+    // Initialize block-rate filter coefficients (separate L/R for Azimuth Drift)
+    currentHpfG_L = 0.0f;
+    currentHpfK_L = 0.0f;
+    currentHpfG_R = 0.0f;
+    currentHpfK_R = 0.0f;
+    currentLpfG_L = 0.0f;
+    currentLpfK_L = 0.0f;
+    currentLpfG_R = 0.0f;
+    currentLpfK_R = 0.0f;
     currentSatAmount = 0.0f;
     
     // Initialize separate diffuse LPF state for disintegration
     disintDiffuseLpfL = 0.0f;
     disintDiffuseLpfR = 0.0f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 3: PHYSICAL DEGRADATION INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Oxide Shedding: smoother coefficient (5ms time constant)
+    const float oxideSmoothMs = threadbare::tuning::Disintegration::kOxideDropoutSmoothMs;
+    oxideGainSmoothCoef = 1.0f - std::exp(-1.0f / (oxideSmoothMs * 0.001f * static_cast<float>(sampleRate)));
+    oxideGainL = 1.0f;
+    oxideGainR = 1.0f;
+    oxideGainTarget = 1.0f;
+    oxideDropoutCounter = 0;
+    oxideCheckTimer = 0;
+    oxideRngState = 0x12345678;  // Deterministic seed
+    
+    // Motor Death: reset Brownian walk
+    motorDragValueL = 0.0f;
+    motorDragValueR = 0.0f;
+    motorDragReadOffsetL = 0.0f;
+    motorDragReadOffsetR = 0.0f;
+    
+    // Azimuth Drift: L/R entropy offsets (asymmetric for stereo widening)
+    azimuthOffsetL = threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset * 0.5f;   // L degrades slightly faster
+    azimuthOffsetR = -threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset * 0.5f;  // R degrades slightly slower
     
     // Initialize exit fade (used when entropy reaches 1.0)
     exitFadeAmount = 1.0f;
@@ -320,11 +348,33 @@ void UnravelReverb::reset() noexcept
     lpfSvfL = {0.0f, 0.0f};
     lpfSvfR = {0.0f, 0.0f};
     
-    // Reset block-rate coefficients
-    currentHpfG = 0.0f;
-    currentHpfK = 0.0f;
-    currentLpfG = 0.0f;
-    currentLpfK = 0.0f;
+    // Reset block-rate coefficients (separate L/R for Azimuth Drift)
+    currentHpfG_L = 0.0f;
+    currentHpfK_L = 0.0f;
+    currentHpfG_R = 0.0f;
+    currentHpfK_R = 0.0f;
+    currentLpfG_L = 0.0f;
+    currentLpfK_L = 0.0f;
+    currentLpfG_R = 0.0f;
+    currentLpfK_R = 0.0f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASE 3: PHYSICAL DEGRADATION RESET
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Oxide Shedding reset
+    oxideGainL = 1.0f;
+    oxideGainR = 1.0f;
+    oxideGainTarget = 1.0f;
+    oxideDropoutCounter = 0;
+    oxideCheckTimer = 0;
+    // Don't reset RNG seed - keeps variation between sessions
+    
+    // Motor Death reset
+    motorDragValueL = 0.0f;
+    motorDragValueR = 0.0f;
+    motorDragReadOffsetL = 0.0f;
+    motorDragReadOffsetR = 0.0f;
     currentSatAmount = 0.0f;
     
     // Reset separate diffuse LPF state for disintegration
@@ -936,6 +986,17 @@ void UnravelReverb::process(std::span<float> left,
                 disintDiffuseLpfL = 0.0f;
                 disintDiffuseLpfR = 0.0f;
                 
+                // === PHASE 3: Reset Physical Degradation state for clean start ===
+                oxideGainL = 1.0f;
+                oxideGainR = 1.0f;
+                oxideGainTarget = 1.0f;
+                oxideDropoutCounter = 0;
+                oxideCheckTimer = 0;
+                motorDragValueL = 0.0f;
+                motorDragValueR = 0.0f;
+                motorDragReadOffsetL = 0.0f;
+                motorDragReadOffsetR = 0.0f;
+                
                 // Set transition smoothers for Recording → Looping transition
                 loopGainSmoother.setTargetValue(1.0f);  // Full volume during recording
                 diffuseAmountSmoother.setTargetValue(0.0f);  // No diffuse during recording
@@ -990,73 +1051,87 @@ void UnravelReverb::process(std::span<float> left,
     
     // === BLOCK-RATE SVF COEFFICIENT CALCULATION (Ascension Filter) ===
     // CRITICAL: Calculate ONCE per block, not per-sample (saves CPU)
+    // PHASE 3: Separate L/R coefficients for Azimuth Drift stereo decoupling
     if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
     {
         // Get smoothed entropy for stable coefficient calculation
         entropySmoother.setTargetValue(entropyAmount);
         const float smoothedEntropy = entropySmoother.getCurrentValue();
         
-        // === PUCK MAPPING: Entropy (Y) and Focus (X) ===
-        // Entropy rate: puckY controls how fast the loop disintegrates
-        // puckY = -1.0 (bottom): Slow disintegration (~30 seconds)
-        // puckY = +1.0 (top): Fast disintegration (~5 seconds)
-        // NOTE: entropyAmount is accumulated per-sample in the loop below
+        // ═══════════════════════════════════════════════════════════════════
+        // PHASE 3: AZIMUTH DRIFT - Calculate separate L/R entropy values
+        // Each channel degrades at a slightly different rate (tape head misalignment)
+        // ═══════════════════════════════════════════════════════════════════
+        const float entropyL = std::clamp(smoothedEntropy + azimuthOffsetL * smoothedEntropy, 0.0f, 1.0f);
+        const float entropyR = std::clamp(smoothedEntropy + azimuthOffsetR * smoothedEntropy, 0.0f, 1.0f);
         
         // Focus: puckX controls character of disintegration
         // puckX = -1.0 (left, Ghost): Spectral thinning, emphasize highs
         // puckX = +1.0 (right, Fog): Diffuse smearing, preserve lows
         const float focus = state.puckX;  // -1 to +1
-        
-        // Calculate filter frequencies based on entropy
-        // HPF rises with entropy (removes lows = "evaporating")
-        // LPF falls with entropy (removes highs = "fading")
-        float baseHpfHz = Disintegration::kHpfStartHz + 
-                          smoothedEntropy * (Disintegration::kHpfEndHz - Disintegration::kHpfStartHz);
-        float baseLpfHz = Disintegration::kLpfStartHz - 
-                          smoothedEntropy * (Disintegration::kLpfStartHz - Disintegration::kLpfEndHz);
-        
-        // Focus effect is ALWAYS audible, not just with entropy
-        // Ghost mode (left): aggressively boost HPF, thin out the sound
-        // Fog mode (right): aggressively cut LPF, make it duller
         const float focusAmount = std::abs(focus);
-        if (focus < 0.0f)
-        {
-            // Ghost mode: thin out bass even at low entropy
-            const float ghostHpf = Disintegration::kFocusBaseHpfHz + 
-                                   focusAmount * (Disintegration::kHpfEndHz - Disintegration::kFocusBaseHpfHz);
-            baseHpfHz = std::max(baseHpfHz, ghostHpf);
-        }
-        else if (focus > 0.0f)
-        {
-            // Fog mode: cut highs even at low entropy
-            const float fogLpf = Disintegration::kLpfStartHz - 
-                                 focusAmount * (Disintegration::kLpfStartHz - Disintegration::kFocusBaseLpfHz);
-            baseLpfHz = std::min(baseLpfHz, fogLpf);
-        }
         
-        // Clamp frequencies to safe range
-        baseHpfHz = juce::jlimit(20.0f, 5000.0f, baseHpfHz);
-        baseLpfHz = juce::jlimit(500.0f, 20000.0f, baseLpfHz);
+        // Helper lambda to calculate filter frequencies for a given entropy value
+        auto calcFilterFreqs = [&](float entropy) -> std::pair<float, float> {
+            // HPF rises with entropy (removes lows = "evaporating")
+            // LPF falls with entropy (removes highs = "fading")
+            float hpfHz = Disintegration::kHpfStartHz + 
+                          entropy * (Disintegration::kHpfEndHz - Disintegration::kHpfStartHz);
+            float lpfHz = Disintegration::kLpfStartHz - 
+                          entropy * (Disintegration::kLpfStartHz - Disintegration::kLpfEndHz);
+            
+            // Focus effect is ALWAYS audible, not just with entropy
+            if (focus < 0.0f)
+            {
+                // Ghost mode: thin out bass even at low entropy
+                const float ghostHpf = Disintegration::kFocusBaseHpfHz + 
+                                       focusAmount * (Disintegration::kHpfEndHz - Disintegration::kFocusBaseHpfHz);
+                hpfHz = std::max(hpfHz, ghostHpf);
+            }
+            else if (focus > 0.0f)
+            {
+                // Fog mode: cut highs even at low entropy
+                const float fogLpf = Disintegration::kLpfStartHz - 
+                                     focusAmount * (Disintegration::kLpfStartHz - Disintegration::kFocusBaseLpfHz);
+                lpfHz = std::min(lpfHz, fogLpf);
+            }
+            
+            // Clamp to safe range
+            hpfHz = juce::jlimit(20.0f, 5000.0f, hpfHz);
+            lpfHz = juce::jlimit(500.0f, 20000.0f, lpfHz);
+            
+            return {hpfHz, lpfHz};
+        };
+        
+        // Calculate frequencies for L and R channels (CORRECTION #2: separate coefficients)
+        auto [hpfHz_L, lpfHz_L] = calcFilterFreqs(entropyL);
+        auto [hpfHz_R, lpfHz_R] = calcFilterFreqs(entropyR);
         
         // Calculate SVF coefficients (Cytomic/Vadim TPT topology)
         // g = tan(π * fc / fs)
-        // k = 2 - 2*resonance gives Q from 0.5 (res=0) to infinity (res=1)
-        // For subtle musical resonance, we map kFilterResonance (0-1) to k (2 down to ~0.5)
-        const float hpfNorm = Disintegration::kPi * baseHpfHz / static_cast<float>(sampleRate);
-        const float lpfNorm = Disintegration::kPi * baseLpfHz / static_cast<float>(sampleRate);
+        const float srFloat = static_cast<float>(sampleRate);
+        const float hpfNorm_L = Disintegration::kPi * hpfHz_L / srFloat;
+        const float lpfNorm_L = Disintegration::kPi * lpfHz_L / srFloat;
+        const float hpfNorm_R = Disintegration::kPi * hpfHz_R / srFloat;
+        const float lpfNorm_R = Disintegration::kPi * lpfHz_R / srFloat;
         
-        currentHpfG = std::tan(hpfNorm);
-        currentLpfG = std::tan(lpfNorm);
+        currentHpfG_L = std::tan(hpfNorm_L);
+        currentLpfG_L = std::tan(lpfNorm_L);
+        currentHpfG_R = std::tan(hpfNorm_R);
+        currentLpfG_R = std::tan(lpfNorm_R);
         
         // k = 2 - 2*res gives: res=0 → k=2 (Q=0.5), res=0.3 → k=1.4 (Q≈0.7), res=1 → k=0 (infinite Q)
         // Clamp k >= 0.1 to prevent instability at high resonance
         const float kValue = std::max(0.1f, 2.0f - 2.0f * Disintegration::kFilterResonance);
-        currentHpfK = kValue;
-        currentLpfK = kValue;
+        currentHpfK_L = kValue;
+        currentLpfK_L = kValue;
+        currentHpfK_R = kValue;
+        currentLpfK_R = kValue;
         
-        // Saturation amount scales with entropy (warm blanket feeling)
+        // Saturation amount scales with average entropy (warm blanket feeling)
+        const float avgEntropy = (entropyL + entropyR) * 0.5f;
         currentSatAmount = Disintegration::kSaturationMin + 
-                          smoothedEntropy * (Disintegration::kSaturationMax - Disintegration::kSaturationMin);
+                          avgEntropy * (Disintegration::kSaturationMax - Disintegration::kSaturationMin);
     }
     
     // Pre-calculate input gate threshold
@@ -1380,7 +1455,7 @@ void UnravelReverb::process(std::span<float> left,
         }
         else if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
         {
-            // === LOOPING STATE with Disintegration ===
+            // === LOOPING STATE with Disintegration + Phase 3 Physical Degradation ===
             
             // Get smoothed loop gain
             const float loopGain = loopGainSmoother.getNextValue();
@@ -1395,23 +1470,131 @@ void UnravelReverb::process(std::span<float> left,
             // Entropy rate = 1.0 / (loopLength * targetLoops) so full entropy after targetLoops iterations
             const float entropyRate = 1.0f / (static_cast<float>(actualLoopLength) * targetLoops);
             entropyAmount = std::min(1.0f, entropyAmount + entropyRate);
+            const float currentEntropy = entropyAmount;  // Cache for this sample
             
-            // Read from loop buffer
-            const int idx = loopPlayHead % actualLoopLength;
-            float disintL = disintLoopL[static_cast<std::size_t>(idx)];
-            float disintR = disintLoopR[static_cast<std::size_t>(idx)];
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 3B: MOTOR DEATH (Asymmetric Pitch Drag via Brownian Noise)
+            // Modulates the read head position with downward-biased random walk
+            // ═══════════════════════════════════════════════════════════════
+            
+            // Update Brownian walk (per channel for stereo width)
+            const float dragStep = Disintegration::kMotorDragStepSize;
+            const float dragInertia = Disintegration::kMotorDragInertia;
+            const float dragBias = Disintegration::kMotorDragBias;
+            
+            // Random step + downward bias (motor struggling)
+            motorDragValueL = dragInertia * motorDragValueL + 
+                              (1.0f - dragInertia) * (fastRandBipolar() + dragBias) * dragStep * 100.0f;
+            motorDragValueR = dragInertia * motorDragValueR + 
+                              (1.0f - dragInertia) * (fastRandBipolar() + dragBias) * dragStep * 100.0f;
+            
+            // Clamp to prevent runaway
+            motorDragValueL = std::clamp(motorDragValueL, -1.0f, 1.0f);
+            motorDragValueR = std::clamp(motorDragValueR, -1.0f, 1.0f);
+            
+            // Convert cents deviation to speed ratio: 2^(cents/1200)
+            // Scale by entropy so effect intensifies over time
+            const float maxCents = Disintegration::kMotorDragMaxCents * currentEntropy;
+            // Fast approximation: 2^x ≈ 1 + 0.693*x for small x (cents/1200 < 0.03)
+            const float centsL = motorDragValueL * maxCents;
+            const float centsR = motorDragValueR * maxCents;
+            const float xL = centsL / 1200.0f;
+            const float xR = centsR / 1200.0f;
+            const float speedRatioL = 1.0f + 0.693147f * xL + 0.240226f * xL * xL;
+            const float speedRatioR = 1.0f + 0.693147f * xR + 0.240226f * xR * xR;
+            
+            // Accumulate fractional read offset
+            motorDragReadOffsetL += (speedRatioL - 1.0f);
+            motorDragReadOffsetR += (speedRatioR - 1.0f);
+            
+            // CORRECTION #3: Wrap offset immediately to prevent precision loss
+            const float loopLenF = static_cast<float>(actualLoopLength);
+            if (motorDragReadOffsetL > loopLenF) motorDragReadOffsetL -= loopLenF;
+            if (motorDragReadOffsetL < -loopLenF) motorDragReadOffsetL += loopLenF;
+            if (motorDragReadOffsetR > loopLenF) motorDragReadOffsetR -= loopLenF;
+            if (motorDragReadOffsetR < -loopLenF) motorDragReadOffsetR += loopLenF;
+            
+            // Calculate modulated read positions
+            const float readPosL = static_cast<float>(loopPlayHead) + motorDragReadOffsetL;
+            const float readPosR = static_cast<float>(loopPlayHead) + motorDragReadOffsetR;
+            
+            // Wrap positions (handle negative values correctly)
+            const float wrappedPosL = std::fmod(std::fmod(readPosL, loopLenF) + loopLenF, loopLenF);
+            const float wrappedPosR = std::fmod(std::fmod(readPosR, loopLenF) + loopLenF, loopLenF);
+            
+            // Linear interpolation for sub-sample accuracy (prevents aliasing)
+            const int idxL0 = static_cast<int>(wrappedPosL) % actualLoopLength;
+            const int idxL1 = (idxL0 + 1) % actualLoopLength;
+            const float fracL = wrappedPosL - std::floor(wrappedPosL);
+            
+            const int idxR0 = static_cast<int>(wrappedPosR) % actualLoopLength;
+            const int idxR1 = (idxR0 + 1) % actualLoopLength;
+            const float fracR = wrappedPosR - std::floor(wrappedPosR);
+            
+            float disintL = disintLoopL[static_cast<std::size_t>(idxL0)] * (1.0f - fracL) + 
+                           disintLoopL[static_cast<std::size_t>(idxL1)] * fracL;
+            float disintR = disintLoopR[static_cast<std::size_t>(idxR0)] * (1.0f - fracR) + 
+                           disintLoopR[static_cast<std::size_t>(idxR1)] * fracR;
+            
+            // ═══════════════════════════════════════════════════════════════
+            // PHASE 3C: OXIDE SHEDDING (Stochastic Dropouts)
+            // Random gain cuts that become more frequent as entropy increases
+            // CORRECTION #1: Timer-based trigger instead of per-sample
+            // ═══════════════════════════════════════════════════════════════
+            
+            // Only check for new dropout on timer intervals (~40ms)
+            oxideCheckTimer++;
+            if (oxideCheckTimer >= Disintegration::kOxideCheckIntervalSamples)
+            {
+                oxideCheckTimer = 0;
+                
+                // Only consider dropout if not already in one
+                if (oxideDropoutCounter <= 0)
+                {
+                    // Probability scales with entropy (0 at start, max at full entropy)
+                    const float dropoutProbability = currentEntropy * Disintegration::kOxideDropoutProbabilityMax;
+                    const float rand = fastRand01();
+                    
+                    if (rand < dropoutProbability)
+                    {
+                        // Trigger a dropout!
+                        oxideGainTarget = 0.0f;
+                        // Duration scales with entropy (longer dropouts at higher entropy)
+                        const float durationMs = Disintegration::kOxideDropoutDurationMs * (0.3f + 0.7f * currentEntropy);
+                        oxideDropoutCounter = static_cast<int>(durationMs * 0.001f * static_cast<float>(sampleRate));
+                    }
+                }
+            }
+            
+            // Count down dropout duration
+            if (oxideDropoutCounter > 0)
+            {
+                oxideDropoutCounter--;
+                if (oxideDropoutCounter <= 0)
+                {
+                    oxideGainTarget = 1.0f;  // Dropout ended, restore gain
+                }
+            }
+            
+            // Smooth the gain transition (prevents clicks - soft "gasp")
+            oxideGainL += oxideGainSmoothCoef * (oxideGainTarget - oxideGainL);
+            oxideGainR += oxideGainSmoothCoef * (oxideGainTarget - oxideGainR);
+            
+            // Apply dropout gain
+            disintL *= oxideGainL;
+            disintR *= oxideGainR;
             
             // === ASCENSION FILTER (sound gets thinner as entropy increases) ===
-            // Only apply when entropy has accumulated (avoid filter transients at start)
-            if (entropyAmount > 0.05f && currentHpfG > 0.0001f && currentLpfG > 0.0001f)
+            // PHASE 3: Uses separate L/R coefficients for stereo decoupling
+            if (currentEntropy > 0.05f && currentHpfG_L > 0.0001f && currentLpfG_L > 0.0001f)
             {
                 // High-pass: removes bass, creates "evaporating" feel
-                disintL = processSvfHp(disintL, hpfSvfL, currentHpfG, currentHpfK);
-                disintR = processSvfHp(disintR, hpfSvfR, currentHpfG, currentHpfK);
+                disintL = processSvfHp(disintL, hpfSvfL, currentHpfG_L, currentHpfK_L);
+                disintR = processSvfHp(disintR, hpfSvfR, currentHpfG_R, currentHpfK_R);
                 
                 // Low-pass: removes highs, creates "fading" feel
-                disintL = processSvfLp(disintL, lpfSvfL, currentLpfG, currentLpfK);
-                disintR = processSvfLp(disintR, lpfSvfR, currentLpfG, currentLpfK);
+                disintL = processSvfLp(disintL, lpfSvfL, currentLpfG_L, currentLpfK_L);
+                disintR = processSvfLp(disintR, lpfSvfR, currentLpfG_R, currentLpfK_R);
             }
             
             // === WARM SATURATION (increases with entropy) ===
@@ -1429,11 +1612,11 @@ void UnravelReverb::process(std::span<float> left,
             // each pass through the loop degrades the stored audio permanently.
             // The amount of degradation scales with entropy.
             // ═══════════════════════════════════════════════════════════════
-            if (entropyAmount > 0.1f)  // Start degrading after some entropy accumulates
+            if (currentEntropy > 0.1f)  // Start degrading after some entropy accumulates
             {
                 // Degradation amount: how much of the processed audio replaces original
                 // Starts subtle (10%) and increases with entropy (up to 50%)
-                const float degradeAmount = juce::jmap(entropyAmount, 0.1f, 1.0f, 0.1f, 0.5f);
+                const float degradeAmount = juce::jmap(currentEntropy, 0.1f, 1.0f, 0.1f, 0.5f);
                 
                 // Only apply degradation in the middle of the loop (not at crossfade boundaries)
                 // This prevents clicks from accumulated boundary processing
@@ -1444,6 +1627,7 @@ void UnravelReverb::process(std::span<float> left,
                 {
                     // Store the filtered/saturated audio back (before output gains)
                     // This creates cumulative degradation - each loop pass makes it worse
+                    // Note: We write to the base index, not the motor-dragged position
                     const int writeIdx = loopPlayHead;
                     disintLoopL[static_cast<std::size_t>(writeIdx)] = 
                         disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - degradeAmount) + 
@@ -1472,7 +1656,7 @@ void UnravelReverb::process(std::span<float> left,
             // === GRADUAL FADE based on entropy ===
             // As entropy increases 0→1, volume decreases smoothly
             // Using a curve that keeps most volume until later in the cycle
-            const float entropyFade = 1.0f - (entropyAmount * entropyAmount);  // Quadratic curve
+            const float entropyFade = 1.0f - (currentEntropy * currentEntropy);  // Quadratic curve
             
             // Apply loop gain with crossfade and entropy fade
             disintL *= loopGain * crossfadeGain * entropyFade;
