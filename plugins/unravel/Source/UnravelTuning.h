@@ -274,8 +274,11 @@ struct Disintegration {
     static constexpr float kFlutterFreqHz = 6.0f;
     static constexpr float kFlutterDepthCents = 4.0f;
     
-    // --- PINK NOISE FLOOR (tape hiss) ---
-    static constexpr float kNoiseFloorMaxLevel = 0.008f;  // ~-42dB, subtle tape hiss
+    // --- PINK NOISE FLOOR (constant tape hiss) ---
+    static constexpr float kNoiseFloorMaxLevel = 0.0025f;  // ~-52dB, felt not heard
+    static constexpr float kNoiseFloorBaseGain = 0.5f;     // Start at 50% when loop engages
+    static constexpr float kNoiseEntryFadeMs = 500.0f;     // Fade-in time to prevent click
+    static constexpr float kNoiseHpfCoef = 0.04f;          // ~300Hz HPF to remove rumble
     
     // --- HYSTERESIS SATURATION (magnetic tape memory) ---
     static constexpr float kHysteresisWidth = 0.25f;      // Coercivity (loop width)

@@ -221,6 +221,9 @@ private:
     uint32_t pinkNoiseCounter = 0;
     std::array<float, 8> pinkOctaveBands = {};
     float pinkNoiseRunningSum = 0.0f;
+    float noiseHpfStateL = 0.0f;  // HPF state for removing low-end rumble
+    float noiseHpfStateR = 0.0f;
+    int loopEntrySamples = 0;     // Counter for entry fade
     
     // --- Hysteresis Saturation State ---
     float hysteresisMagL = 0.0f;

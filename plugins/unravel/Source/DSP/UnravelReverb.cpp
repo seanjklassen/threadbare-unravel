@@ -282,6 +282,8 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     pinkNoiseCounter = 0;
     pinkOctaveBands.fill(0.0f);
     pinkNoiseRunningSum = 0.0f;
+    noiseHpfStateL = noiseHpfStateR = 0.0f;
+    loopEntrySamples = 0;
     
     // Hysteresis saturation state
     hysteresisMagL = hysteresisMagR = 0.0f;
@@ -424,6 +426,8 @@ void UnravelReverb::reset() noexcept
     pinkNoiseCounter = 0;
     pinkOctaveBands.fill(0.0f);
     pinkNoiseRunningSum = 0.0f;
+    noiseHpfStateL = noiseHpfStateR = 0.0f;
+    loopEntrySamples = 0;
     hysteresisMagL = hysteresisMagR = 0.0f;
     adaaX1L = adaaX1R = 0.0f;
     
@@ -974,6 +978,7 @@ void UnravelReverb::process(std::span<float> left,
             actualLoopLength = loopRecordHead;
             currentLooperState = LooperState::Looping;
             loopPlayHead = 0;
+            loopEntrySamples = 0;  // Reset for pink noise entry fade
             
             // Apply "Subliminal" transition (duck + diffuse)
             loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
@@ -1054,6 +1059,7 @@ void UnravelReverb::process(std::span<float> left,
                     actualLoopLength = loopRecordHead;
                     currentLooperState = LooperState::Looping;
                     loopPlayHead = 0;
+                    loopEntrySamples = 0;  // Reset for pink noise entry fade
                     
                     loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
                     diffuseAmountSmoother.setTargetValue(Disintegration::kDiffuseAmount);
@@ -1081,6 +1087,7 @@ void UnravelReverb::process(std::span<float> left,
         actualLoopLength = targetLoopLength;
         currentLooperState = LooperState::Looping;
         loopPlayHead = 0;
+        loopEntrySamples = 0;  // Reset for pink noise entry fade
         
         // Apply "Subliminal" transition
         loopGainSmoother.setTargetValue(juce::Decibels::decibelsToGain(Disintegration::kAutoDuckDb));
@@ -1895,12 +1902,33 @@ void UnravelReverb::process(std::span<float> left,
                 }
             }
             
-            // === PINK NOISE FLOOR (tape hiss increases with entropy) ===
-            const float noiseLevel = currentEntropy * Disintegration::kNoiseFloorMaxLevel;
-            if (noiseLevel > 0.0001f)
+            // === PINK NOISE FLOOR (constant tape hiss, felt not heard) ===
+            // Increment loop entry counter for fade-in
+            loopEntrySamples++;
+            
+            // Entry fade: 500ms fade-in to prevent click when loop engages
+            const int entryFadeSamples = static_cast<int>(Disintegration::kNoiseEntryFadeMs * 0.001f * static_cast<float>(sampleRate));
+            const float entryFade = std::min(1.0f, static_cast<float>(loopEntrySamples) / static_cast<float>(entryFadeSamples));
+            
+            // Floor + Ramp model: starts at 50%, rises to 100% at max entropy
+            const float noiseGain = Disintegration::kNoiseFloorBaseGain + 
+                                    ((1.0f - Disintegration::kNoiseFloorBaseGain) * currentEntropy);
+            const float noiseLevel = Disintegration::kNoiseFloorMaxLevel * noiseGain * entryFade;
+            
+            if (noiseLevel > 0.00001f)
             {
-                disintL += generatePinkNoise() * noiseLevel;
-                disintR += generatePinkNoise() * noiseLevel;
+                // Generate pink noise for each channel
+                float noiseL = generatePinkNoise() * noiseLevel;
+                float noiseR = generatePinkNoise() * noiseLevel;
+                
+                // High-pass filter to remove low-end rumble (~300Hz), makes it "hiss" not "rumble"
+                noiseHpfStateL += Disintegration::kNoiseHpfCoef * (noiseL - noiseHpfStateL);
+                noiseHpfStateR += Disintegration::kNoiseHpfCoef * (noiseR - noiseHpfStateR);
+                noiseL -= noiseHpfStateL;
+                noiseR -= noiseHpfStateR;
+                
+                disintL += noiseL;
+                disintR += noiseR;
             }
             
             // === DC BLOCKER (removes low-frequency drift) ===
