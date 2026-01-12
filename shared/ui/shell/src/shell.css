@@ -172,13 +172,107 @@ body {
   box-shadow:
     1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
     0 0 6px rgba(175, 211, 228, 0.4);
-  transition: background-color 0.1s ease, box-shadow 0.1s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
 }
 
 #puck.active .puck-pupil,
 .puck.active .puck-pupil {
   background-color: #C5CC7A;
   box-shadow: 0 0 8px #C5CC7A;
+}
+
+/* === DISINTEGRATION LOOPER: Pupil States === */
+
+/* Recording state: pupil turns salmon/coral to match button */
+#puck.recording .puck-pupil,
+.puck.recording .puck-pupil {
+  background-color: #CC8A7E;
+  box-shadow: 
+    1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+    0 0 8px rgba(204, 138, 126, 0.6);
+}
+
+/* Looping state: pupil breathing animation */
+@keyframes pupil-breathe {
+  0%, 100% { 
+    transform: scale(1); 
+    box-shadow: 
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 6px rgba(197, 204, 122, 0.4);
+  }
+  50% { 
+    transform: scale(1.3); 
+    box-shadow: 
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 12px rgba(197, 204, 122, 0.7);
+  }
+}
+
+#puck.looping .puck-pupil,
+.puck.looping .puck-pupil {
+  animation: pupil-breathe 2s ease-in-out infinite;
+}
+
+/* === Ring Ripple: Mode Change Cue === */
+/* One-time expanding ring when entering looping mode */
+@keyframes puck-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+    border-width: 2px;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+/* Ripple pseudo-element - only shows during looping transition */
+#puck.looping::before,
+.puck.looping::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #C5CC7A;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+  animation: puck-ripple 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
+}
+
+/* Recording state: coral ripple when starting to record */
+@keyframes puck-ripple-record {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+    border-width: 2px;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+#puck.recording::before,
+.puck.recording::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #CC8A7E;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+  animation: puck-ripple-record 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
 }
 
 .tb-top-bar {

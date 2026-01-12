@@ -55,18 +55,28 @@ const CONFIG = {
     driftRange: 1.5,  // Phase multiplier range based on drift param
   },
 
+  // Transport-aware animation (smooth deceleration/acceleration with playhead)
+  transport: {
+    decelerationRate: 0.03,  // How fast it slows when stopped (lower = more gradual)
+    accelerationRate: 0.06,  // How fast it speeds up when playing
+  },
+
   // === DISINTEGRATION LOOPER: Entropy Visual Effects ===
-  // As entropy increases, the orb fades and slows (stays centered for smooth transitions)
+  // As entropy increases, the orb fades, slows, and shifts color (stays centered for smooth transitions)
   entropy: {
-    maxAlphaReduction: 0.5,     // How much alpha fades at full entropy (50%)
-    maxRadiusReduction: 0.25,   // How much radius shrinks at full entropy (25%)
-    maxSpeedReduction: 0.6,     // How much animation slows at full entropy (60%)
-    maxTrailReduction: 0.7,     // How much trail shortens at full entropy (70%)
+    maxAlphaReduction: 0.7,     // More dramatic fade (70%)
+    maxRadiusReduction: 0.3,    // Shrinks more noticeably (30%)
+    maxSpeedReduction: 0.85,    // Nearly stops at full entropy (85%)
+    maxTrailReduction: 0.8,     // Trail mostly gone (80%)
+    // Color shift: coral → warm amber/gold (sunset evaporation)
     colorShift: {
-      r: 255,  // Target R at full entropy (warmer)
-      g: 240,  // Target G at full entropy
-      b: 220,  // Target B at full entropy (warmer tint)
+      r: 255,  // Target R at full entropy
+      g: 200,  // Target G (warmer amber)
+      b: 140,  // Target B (golden tint)
     },
+    // Flicker effect at high entropy (memory degradation artifact)
+    flickerThreshold: 0.5,      // Start flicker at 50% entropy
+    flickerAmount: 0.12,        // Max alpha wobble amount
   },
 
   // Jitter/smoothing (ghost wobble)
@@ -132,10 +142,15 @@ export class Orb {
       // === DISINTEGRATION LOOPER STATE ===
       entropy: 0,          // 0-1, how much the loop has disintegrated
       looperActive: false, // true when looping (not idle/recording)
+      // === TRANSPORT STATE ===
+      isPlaying: true,     // DAW playhead state
     }
 
     // Current smoothed state (used for rendering)
     this.state = { ...this.targetState }
+    
+    // Transport-aware playback speed (separate from state for smoother control)
+    this.playbackSpeed = 1.0
 
     this.resize()
   }
@@ -185,13 +200,20 @@ export class Orb {
     const keys = Object.keys(this.state)
     for (let i = 0; i < keys.length; i += 1) {
       const key = keys[i]
-      if (key === 'tempo' || key === 'looperActive') {
-        // Tempo and looperActive don't need smoothing - snap to target
+      if (key === 'tempo' || key === 'looperActive' || key === 'isPlaying') {
+        // Tempo, looperActive, and isPlaying don't need smoothing - snap to target
         this.state[key] = this.targetState[key]
       } else {
         this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
       }
     }
+    
+    // === TRANSPORT-AWARE PLAYBACK SPEED ===
+    // Smoothly decelerate when DAW stops, accelerate when it plays
+    const { transport: TR } = CONFIG
+    const targetSpeed = this.state.isPlaying !== false ? 1.0 : 0.0
+    const speedRate = targetSpeed > this.playbackSpeed ? TR.accelerationRate : TR.decelerationRate
+    this.playbackSpeed = lerp(this.playbackSpeed, targetSpeed, speedRate)
 
     const minDim = Math.max(1, Math.min(this.width, this.height))
     const inLevel = clamp(this.state.inLevel, 0, 1)
@@ -234,6 +256,13 @@ export class Orb {
     // Apply entropy-based alpha reduction (orb fades as it evaporates)
     if (looperActive && entropy > 0) {
       strokeAlpha *= (1 - entropy * E.maxAlphaReduction)
+      
+      // Add flicker at high entropy (memory degradation artifact)
+      if (entropy > E.flickerThreshold) {
+        const flickerNorm = (entropy - E.flickerThreshold) / (1 - E.flickerThreshold)
+        const flicker = (Math.random() - 0.5) * 2 * E.flickerAmount * flickerNorm
+        strokeAlpha = Math.max(0.1, strokeAlpha + flicker)
+      }
     }
 
     // Ghost trail history using CONFIG
@@ -272,6 +301,9 @@ export class Orb {
     if (looperActive && entropy > 0) {
       basePhaseIncrement *= (1 - entropy * E.maxSpeedReduction)
     }
+    
+    // Apply transport-aware playback speed (smooth deceleration when DAW stops)
+    basePhaseIncrement *= this.playbackSpeed
     
     this.phase += basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
 
@@ -335,21 +367,35 @@ export class Orb {
     ctx.rotate(this.rotation)
     ctx.translate(-this.centerX, -drawCenterY)
 
-    // Draw ghost trail history
+    // === COLOR SHIFT CALCULATION ===
+    // Interpolate from base color to warm amber/gold as entropy increases
     const { trailColor: TC } = CONFIG
+    let drawColorR = TC.r
+    let drawColorG = TC.g
+    let drawColorB = TC.b
+    
+    if (looperActive && entropy > 0) {
+      // Lerp toward sunset color (warm amber/gold)
+      drawColorR = Math.round(lerp(TC.r, E.colorShift.r, entropy))
+      drawColorG = Math.round(lerp(TC.g, E.colorShift.g, entropy))
+      drawColorB = Math.round(lerp(TC.b, E.colorShift.b, entropy))
+    }
+
+    // Draw ghost trail history (uses shifted color)
     for (let i = 0; i < this.history.length; i += 1) {
       const historyAlpha = (i + 1) / (this.maxHistory + 1)
       const trailWidth = strokeWidth * T.widthRatio
       drawPath(
         this.history[i],
-        `rgba(${TC.r}, ${TC.g}, ${TC.b}, ${historyAlpha * T.alphaMultiplier})`,
+        `rgba(${drawColorR}, ${drawColorG}, ${drawColorB}, ${historyAlpha * T.alphaMultiplier})`,
         1,
         trailWidth
       )
     }
 
-    // Draw main orb line
-    drawPath(this.points, CONFIG.lineColor, strokeAlpha, strokeWidth)
+    // Draw main orb line (uses shifted color)
+    const mainColor = `rgb(${drawColorR}, ${drawColorG}, ${drawColorB})`
+    drawPath(this.points, mainColor, strokeAlpha, strokeWidth)
 
     ctx.restore()
     ctx.globalAlpha = 1

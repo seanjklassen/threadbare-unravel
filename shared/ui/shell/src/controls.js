@@ -510,20 +510,27 @@ export class Controls {
   }
 
   /**
-   * Update freeze button visual for disintegration looper states
+   * Update freeze button and puck visual for disintegration looper states
    * States: 'idle' | 'recording' | 'looping'
    */
   updateLooperVisual() {
     if (!this.freezeBtn) return
     
-    // Remove all looper state classes
+    // Remove all looper state classes from button
     this.freezeBtn.classList.remove('idle', 'recording', 'looping')
     
-    // Add current state class
+    // Add current state class to button
     this.freezeBtn.classList.add(this.looperState)
     
     // Update aria for accessibility
     this.freezeBtn.setAttribute('aria-pressed', String(this.looperState !== 'idle'))
+    
+    // === PUCK VISUAL STATE ===
+    // Update puck classes for pupil color + breathing animation
+    if (this.puck) {
+      this.puck.classList.remove('idle', 'recording', 'looping')
+      this.puck.classList.add(this.looperState)
+    }
   }
 
   /**

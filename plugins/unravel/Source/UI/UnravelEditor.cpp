@@ -241,6 +241,9 @@ void UnravelEditor::handleUpdate()
     obj->setProperty("loopProgress", state.loopProgress);
     obj->setProperty("entropy", state.entropy);
     
+    // === TRANSPORT STATE ===
+    obj->setProperty("isPlaying", state.isPlaying);
+    
     // Current preset
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());
 

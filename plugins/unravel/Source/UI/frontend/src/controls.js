@@ -774,8 +774,15 @@ export class Controls {
   updateLooperVisual() {
     if (!this.freezeBtn) return
     
-    // Clear all looper states
+    // Clear all looper states from button
     this.freezeBtn.classList.remove('recording', 'looping', 'active')
+    
+    // === PUCK VISUAL STATE ===
+    // Update puck classes for pupil color + breathing animation
+    if (this.puck) {
+      this.puck.classList.remove('idle', 'recording', 'looping')
+      this.puck.classList.add(this.looperState)
+    }
     
     switch (this.looperState) {
       case 'recording':
