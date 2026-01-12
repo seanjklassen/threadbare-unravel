@@ -260,6 +260,28 @@ struct Disintegration {
     // L/R read positions drift apart over time (worn tape transport)
     static constexpr float kMotorStereoDivergence = 0.4f;       // How much L/R motor drag values can diverge (0-1)
     
+    // === PROFESSIONAL DSP QUALITY ENHANCEMENTS ===
+    
+    // --- DC BLOCKER (prevents low-frequency drift) ---
+    static constexpr float kDcBlockerFreqHz = 5.0f;
+    
+    // --- SOFT CLIP (prevents digital overs) ---
+    static constexpr float kSoftClipThreshold = 0.9f;
+    
+    // --- WOW & FLUTTER (authentic tape transport wobble) ---
+    static constexpr float kWowFreqHz = 0.5f;
+    static constexpr float kWowDepthCents = 12.0f;
+    static constexpr float kFlutterFreqHz = 6.0f;
+    static constexpr float kFlutterDepthCents = 4.0f;
+    
+    // --- PINK NOISE FLOOR (tape hiss) ---
+    static constexpr float kNoiseFloorMaxLevel = 0.008f;  // ~-42dB, subtle tape hiss
+    
+    // --- HYSTERESIS SATURATION (magnetic tape memory) ---
+    static constexpr float kHysteresisWidth = 0.25f;      // Coercivity (loop width)
+    static constexpr float kHysteresisSat = 1.0f;         // Saturation level
+    static constexpr float kHysteresisSmooth = 0.995f;    // State smoothing
+    
     // === MATH CONSTANTS ===
     static constexpr float kPi = 3.14159265359f;
     

@@ -202,6 +202,34 @@ private:
     bool transportWasPlaying = true;                // Previous transport state
     float transportFadeAmount = 1.0f;               // Fade amount when transport stops
     
+    // ═══════════════════════════════════════════════════════════════════════
+    // PROFESSIONAL DSP QUALITY ENHANCEMENTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // --- DC Blocker State ---
+    float dcBlockerX1L = 0.0f, dcBlockerY1L = 0.0f;
+    float dcBlockerX1R = 0.0f, dcBlockerY1R = 0.0f;
+    float dcBlockerCoef = 0.0f;  // Calculated in prepare()
+    
+    // --- Wow & Flutter LFO State ---
+    float wowPhase = 0.0f;
+    float flutterPhase = 0.0f;
+    float wowPhaseInc = 0.0f;      // Calculated in prepare()
+    float flutterPhaseInc = 0.0f;
+    
+    // --- Pink Noise Generator State (Instance-Safe - NO STATIC LOCALS) ---
+    uint32_t pinkNoiseCounter = 0;
+    std::array<float, 8> pinkOctaveBands = {};
+    float pinkNoiseRunningSum = 0.0f;
+    
+    // --- Hysteresis Saturation State ---
+    float hysteresisMagL = 0.0f;
+    float hysteresisMagR = 0.0f;
+    
+    // --- ADAA Saturation State ---
+    float adaaX1L = 0.0f;
+    float adaaX1R = 0.0f;
+    
     // --- Fast LCG PRNG (real-time safe) ---
     inline float fastRand01() noexcept
     {
@@ -213,6 +241,114 @@ private:
     inline float fastRandBipolar() noexcept
     {
         return fastRand01() * 2.0f - 1.0f;  // -1.0 to +1.0
+    }
+    
+    // === PROFESSIONAL DSP HELPERS ===
+    
+    // DC Blocker: 1-pole HPF y[n] = x[n] - x[n-1] + coef * y[n-1]
+    inline float dcBlock(float in, float& x1, float& y1) noexcept
+    {
+        float out = in - x1 + dcBlockerCoef * y1;
+        x1 = in;
+        y1 = out;
+        return out;
+    }
+    
+    // Soft Clip: Gentle limiting above threshold using tanh
+    inline float softClip(float x) noexcept
+    {
+        using namespace threadbare::tuning;
+        constexpr float thresh = Disintegration::kSoftClipThreshold;
+        if (std::abs(x) <= thresh) return x;
+        float sign = (x > 0.0f) ? 1.0f : -1.0f;
+        return sign * (thresh + (1.0f - thresh) * std::tanh((std::abs(x) - thresh) / (1.0f - thresh)));
+    }
+    
+    // Safe buffer index wrapping for circular access
+    inline int wrapIndex(int idx, int len) noexcept
+    {
+        while (idx < 0) idx += len;
+        while (idx >= len) idx -= len;
+        return idx;
+    }
+    
+    // Hermite 4-point interpolation (smoother than linear)
+    inline float hermite4(float frac, float y0, float y1, float y2, float y3) noexcept
+    {
+        float c0 = y1;
+        float c1 = 0.5f * (y2 - y0);
+        float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+        float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+        return ((c3 * frac + c2) * frac + c1) * frac + c0;
+    }
+    
+    // Pink Noise Generator (Voss-McCartney algorithm, instance-safe)
+    inline float generatePinkNoise() noexcept
+    {
+        int changed = static_cast<int>(pinkNoiseCounter ^ (pinkNoiseCounter + 1));
+        pinkNoiseCounter++;
+        
+        for (int i = 0; i < 8; i++) {
+            if (changed & (1 << i)) {
+                pinkNoiseRunningSum -= pinkOctaveBands[static_cast<size_t>(i)];
+                pinkOctaveBands[static_cast<size_t>(i)] = fastRandBipolar();
+                pinkNoiseRunningSum += pinkOctaveBands[static_cast<size_t>(i)];
+            }
+        }
+        return pinkNoiseRunningSum * 0.125f;  // /8 for normalization
+    }
+    
+    // Hysteresis Saturation (simplified Jiles-Atherton)
+    inline float hysteresis(float input, float& mag) noexcept
+    {
+        using namespace threadbare::tuning;
+        float target = std::tanh(input / Disintegration::kHysteresisSat);
+        float delta = target - mag;
+        float threshold = Disintegration::kHysteresisWidth * (1.0f - std::abs(mag));
+        
+        if (std::abs(delta) > threshold) {
+            float sign = (delta > 0.0f) ? 1.0f : -1.0f;
+            float excess = std::abs(delta) - threshold;
+            mag += sign * excess * (1.0f - Disintegration::kHysteresisSmooth);
+        }
+        mag = std::clamp(mag, -1.0f, 1.0f);
+        return mag * Disintegration::kHysteresisSat;
+    }
+    
+    // Fast tanh approximation: x / (1 + |x| + 0.28*x^2)
+    inline float fastTanh(float x) noexcept
+    {
+        float x2 = x * x;
+        return x / (1.0f + std::abs(x) + 0.28f * x2);
+    }
+    
+    // Fast antiderivative of tanh: approximation of ln(cosh(x))
+    // CRITICAL: This is an EVEN function (symmetric across Y-axis)
+    inline float fastTanhAD(float x) noexcept
+    {
+        float ax = std::abs(x);
+        
+        // Zone 1: Small x - Taylor series approximation (x^2/2)
+        if (ax < 2.0f) {
+            return 0.5f * x * x;  // Even function: x^2
+        }
+        
+        // Zone 2: Large x - Linear asymptote: |x| - ln(2)
+        return ax - 0.693147f;  // Even function: |x|
+    }
+    
+    // ADAA (Anti-Derivative Anti-Aliasing) saturation
+    inline float adaaFastTanh(float x, float& x1) noexcept
+    {
+        float diff = x - x1;
+        float result;
+        if (std::abs(diff) < 1e-5f) {
+            result = fastTanh(0.5f * (x + x1));  // Midpoint fallback
+        } else {
+            result = (fastTanhAD(x) - fastTanhAD(x1)) / diff;
+        }
+        x1 = x;
+        return result;
     }
     
     // === DISINTEGRATION DSP HELPERS ===

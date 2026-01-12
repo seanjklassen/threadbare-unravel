@@ -260,6 +260,35 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     // Initialize exit fade (used when entropy reaches 1.0)
     exitFadeAmount = 1.0f;
     
+    // === PROFESSIONAL DSP ENHANCEMENTS INITIALIZATION ===
+    
+    // DC Blocker coefficient: 1 - (2*pi*fc/fs)
+    dcBlockerCoef = 1.0f - (2.0f * threadbare::tuning::Disintegration::kPi * 
+                           threadbare::tuning::Disintegration::kDcBlockerFreqHz / 
+                           static_cast<float>(sampleRate));
+    dcBlockerX1L = dcBlockerY1L = 0.0f;
+    dcBlockerX1R = dcBlockerY1R = 0.0f;
+    
+    // Wow & Flutter LFO phase increments
+    wowPhaseInc = 2.0f * threadbare::tuning::Disintegration::kPi * 
+                  threadbare::tuning::Disintegration::kWowFreqHz / 
+                  static_cast<float>(sampleRate);
+    flutterPhaseInc = 2.0f * threadbare::tuning::Disintegration::kPi * 
+                      threadbare::tuning::Disintegration::kFlutterFreqHz / 
+                      static_cast<float>(sampleRate);
+    wowPhase = flutterPhase = 0.0f;
+    
+    // Pink noise generator
+    pinkNoiseCounter = 0;
+    pinkOctaveBands.fill(0.0f);
+    pinkNoiseRunningSum = 0.0f;
+    
+    // Hysteresis saturation state
+    hysteresisMagL = hysteresisMagR = 0.0f;
+    
+    // ADAA saturation state
+    adaaX1L = adaaX1R = 0.0f;
+    
     // Initialize disintegration smoothers
     loopGainSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
     loopGainSmoother.setCurrentAndTargetValue(1.0f);  // Full volume initially
@@ -387,6 +416,16 @@ void UnravelReverb::reset() noexcept
     
     // Reset exit fade
     exitFadeAmount = 1.0f;
+    
+    // === RESET PROFESSIONAL DSP ENHANCEMENTS ===
+    dcBlockerX1L = dcBlockerY1L = 0.0f;
+    dcBlockerX1R = dcBlockerY1R = 0.0f;
+    wowPhase = flutterPhase = 0.0f;
+    pinkNoiseCounter = 0;
+    pinkOctaveBands.fill(0.0f);
+    pinkNoiseRunningSum = 0.0f;
+    hysteresisMagL = hysteresisMagR = 0.0f;
+    adaaX1L = adaaX1R = 0.0f;
     
     // Reset disintegration smoothers
     loopGainSmoother.setCurrentAndTargetValue(1.0f);
@@ -1576,14 +1615,23 @@ void UnravelReverb::process(std::span<float> left,
             const float tapeShuttleSmoothCoef = 1.0f - std::exp(-1.0f / (0.5f * 0.001f * static_cast<float>(sampleRate)));
             loopBoundaryPitchMod += tapeShuttleSmoothCoef * (tapeShuttlePitchCents - loopBoundaryPitchMod);
             
+            // === WOW & FLUTTER MODULATION ===
+            // Authentic tape transport wobble that increases with entropy
+            float wowMod = std::sin(wowPhase) * Disintegration::kWowDepthCents * currentEntropy;
+            float flutterMod = std::sin(flutterPhase) * Disintegration::kFlutterDepthCents * currentEntropy;
+            wowPhase += wowPhaseInc;
+            flutterPhase += flutterPhaseInc;
+            if (wowPhase > 2.0f * Disintegration::kPi) wowPhase -= 2.0f * Disintegration::kPi;
+            if (flutterPhase > 2.0f * Disintegration::kPi) flutterPhase -= 2.0f * Disintegration::kPi;
+            
             // Convert cents deviation to speed ratio: 2^(cents/1200)
             // Scale by entropy so effect intensifies over time
             // Focus also scales max cents: more at Fog, less at Ghost
             const float maxCents = Disintegration::kMotorDragMaxCents * currentEntropy * motorFocusScale;
             // Fast approximation: 2^x ≈ 1 + 0.693*x for small x (cents/1200 < 0.03)
-            // Include tape shuttle pitch modulation
-            const float centsL = motorDragValueL * maxCents + loopBoundaryPitchMod;
-            const float centsR = motorDragValueR * maxCents + loopBoundaryPitchMod;
+            // Include tape shuttle + wow + flutter pitch modulation
+            const float centsL = motorDragValueL * maxCents + loopBoundaryPitchMod + wowMod + flutterMod;
+            const float centsR = motorDragValueR * maxCents + loopBoundaryPitchMod + wowMod + flutterMod;
             const float xL = centsL / 1200.0f;
             const float xR = centsR / 1200.0f;
             const float speedRatioL = 1.0f + 0.693147f * xL + 0.240226f * xL * xL;
@@ -1608,19 +1656,27 @@ void UnravelReverb::process(std::span<float> left,
             const float wrappedPosL = std::fmod(std::fmod(readPosL, loopLenF) + loopLenF, loopLenF);
             const float wrappedPosR = std::fmod(std::fmod(readPosR, loopLenF) + loopLenF, loopLenF);
                     
-            // Linear interpolation for sub-sample accuracy (prevents aliasing)
-            const int idxL0 = static_cast<int>(wrappedPosL) % actualLoopLength;
-            const int idxL1 = (idxL0 + 1) % actualLoopLength;
+            // Hermite 4-point interpolation for smooth pitch modulation (safer than linear)
+            const int idxL0 = static_cast<int>(wrappedPosL);
             const float fracL = wrappedPosL - std::floor(wrappedPosL);
             
-            const int idxR0 = static_cast<int>(wrappedPosR) % actualLoopLength;
-            const int idxR1 = (idxR0 + 1) % actualLoopLength;
+            const int idxR0 = static_cast<int>(wrappedPosR);
             const float fracR = wrappedPosR - std::floor(wrappedPosR);
             
-            float disintL = disintLoopL[static_cast<std::size_t>(idxL0)] * (1.0f - fracL) + 
-                           disintLoopL[static_cast<std::size_t>(idxL1)] * fracL;
-            float disintR = disintLoopR[static_cast<std::size_t>(idxR0)] * (1.0f - fracR) + 
-                           disintLoopR[static_cast<std::size_t>(idxR1)] * fracR;
+            // Safe buffer reads with index wrapping for Hermite (needs y[-1], y[0], y[1], y[2])
+            auto getSafeL = [&](int idx) { 
+                return disintLoopL[static_cast<size_t>(wrapIndex(idx, actualLoopLength))]; 
+            };
+            auto getSafeR = [&](int idx) { 
+                return disintLoopR[static_cast<size_t>(wrapIndex(idx, actualLoopLength))]; 
+            };
+            
+            float disintL = hermite4(fracL, 
+                                     getSafeL(idxL0 - 1), getSafeL(idxL0), 
+                                     getSafeL(idxL0 + 1), getSafeL(idxL0 + 2));
+            float disintR = hermite4(fracR, 
+                                     getSafeR(idxR0 - 1), getSafeR(idxR0), 
+                                     getSafeR(idxR0 + 1), getSafeR(idxR0 + 2));
             
             // ═══════════════════════════════════════════════════════════════
             // PHASE 3C: OXIDE SHEDDING (Stochastic Dropouts)
@@ -1688,13 +1744,20 @@ void UnravelReverb::process(std::span<float> left,
                 disintR = processSvfLp(disintR, lpfSvfR, currentLpfG_R, currentLpfK_R);
             }
             
-            // === WARM SATURATION (increases with entropy) ===
+            // === HYSTERESIS + ADAA SATURATION (increases with entropy) ===
+            // Chain: Hysteresis (magnetic memory) → ADAA (anti-aliased saturation)
             if (currentSatAmount > 0.01f)
             {
                 const float drive = 1.0f + currentSatAmount * 2.0f;
                 const float makeup = 1.0f / (1.0f + currentSatAmount);
-                disintL = std::tanh(disintL * drive) * makeup;
-                disintR = std::tanh(disintR * drive) * makeup;
+                
+                // Stage 1: Hysteresis (asymmetric tape saturation with memory)
+                disintL = hysteresis(disintL * drive, hysteresisMagL);
+                disintR = hysteresis(disintR * drive, hysteresisMagR);
+                
+                // Stage 2: ADAA saturation (anti-aliased tanh)
+                disintL = adaaFastTanh(disintL, adaaX1L) * makeup;
+                disintR = adaaFastTanh(disintR, adaaX1R) * makeup;
             }
             
             // ═══════════════════════════════════════════════════════════════
@@ -1831,6 +1894,22 @@ void UnravelReverb::process(std::span<float> left,
                     transportWasPlaying = true;
                 }
             }
+            
+            // === PINK NOISE FLOOR (tape hiss increases with entropy) ===
+            const float noiseLevel = currentEntropy * Disintegration::kNoiseFloorMaxLevel;
+            if (noiseLevel > 0.0001f)
+            {
+                disintL += generatePinkNoise() * noiseLevel;
+                disintR += generatePinkNoise() * noiseLevel;
+            }
+            
+            // === DC BLOCKER (removes low-frequency drift) ===
+            disintL = dcBlock(disintL, dcBlockerX1L, dcBlockerY1L);
+            disintR = dcBlock(disintR, dcBlockerX1R, dcBlockerY1R);
+            
+            // === SOFT CLIP (prevents digital overs) ===
+            disintL = softClip(disintL);
+            disintR = softClip(disintR);
         
             // === NaN PROTECTION ===
             if (std::isnan(disintL) || std::isinf(disintL)) disintL = 0.0f;
