@@ -722,6 +722,14 @@ body {
   animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* Disable preset and settings controls during looping (can't affect captured buffer) */
+.tb-app.looping .preset-pill,
+.tb-app.looping .btn-settings {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
 .btn-freeze svg,
 .btn-settings .icon-settings {
   width: 24px;
@@ -968,7 +976,7 @@ body {
   content: attr(data-tooltip);
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 6px);
+  top: calc(100%);
   transform: translateX(-50%);
   z-index: 10;
   
@@ -1049,9 +1057,9 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  height: 16px;
+  height: 12px;
   background: transparent;
-  border-radius: 12px;
+  border-radius: 6px;
   overflow: visible;
 }
 
@@ -1063,7 +1071,7 @@ body {
   height: 100%;
   min-width: 12px;  /* Minimum width so it's always visible with rounded ends */
   background: var(--text);
-  border-radius: 12px;
+  border-radius: 6px;
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   transform-origin: left center;
 }

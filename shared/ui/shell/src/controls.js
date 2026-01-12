@@ -535,6 +535,13 @@ export class Controls {
       this.puck.classList.remove('idle', 'recording', 'looping')
       this.puck.classList.add(this.looperState)
     }
+    
+    // === APP-LEVEL STATE ===
+    // Add looping class to main app for disabling preset/settings controls
+    const app = document.querySelector('.tb-app')
+    if (app) {
+      app.classList.toggle('looping', this.looperState === 'looping')
+    }
   }
 
   /**
