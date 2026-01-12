@@ -585,13 +585,13 @@ body {
 .preset-pill .chevron {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 .preset-pill .chevron svg {
-  width: 11px;
-  height: 7px;
+  width: 24px;
+  height: 24px;
   display: block;
 }
 
@@ -724,16 +724,16 @@ body {
 
 .btn-freeze svg,
 .btn-settings .icon-settings {
-  width: 20px;
-  height: auto;
+  width: 24px;
+  height: 24px;
   display: block;
   fill: currentColor;
 }
 
 /* Settings button icon toggle */
 .btn-settings .icon-close {
-  width: 14px;
-  height: 14px;
+  width: 24px;
+  height: 24px;
   display: none;
   fill: currentColor;
 }
@@ -932,7 +932,7 @@ body {
 /* Control rows (no cascade animation - DAW-friendly) */
 .control-row {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 24px 1fr;
   row-gap: 24px;
   column-gap: 24px;
   align-items: center;
@@ -942,13 +942,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 .param-label svg {
-  width: 100%;
-  height: 100%;
+  width: 24px;
+  height: 24px;
   opacity: 0.8;
   transition: opacity 0.2s ease;
 }
