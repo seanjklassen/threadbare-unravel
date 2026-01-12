@@ -1547,11 +1547,14 @@ void UnravelReverb::process(std::span<float> left,
             
             // === ENTROPY ACCUMULATION (puckY controls rate) ===
             // Rate is based on LOOP ITERATIONS, not wall-clock time
-            // puckY -1.0 (bottom) = slow (1000 loops to full entropy - practically endless)
-            // puckY +1.0 (top) = fast (1 loop to full entropy)
-            const float targetLoops = juce::jmap(puckY, -1.0f, 1.0f, 
-                                                 Disintegration::kEntropyLoopsMax, 
-                                                 Disintegration::kEntropyLoopsMin);
+            // puckY +1.0 (top) = fast (~2 loops to full entropy)
+            // puckY  0.0 (mid) = moderate (~20 loops)
+            // puckY -1.0 (bottom) = practically endless (~10000 loops)
+            // Use exponential curve: top half degrades normally, bottom half becomes endless
+            const float normalizedY = (puckY + 1.0f) * 0.5f;  // 0 (bottom) to 1 (top)
+            const float curvedY = normalizedY * normalizedY;   // Quadratic: more resolution at top
+            const float targetLoops = Disintegration::kEntropyLoopsMax * 
+                                      std::pow(Disintegration::kEntropyLoopsMin / Disintegration::kEntropyLoopsMax, curvedY);
             // Entropy rate = 1.0 / (loopLength * targetLoops) so full entropy after targetLoops iterations
             const float entropyRate = 1.0f / (static_cast<float>(actualLoopLength) * targetLoops);
             entropyAmount = std::min(1.0f, entropyAmount + entropyRate);

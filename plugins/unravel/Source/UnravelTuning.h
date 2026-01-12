@@ -225,9 +225,9 @@ struct Disintegration {
     // === ENTROPY TIMING (in loop iterations, not wall-clock time) ===
     // These define how many times the loop plays before full disintegration
     // Rate is calculated at runtime based on actual loop length
-    // At 120 BPM with 4 bars: 2 loops ≈ 16s, 10 loops ≈ 80s, 18 loops ≈ 2.4min
-    static constexpr float kEntropyLoopsMin = 2.0f;      // Fastest: ~2 loop iterations (puck Y top)
-    static constexpr float kEntropyLoopsMax = 18.0f;     // Slowest: ~18 iterations = ~2 minutes (puck Y bottom)
+    // At 120 BPM with 4 bars (~8s loop): 2 loops ≈ 16s, 100 loops ≈ 13min
+    static constexpr float kEntropyLoopsMin = 2.0f;       // Fastest: ~2 loop iterations (puck Y top)
+    static constexpr float kEntropyLoopsMax = 10000.0f;   // Slowest: practically endless (puck Y bottom)
     
     // === EXIT BEHAVIOR ===
     static constexpr float kFadeToReverbSeconds = 2.0f;   // Graceful fade when entropy=1
