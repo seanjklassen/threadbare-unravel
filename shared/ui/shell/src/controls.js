@@ -222,18 +222,22 @@ export class Controls {
     }
 
     if (this.freezeBtn) {
-      // Track the freeze value we last sent to DSP (for edge detection)
-      this._lastSentFreeze = false
-      
       this.freezeBtn.addEventListener('click', () => {
-        // Toggle freeze param to create an edge for the DSP state machine
-        // DSP responds to edges: rising edge (0→1) advances state
-        const nextFreeze = !this._lastSentFreeze
-        this._lastSentFreeze = nextFreeze
-        
-        this.sendParam('freeze', nextFreeze ? 1 : 0)
-        this.state.freeze = nextFreeze
-        this.onFreezeChange(nextFreeze)
+        if (this.looperState === 'idle') {
+          // Start recording - send rising edge
+          this.sendParam('freeze', 1)
+          this.state.freeze = true
+          this.onFreezeChange(true)
+        } else {
+          // Exit recording or looping - need FALLING edge (1→0)
+          // First pulse high, then low to guarantee edge detection
+          this.sendParam('freeze', 1)
+          requestAnimationFrame(() => {
+            this.sendParam('freeze', 0)
+            this.state.freeze = false
+            this.onFreezeChange(false)
+          })
+        }
       })
     }
 
@@ -634,16 +638,12 @@ export class Controls {
           // Smoothly animate puck to center for looping mode
           this._loopingPuckTarget = { x: 0.5, y: 0.5 }
           this.animatePuckTo(0.5, 0.5)
-          // Sync freeze state: we entered via falling edge, so freeze=0
-          this._lastSentFreeze = false
         }
         
         // Restore puck position when EXITING looping mode
         if (wasLooping && !nowLooping && this._savedPuckX !== undefined) {
           // Smoothly animate puck back to saved position
           this.animatePuckTo(this._savedPuckX, this._savedPuckY)
-          // Sync freeze state: we exited, DSP is now in Idle with freeze=0
-          this._lastSentFreeze = false
           this._savedPuckX = undefined
           this._savedPuckY = undefined
         }

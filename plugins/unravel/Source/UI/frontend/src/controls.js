@@ -494,10 +494,19 @@ export class Controls {
 
     if (this.freezeBtn) {
       this.freezeBtn.addEventListener('click', () => {
-        const next = !this.freezeBtn.classList.contains('active')
-        this.setFreezeVisual(next)
-        sendParam('freeze', next ? 1 : 0)
-        this.onFreezeChange(next)
+        if (this.looperState === 'idle') {
+          // Start recording - send rising edge
+          sendParam('freeze', 1)
+          this.onFreezeChange(true)
+        } else {
+          // Exit recording or looping - need FALLING edge (1→0)
+          // First pulse high, then low to guarantee edge detection
+          sendParam('freeze', 1)
+          requestAnimationFrame(() => {
+            sendParam('freeze', 0)
+            this.onFreezeChange(false)
+          })
+        }
       })
     }
 

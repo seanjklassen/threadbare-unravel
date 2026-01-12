@@ -462,8 +462,8 @@ body {
 }
 
 .preset-pill .chevron svg {
-  width: 11px;
-  height: 7px;
+  width: 12px;
+  height: 12px;
   display: block;
 }
 
@@ -624,16 +624,16 @@ body {
 
 .btn-freeze svg,
 .btn-settings .icon-settings {
-  width: 20px;
-  height: auto;
+  width: 24px;
+  height: 24px;
   display: block;
   fill: currentColor;
 }
 
 /* Settings button icon toggle */
 .btn-settings .icon-close {
-  width: 14px;
-  height: 14px;
+  width: 24px;
+  height: 24px;
   display: none;
   fill: currentColor;
 }
