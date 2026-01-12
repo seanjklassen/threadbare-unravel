@@ -253,8 +253,9 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     motorDragReadOffsetR = 0.0f;
     
     // Azimuth Drift: L/R entropy offsets (asymmetric for stereo widening)
-    azimuthOffsetL = threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset * 0.5f;   // L degrades slightly faster
-    azimuthOffsetR = -threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset * 0.5f;  // R degrades slightly slower
+    // Full offset applied to each channel in opposite directions for maximum stereo spread
+    azimuthOffsetL = threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset;   // L degrades faster
+    azimuthOffsetR = -threadbare::tuning::Disintegration::kAzimuthDriftMaxOffset;  // R degrades slower
     
     // Initialize exit fade (used when entropy reaches 1.0)
     exitFadeAmount = 1.0f;
@@ -262,6 +263,9 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     // Initialize disintegration smoothers
     loopGainSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
     loopGainSmoother.setCurrentAndTargetValue(1.0f);  // Full volume initially
+    
+    focusSmoother.reset(sampleRate, 0.05);  // 50ms smoothing for puck X (prevents zipper)
+    focusSmoother.setCurrentAndTargetValue(0.0f);  // Center position initially
     
     diffuseAmountSmoother.reset(sampleRate, threadbare::tuning::Disintegration::kTransitionTimeSeconds);
     diffuseAmountSmoother.setCurrentAndTargetValue(0.0f);  // No diffuse initially
@@ -386,6 +390,7 @@ void UnravelReverb::reset() noexcept
     
     // Reset disintegration smoothers
     loopGainSmoother.setCurrentAndTargetValue(1.0f);
+    focusSmoother.setCurrentAndTargetValue(0.0f);
     diffuseAmountSmoother.setCurrentAndTargetValue(0.0f);
     entropySmoother.setCurrentAndTargetValue(0.0f);
 }
@@ -1134,9 +1139,12 @@ void UnravelReverb::process(std::span<float> left,
         currentLpfK_R = kValue;
         
         // Saturation amount scales with average entropy (warm blanket feeling)
+        // Focus: Fog (right) = more saturation (1.6x), Ghost (left) = less (0.4x)
         const float avgEntropy = (entropyL + entropyR) * 0.5f;
-        currentSatAmount = Disintegration::kSaturationMin + 
-                          avgEntropy * (Disintegration::kSaturationMax - Disintegration::kSaturationMin);
+        const float satFocusScale = 0.4f + focusNormBlock * 1.2f;  // 0.4x at Ghost, 1.6x at Fog
+        currentSatAmount = (Disintegration::kSaturationMin + 
+                          avgEntropy * (Disintegration::kSaturationMax - Disintegration::kSaturationMin))
+                          * satFocusScale;
     }
     
     // Pre-calculate input gate threshold
@@ -1422,6 +1430,17 @@ void UnravelReverb::process(std::span<float> left,
             // (live input, MIDI playback, audio clips, etc.)
             inputDetected = true;  // Always consider input detected
             
+            // === TRANSPORT-AWARE CANCEL ===
+            // If DAW transport stops during recording, cancel and return to Idle
+            if (!state.isPlaying)
+            {
+                currentLooperState = LooperState::Idle;
+                loopRecordHead = 0;
+                actualLoopLength = 0;
+                transportWasPlaying = true;
+                state.looperState = currentLooperState;
+            }
+            
             if (loopRecordHead < targetLoopLength)
             {
                 // Capture mix: ensure minimum wet content for character
@@ -1429,23 +1448,29 @@ void UnravelReverb::process(std::span<float> left,
                 float captureL = inputL * (1.0f - captureMix) + wetL * captureMix;
                 float captureR = inputR * (1.0f - captureMix) + wetR * captureMix;
                 
-                // === MICRO-CROSSFADE at loop boundaries (prevents clicks) ===
+                // === S-CURVE CROSSFADE at loop boundaries (matches playback crossfade) ===
+                // Use same S-curve as playback to ensure crossfade regions align perfectly
+                float recordCrossfadeGain = 1.0f;
+                
                 // Fade in at the start
                 if (loopRecordHead < crossfadeSamples)
                 {
-                    const float fadeIn = static_cast<float>(loopRecordHead) / static_cast<float>(crossfadeSamples);
-                    captureL *= fadeIn;
-                    captureR *= fadeIn;
+                    const float linearFade = static_cast<float>(loopRecordHead) / static_cast<float>(crossfadeSamples);
+                    recordCrossfadeGain = std::sin(linearFade * threadbare::tuning::Disintegration::kPi * 0.5f);
+                }
+                // Fade out at the end (only if we're near target length)
+                else
+                {
+                    const int samplesFromEnd = targetLoopLength - loopRecordHead;
+                    if (samplesFromEnd < crossfadeSamples && samplesFromEnd > 0)
+                    {
+                        const float linearFade = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
+                        recordCrossfadeGain = std::sin(linearFade * threadbare::tuning::Disintegration::kPi * 0.5f);
+                    }
                 }
                 
-                // Fade out at the end (only if we're near target length)
-                const int samplesFromEnd = targetLoopLength - loopRecordHead;
-                if (samplesFromEnd < crossfadeSamples && samplesFromEnd > 0)
-                {
-                    const float fadeOut = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
-                    captureL *= fadeOut;
-                    captureR *= fadeOut;
-                }
+                captureL *= recordCrossfadeGain;
+                captureR *= recordCrossfadeGain;
                 
                 // Write to buffer
                 disintLoopL[static_cast<std::size_t>(loopRecordHead)] = captureL;
@@ -1461,6 +1486,15 @@ void UnravelReverb::process(std::span<float> left,
         else if (currentLooperState == LooperState::Looping && actualLoopLength > 0)
         {
             // === LOOPING STATE with Disintegration + Phase 3 Physical Degradation ===
+            
+            // === TRANSPORT-AWARE SHUTDOWN ===
+            // Detect when DAW transport stops and begin graceful fade
+            if (!state.isPlaying && transportWasPlaying)
+            {
+                // Transport just stopped - begin 2-second fade
+                transportFadeAmount = 1.0f;
+            }
+            transportWasPlaying = state.isPlaying;
             
             // Get smoothed loop gain
             const float loopGain = loopGainSmoother.getNextValue();
@@ -1480,7 +1514,9 @@ void UnravelReverb::process(std::span<float> left,
             // === FOCUS (puckX) controls Phase 3 character ===
             // Left (Ghost/Spectral): More dropouts, less pitch drag, wider stereo tear
             // Right (Fog/Diffuse): Fewer dropouts, more pitch drag, narrower stereo
-            const float focus = puckX;  // -1 to +1
+            // Use smoothed value to prevent zipper noise when moving puck
+            focusSmoother.setTargetValue(puckX);
+            const float focus = focusSmoother.getNextValue();  // -1 to +1 smoothed
             const float focusNorm = (focus + 1.0f) * 0.5f;  // 0 (Ghost) to 1 (Fog)
             
             // ═══════════════════════════════════════════════════════════════
@@ -1497,23 +1533,57 @@ void UnravelReverb::process(std::span<float> left,
             const float dragInertia = Disintegration::kMotorDragInertia;
             const float dragBias = Disintegration::kMotorDragBias;
             
-            // Random step + downward bias (motor struggling)
+            // Stereo divergence: L and R channels have slightly different biases
+            // This causes them to drift apart over time, creating stereo width
+            const float stereoDivergence = Disintegration::kMotorStereoDivergence * currentEntropy;
+            const float biasL = dragBias - stereoDivergence * 0.3f;  // L tends slightly higher
+            const float biasR = dragBias + stereoDivergence * 0.3f;  // R tends slightly lower
+            
+            // Random step + channel-specific bias (motor struggling asymmetrically)
             motorDragValueL = dragInertia * motorDragValueL + 
-                              (1.0f - dragInertia) * (fastRandBipolar() + dragBias) * dragStep * 100.0f;
+                              (1.0f - dragInertia) * (fastRandBipolar() + biasL) * dragStep * 100.0f;
             motorDragValueR = dragInertia * motorDragValueR + 
-                              (1.0f - dragInertia) * (fastRandBipolar() + dragBias) * dragStep * 100.0f;
+                              (1.0f - dragInertia) * (fastRandBipolar() + biasR) * dragStep * 100.0f;
             
             // Clamp to prevent runaway
             motorDragValueL = std::clamp(motorDragValueL, -1.0f, 1.0f);
             motorDragValueR = std::clamp(motorDragValueR, -1.0f, 1.0f);
+            
+            // ═══════════════════════════════════════════════════════════════
+            // TAPE SHUTTLE EFFECT: Pitch sag at loop boundary
+            // Simulates reel momentum - brief pitch drop when approaching loop point
+            // ═══════════════════════════════════════════════════════════════
+            float tapeShuttlePitchCents = 0.0f;
+            const int boundaryZone = Disintegration::kLoopBoundaryTransitionSamples;
+            
+            // Near end of loop: ramp down pitch (approaching splice)
+            if (loopPlayHead >= actualLoopLength - boundaryZone)
+            {
+                const float distFromEnd = static_cast<float>(actualLoopLength - loopPlayHead);
+                const float boundaryProgress = 1.0f - (distFromEnd / static_cast<float>(boundaryZone));
+                tapeShuttlePitchCents = Disintegration::kLoopBoundaryPitchDropCents * boundaryProgress;
+            }
+            // Near start of loop: recover from pitch sag
+            else if (loopPlayHead < boundaryZone)
+            {
+                const float distFromStart = static_cast<float>(loopPlayHead);
+                const float recoveryProgress = distFromStart / static_cast<float>(boundaryZone);
+                tapeShuttlePitchCents = Disintegration::kLoopBoundaryPitchDropCents * (1.0f - recoveryProgress);
+            }
+            
+            // Smooth the tape shuttle modulation (prevents clicks)
+            // Use faster smoothing: ~0.5ms time constant to track boundary transitions
+            const float tapeShuttleSmoothCoef = 1.0f - std::exp(-1.0f / (0.5f * 0.001f * static_cast<float>(sampleRate)));
+            loopBoundaryPitchMod += tapeShuttleSmoothCoef * (tapeShuttlePitchCents - loopBoundaryPitchMod);
             
             // Convert cents deviation to speed ratio: 2^(cents/1200)
             // Scale by entropy so effect intensifies over time
             // Focus also scales max cents: more at Fog, less at Ghost
             const float maxCents = Disintegration::kMotorDragMaxCents * currentEntropy * motorFocusScale;
             // Fast approximation: 2^x ≈ 1 + 0.693*x for small x (cents/1200 < 0.03)
-            const float centsL = motorDragValueL * maxCents;
-            const float centsR = motorDragValueR * maxCents;
+            // Include tape shuttle pitch modulation
+            const float centsL = motorDragValueL * maxCents + loopBoundaryPitchMod;
+            const float centsR = motorDragValueR * maxCents + loopBoundaryPitchMod;
             const float xL = centsL / 1200.0f;
             const float xR = centsR / 1200.0f;
             const float speedRatioL = 1.0f + 0.693147f * xL + 0.240226f * xL * xL;
@@ -1559,8 +1629,9 @@ void UnravelReverb::process(std::span<float> left,
             // Focus: Ghost (left) = more dropouts, Fog (right) = fewer dropouts
             // ═══════════════════════════════════════════════════════════════
             
-            // Focus scales oxide dropout: 1.8x probability at Ghost, 0.4x at Fog
-            const float oxideFocusScale = 1.8f - focusNorm * 1.4f;
+            // Focus scales oxide dropout: 2.5x probability at Ghost, 0.2x at Fog
+            // More dramatic difference for noticeable puck X response
+            const float oxideFocusScale = 2.5f - focusNorm * 2.3f;
             
             // Only check for new dropout on timer intervals (~40ms)
             oxideCheckTimer++;
@@ -1640,47 +1711,106 @@ void UnravelReverb::process(std::span<float> left,
                 
                 // Only apply degradation in the middle of the loop (not at crossfade boundaries)
                 // This prevents clicks from accumulated boundary processing
-                const bool inSafeZone = (loopPlayHead > crossfadeSamples * 2) && 
-                                        (loopPlayHead < actualLoopLength - crossfadeSamples * 2);
+                // Use soft transition at boundary edges to prevent clicks
+                const int safeMargin = crossfadeSamples * 3;  // Extra margin for safety
+                const int safeTransition = crossfadeSamples;  // Smooth transition zone
                 
-                if (inSafeZone)
+                float safeZoneFade = 1.0f;
+                if (loopPlayHead < safeMargin)
                 {
-                    // Store the filtered/saturated audio back (before output gains)
-                    // This creates cumulative degradation - each loop pass makes it worse
-                    // Note: We write to the base index, not the motor-dragged position
+                    // Fade in at start of safe zone
+                    safeZoneFade = std::max(0.0f, static_cast<float>(loopPlayHead - crossfadeSamples * 2) / static_cast<float>(safeTransition));
+                }
+                else if (loopPlayHead > actualLoopLength - safeMargin)
+                {
+                    // Fade out at end of safe zone
+                    safeZoneFade = std::max(0.0f, static_cast<float>(actualLoopLength - crossfadeSamples * 2 - loopPlayHead) / static_cast<float>(safeTransition));
+                }
+                
+                if (safeZoneFade > 0.0f)
+                {
+                    // Apply degradation with smooth fade at boundaries
+                    const float effectiveDegradeAmount = degradeAmount * safeZoneFade;
                     const int writeIdx = loopPlayHead;
                     disintLoopL[static_cast<std::size_t>(writeIdx)] = 
-                        disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - degradeAmount) + 
-                        disintL * degradeAmount;
+                        disintLoopL[static_cast<std::size_t>(writeIdx)] * (1.0f - effectiveDegradeAmount) + 
+                        disintL * effectiveDegradeAmount;
                     disintLoopR[static_cast<std::size_t>(writeIdx)] = 
-                        disintLoopR[static_cast<std::size_t>(writeIdx)] * (1.0f - degradeAmount) + 
-                        disintR * degradeAmount;
+                        disintLoopR[static_cast<std::size_t>(writeIdx)] * (1.0f - effectiveDegradeAmount) + 
+                        disintR * effectiveDegradeAmount;
                 }
             }
             
-            // === MICRO-CROSSFADE at loop boundary (prevents clicks) ===
-            float crossfadeGain = 1.0f;
+            // === S-CURVE CROSSFADE at loop boundary (equal power, seamless) ===
+            // IMPORTANT: Use motor-dragged read positions for crossfade, not loopPlayHead
+            // This ensures the crossfade matches where we're actually reading from
+            float crossfadeGainL = 1.0f;
+            float crossfadeGainR = 1.0f;
+            const float crossfadeSamplesF = static_cast<float>(crossfadeSamples);
+            const float loopLengthF = static_cast<float>(actualLoopLength);
+            
             if (actualLoopLength > crossfadeSamples * 2)
             {
-                if (loopPlayHead < crossfadeSamples)
-                {
-                    crossfadeGain = static_cast<float>(loopPlayHead) / static_cast<float>(crossfadeSamples);
-                }
-                else if (loopPlayHead >= actualLoopLength - crossfadeSamples)
-                {
-                    const int samplesFromEnd = actualLoopLength - loopPlayHead;
-                    crossfadeGain = static_cast<float>(samplesFromEnd) / static_cast<float>(crossfadeSamples);
-                }
-                }
+                // Lambda to calculate crossfade gain based on position
+                auto calcCrossfadeGain = [&](float wrappedPos) -> float {
+                    if (wrappedPos < crossfadeSamplesF)
+                    {
+                        // Fade in at start with S-curve
+                        const float linearFade = wrappedPos / crossfadeSamplesF;
+                        return std::sin(linearFade * Disintegration::kPi * 0.5f);
+                    }
+                    else if (wrappedPos >= loopLengthF - crossfadeSamplesF)
+                    {
+                        // Fade out at end with S-curve
+                        const float samplesFromEnd = loopLengthF - wrappedPos;
+                        const float linearFade = samplesFromEnd / crossfadeSamplesF;
+                        return std::sin(linearFade * Disintegration::kPi * 0.5f);
+                    }
+                    return 1.0f;
+                };
+                
+                crossfadeGainL = calcCrossfadeGain(wrappedPosL);
+                crossfadeGainR = calcCrossfadeGain(wrappedPosR);
+            }
                 
             // === GRADUAL FADE based on entropy ===
             // As entropy increases 0→1, volume decreases smoothly
             // Using a curve that keeps most volume until later in the cycle
             const float entropyFade = 1.0f - (currentEntropy * currentEntropy);  // Quadratic curve
             
-            // Apply loop gain with crossfade and entropy fade
-            disintL *= loopGain * crossfadeGain * entropyFade;
-            disintR *= loopGain * crossfadeGain * entropyFade;
+            // Apply loop gain with per-channel crossfade and entropy fade
+            disintL *= loopGain * crossfadeGainL * entropyFade;
+            disintR *= loopGain * crossfadeGainR * entropyFade;
+            
+            // === TRANSPORT FADE: Smooth fade when DAW stops ===
+            if (!state.isPlaying)
+            {
+                // Fade out over 2 seconds when transport is stopped
+                const float transportFadeRate = 1.0f / (2.0f * static_cast<float>(sampleRate));
+                transportFadeAmount = std::max(0.0f, transportFadeAmount - transportFadeRate);
+                
+                // Apply transport fade to output
+                disintL *= transportFadeAmount;
+                disintR *= transportFadeAmount;
+                
+                // Return to Idle when fade completes
+                if (transportFadeAmount <= 0.0f)
+                {
+                    currentLooperState = LooperState::Idle;
+                    loopRecordHead = 0;
+                    loopPlayHead = 0;
+                    actualLoopLength = 0;
+                    entropyAmount = 0.0f;
+                    exitFadeAmount = 1.0f;
+                    transportFadeAmount = 1.0f;
+                    transportWasPlaying = true;
+                }
+            }
+            else
+            {
+                // Transport is playing - reset fade amount
+                transportFadeAmount = 1.0f;
+            }
                 
             // === EXIT BEHAVIOR: Return to Idle when entropy reaches 1.0 ===
             if (entropyAmount >= 1.0f)
@@ -1690,15 +1820,17 @@ void UnravelReverb::process(std::span<float> left,
                 exitFadeAmount = std::max(0.0f, exitFadeAmount - fadeRate);
                 
                 if (exitFadeAmount <= 0.0f)
-            {
+                {
                     currentLooperState = LooperState::Idle;
                     loopRecordHead = 0;
                     loopPlayHead = 0;
                     actualLoopLength = 0;
                     entropyAmount = 0.0f;
                     exitFadeAmount = 1.0f;
+                    transportFadeAmount = 1.0f;
+                    transportWasPlaying = true;
+                }
             }
-        }
         
             // === NaN PROTECTION ===
             if (std::isnan(disintL) || std::isinf(disintL)) disintL = 0.0f;

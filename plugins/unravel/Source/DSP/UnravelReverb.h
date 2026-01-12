@@ -42,6 +42,9 @@ struct UnravelState
     float entropy = 0.0f;           // Current disintegration amount (0-1)
     float loopLengthBars = 4.0f;    // Actual recorded length in bars
     bool looperStateAdvance = false; // Signal from processor to advance state
+    
+    // === TRANSPORT STATE (from DAW) ===
+    bool isPlaying = true;          // DAW transport state (for auto-stop)
 };
 
 class UnravelReverb
@@ -167,6 +170,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> loopGainSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> diffuseAmountSmoother;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> entropySmoother;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> focusSmoother;  // Prevents zipper when moving puck X
     
     // ═══════════════════════════════════════════════════════════════════════
     // PHASE 3: PHYSICAL DEGRADATION STATE
@@ -190,6 +194,13 @@ private:
     // --- Azimuth Drift (Stereo Decoupling) ---
     float azimuthOffsetL = 0.0f;                    // Entropy offset for left channel
     float azimuthOffsetR = 0.0f;                    // Entropy offset for right channel
+    
+    // --- Tape Shuttle Effect (pitch modulation at loop boundary) ---
+    float loopBoundaryPitchMod = 0.0f;              // Smoothed pitch modulation at boundaries
+    
+    // --- Transport-Aware Shutdown ---
+    bool transportWasPlaying = true;                // Previous transport state
+    float transportFadeAmount = 1.0f;               // Fade amount when transport stops
     
     // --- Fast LCG PRNG (real-time safe) ---
     inline float fastRand01() noexcept

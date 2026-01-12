@@ -190,7 +190,11 @@ struct Disintegration {
     static constexpr float kRecordingTimeoutSeconds = 5.0f; // Cancel if no input detected
     
     // === LOOP BOUNDARY CROSSFADE (prevents clicks) ===
-    static constexpr float kCrossfadeMs = 10.0f;  // 10ms micro-crossfade at loop point
+    static constexpr float kCrossfadeMs = 50.0f;  // 50ms crossfade with S-curve for seamless loops
+    
+    // === TAPE SHUTTLE EFFECT (simulates reel momentum at loop boundary) ===
+    static constexpr float kLoopBoundaryPitchDropCents = -30.0f;  // Pitch sag at boundary
+    static constexpr int kLoopBoundaryTransitionSamples = 2000;    // ~40ms transition zone
     
     // === TRANSITION (Recording -> Looping) ===
     static constexpr float kAutoDuckDb = -3.0f;           // Push loop to background
@@ -207,7 +211,7 @@ struct Disintegration {
     
     // === WARMTH (saturation increases with entropy) ===
     static constexpr float kSaturationMin = 0.0f;
-    static constexpr float kSaturationMax = 0.4f;         // Warm blanket, not harsh
+    static constexpr float kSaturationMax = 0.6f;         // More warmth available (was 0.4)
     
     // === FOCUS MAPPING (Puck X in loop mode) ===
     // Left (Ghost): Spectral thinning, emphasize highs - MORE DRAMATIC
@@ -221,8 +225,9 @@ struct Disintegration {
     // === ENTROPY TIMING (in loop iterations, not wall-clock time) ===
     // These define how many times the loop plays before full disintegration
     // Rate is calculated at runtime based on actual loop length
-    static constexpr float kEntropyLoopsMin = 1.0f;      // Fastest: 1 loop iteration to full entropy (puck Y top)
-    static constexpr float kEntropyLoopsMax = 1000.0f;   // Slowest: 1000 iterations - practically endless (puck Y bottom)
+    // At 120 BPM with 4 bars: 2 loops ≈ 16s, 10 loops ≈ 80s, 18 loops ≈ 2.4min
+    static constexpr float kEntropyLoopsMin = 2.0f;      // Fastest: ~2 loop iterations (puck Y top)
+    static constexpr float kEntropyLoopsMax = 18.0f;     // Slowest: ~18 iterations = ~2 minutes (puck Y bottom)
     
     // === EXIT BEHAVIOR ===
     static constexpr float kFadeToReverbSeconds = 2.0f;   // Graceful fade when entropy=1
@@ -236,7 +241,7 @@ struct Disintegration {
     // As entropy increases, random "dropouts" occur (oxide flaking off tape)
     // Uses timer-based trigger (~40ms intervals) to avoid audio-rate noise
     static constexpr int kOxideCheckIntervalSamples = 2000;     // Check for dropout every ~40ms at 48kHz
-    static constexpr float kOxideDropoutProbabilityMax = 0.35f; // Max probability per check at entropy=1
+    static constexpr float kOxideDropoutProbabilityMax = 0.50f; // Max probability per check at entropy=1 (was 0.35)
     static constexpr float kOxideDropoutDurationMs = 15.0f;     // Max dropout "gasp" duration
     static constexpr float kOxideDropoutSmoothMs = 5.0f;        // Gain reduction smoothing (prevents clicks)
     
@@ -249,7 +254,11 @@ struct Disintegration {
     
     // --- AZIMUTH DRIFT (Stereo Decoupling) ---
     // L/R channels degrade at slightly different rates (tape head misalignment)
-    static constexpr float kAzimuthDriftMaxOffset = 0.08f;      // Max entropy offset between L/R (8%)
+    static constexpr float kAzimuthDriftMaxOffset = 0.18f;      // Max entropy offset between L/R (18%) - more dramatic stereo separation
+    
+    // --- STEREO MOTOR DIVERGENCE ---
+    // L/R read positions drift apart over time (worn tape transport)
+    static constexpr float kMotorStereoDivergence = 0.4f;       // How much L/R motor drag values can diverge (0-1)
     
     // === MATH CONSTANTS ===
     static constexpr float kPi = 3.14159265359f;

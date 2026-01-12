@@ -106,13 +106,17 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                                    threadbare::tuning::EarlyReflections::kMaxPreDelayMs);
     currentState.freeze = freezeParam != nullptr ? freezeParam->get() : false;
 
-    // Get tempo from DAW host
+    // Get tempo and transport state from DAW host
     if (auto* playhead = getPlayHead())
     {
         if (auto posInfo = playhead->getPosition())
         {
             if (posInfo->getBpm().hasValue())
                 currentState.tempo = static_cast<float>(*posInfo->getBpm());
+            
+            // Read transport playing state for auto-stop feature
+            // getIsPlaying() returns bool directly
+            currentState.isPlaying = posInfo->getIsPlaying();
         }
     }
 
