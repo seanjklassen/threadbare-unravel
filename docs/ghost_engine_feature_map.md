@@ -17,10 +17,10 @@ A visual reference showing how user controls map to the four enhanced ghost engi
 │  ├─ Memory Proximity (NEW)      └─ Ghost bonus (existing)           │
 │  └─ Stereo Width (NEW)                                               │
 │                                                                       │
-│  GHOST SLIDER (0.0 to 1.0)      FREEZE BUTTON (on/off)             │
-│  ├─ Grain volume (existing)     ├─ FDN freeze (existing)            │
-│  ├─ Reverse probability (NEW)   └─ Spectral freeze (NEW)            │
-│  └─ Stereo width (NEW)                                               │
+│  GHOST SLIDER (0.0 to 1.0)      LOOPER BUTTON (3-state)            │
+│  ├─ Grain volume (existing)     ├─ Idle → Recording → Looping       │
+│  ├─ Reverse probability (NEW)   ├─ Loop degradation (entropy)       │
+│  └─ Stereo width (NEW)          └─ Grain position locking           │
 │                                                                       │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -45,9 +45,9 @@ A visual reference showing how user controls map to the four enhanced ghost engi
               │             │                │
               │             │                │
     ┌─────────▼──────┐      │        ┌──────▼───────┐
-    │ Freeze active? │      │        │  Ghost amt   │
+    │ Looper active? │      │        │  Ghost amt   │
     ├────────────────┤      │        │  Puck X      │
-    │ YES: Use frozen│      │        │  Reverse?    │
+    │ YES: Use locked│      │        │  Reverse?    │
     │      positions │      │        └──────────────┘
     │  NO: Calculate │      │
     │      proximity │      │
@@ -132,7 +132,7 @@ Settings:
   Puck X: -1.0 (far left)
   Puck Y:  0.0 (center)
   Ghost:   0.3 (low)
-  Freeze:  OFF
+  Looper:  OFF
 
 Effects:
   ✓ Recent memories (0-200ms)
@@ -149,7 +149,7 @@ Settings:
   Puck X: +1.0 (far right)
   Puck Y: +1.0 (top)
   Ghost:   1.0 (max)
-  Freeze:  OFF
+  Looper:  OFF
 
 Effects:
   ✓ Distant memories (500-750ms)
@@ -166,7 +166,7 @@ Settings:
   Puck X:  0.0 (center)
   Puck Y: +0.5 (upper)
   Ghost:   0.7 (high)
-  Freeze:  ON
+  Looper:  ON
 
 Effects:
   ✓ Locked spawn positions (4-8 points)
@@ -184,7 +184,7 @@ Settings:
   Puck Y: +0.8 (near top)
   Ghost:   0.9 (very high)
   Drift:   0.8 (high)
-  Freeze:  OFF
+  Looper:  OFF
 
 Effects:
   ✓ Mostly distant memories (85%)
@@ -219,7 +219,7 @@ static constexpr float kMaxPanWidth = 0.3f;
 static constexpr bool kMirrorReverseGrains = false;
 ```
 
-For spectral freeze, simply don't transition `ghostFreezeActive` when freeze button pressed.
+For disabling grain locking, simply don't transition `ghostFreezeActive` when looper button pressed.
 
 ---
 
@@ -234,8 +234,8 @@ For spectral freeze, simply don't transition `ghostFreezeActive` when freeze but
    └─ If none available, steal oldest
 
 3. POSITION SELECTION
-   ├─ Is freeze active?
-   │  ├─ YES: Use frozen position (round-robin)
+   ├─ Is looper active?
+   │  ├─ YES: Use locked position (round-robin)
    │  └─ NO:  Calculate proximity position
    │         ├─ Get puck X bias
    │         ├─ Choose recent or distant zone
@@ -276,7 +276,7 @@ For spectral freeze, simply don't transition `ghostFreezeActive` when freeze but
 Feature                  CPU Impact    Notes
 ─────────────────────────────────────────────────────
 Reverse Playback           ~0.0%      Just sign flip
-Spectral Freeze            ~0.0%      Array lookup vs random
+Grain Position Locking     ~0.0%      Array lookup vs random
 Memory Proximity           ~0.0%      Same spawn cost
 Stereo Width Calculation   ~0.0%      Simple math
 Constant-Power Panning     ~0.0%      Sin/cos (might use LUT)
@@ -297,9 +297,9 @@ All features essentially "free" in terms of CPU.
   □ Works at all sample rates
   □ Probability scales with ghost²
   
-□ Spectral Freeze
-  □ Captures positions on freeze activation
-  □ Uses frozen positions while active
+□ Grain Position Locking (Looper)
+  □ Captures positions on looper activation
+  □ Uses locked positions while looping
   □ Returns to normal on deactivation
   □ No buffer overruns
   □ Round-robin selection works
@@ -341,8 +341,8 @@ kMinPanWidth = 0.3f;          // Narrow
 kMaxPanWidth = 1.0f;          // Full width
 kMirrorReverseGrains = true;  // Flip reverse grains
 
-// Freeze
-// (uses existing kNumLines = 8 for frozen position array)
+// Looper (grain locking)
+// (uses existing kNumLines = 8 for locked position array)
 ```
 
 All values tunable at runtime by editing `UnravelTuning.h`.
@@ -354,13 +354,13 @@ All values tunable at runtime by editing `UnravelTuning.h`.
 ```
 ┌─────────────────────────────────────────────────┐
 │           USER INTERFACE                        │
-│  Puck XY, Ghost Slider, Freeze Button          │
+│  Puck XY, Ghost Slider, Looper Button          │
 └────────────────┬────────────────────────────────┘
                  │
                  ▼
 ┌─────────────────────────────────────────────────┐
 │          UNRAVEL STATE                          │
-│  puckX, puckY, ghost, freeze, etc.             │
+│  puckX, puckY, ghost, looperState, etc.        │
 └────────────────┬────────────────────────────────┘
                  │
                  ▼
@@ -376,7 +376,7 @@ All values tunable at runtime by editing `UnravelTuning.h`.
 │  │                                         │    │
 │  │  Features:                              │    │
 │  │  • Reverse Playback (NEW)              │    │
-│  │  • Spectral Freeze (NEW)               │    │
+│  │  • Grain Position Locking (NEW)        │    │
 │  │  • Memory Proximity (NEW)              │    │
 │  │  • Stereo Positioning (NEW)            │    │
 │  └───────────────────────────────────────┘    │

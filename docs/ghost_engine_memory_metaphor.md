@@ -43,26 +43,28 @@ The ghost engine implements each of these as sonic phenomena.
 
 ---
 
-### 2. Spectral Freezing → Fixation & Rumination
+### 2. Disintegration Looper → Fixation, Rumination & Decay
 
-**The feeling:** Sometimes you can't let go of a moment. Your mind replays it again and again, each time noticing something different—a slightly different angle, emphasis, or emotional coloring.
+**The feeling:** Sometimes you can't let go of a moment. Your mind replays it again and again, each time noticing something different—a slightly different angle, emphasis, or emotional coloring. But memories aren't static. Each time you revisit them, they change. They degrade. Eventually, they fade.
 
 **The sound:**
-- When freeze is activated, the ghost engine "locks" onto 4-8 specific moments from the recent buffer
-- New grains spawn ONLY from these locked moments
-- Each replay has different:
-  - Pitch (subtle detuning, occasional octave shifts)
-  - Duration (grain length varies)
-  - Stereo position (panned differently each time)
-  - Phase (window position within the grain varies)
-- Creates a "Groundhog Day" effect: same material, infinite variations
+- When the looper is activated, it records 4 bars of your reverb tail (tempo-synced)
+- The loop plays back, but with each iteration it degrades:
+  - Filters converge (highs thin, lows fade)
+  - Pitch drifts downward (like a dying tape motor)
+  - Stereo channels decouple (azimuth drift)
+  - Random dropouts occur (oxide shedding)
+- Meanwhile, the ghost engine locks onto specific moments, replaying them with variation
+- Creates a "fading memory" effect: same material, gradually dissolving
 
 **User experience:**
-- Press freeze during a guitar chord: the chord becomes a frozen cloud that keeps re-examining itself
-- Each grain "sees" the chord from a different harmonic/spatial angle
-- Meanwhile, the FDN tail also freezes, creating a dual-layer suspension
+- Click the looper button to start recording during a guitar chord
+- After 4 bars, the loop begins: the chord becomes a degrading memory that slowly evaporates
+- Puck Y controls how fast it fades (top = fast, bottom = endless)
+- Puck X controls the character: left (Ghost) = spectral thinning, right (Fog) = diffuse smearing
+- When entropy reaches 1.0, the loop fades gracefully back to normal reverb
 
-**Emotional resonance:** Obsession, meditation, being "stuck" on a beautiful moment, PTSD-like repetition (can be haunting or hypnotic depending on source material).
+**Emotional resonance:** Obsession, meditation, impermanence, the bittersweet nature of memory. The loop doesn't just repeat—it degrades, like real memories do. Haunting on sustained sounds, hypnotic on rhythmic material.
 
 ---
 
@@ -157,13 +159,13 @@ When all four features are active simultaneously, you get:
 - **Feeling:** Ethereal, time-distorted, dreamlike
 - **Use case:** Ambient washes, shoegaze textures, "fading memory" quality
 
-### Scenario 3: "Frozen Moment" (Freeze: ON, Any Puck Position)
-- Locked grain spawn positions (spectral freeze)
-- Infinite variations on the same 4-8 moments
-- FDN tail also frozen (existing behavior)
-- Ghost engine + reverb both "stuck in time"
-- **Feeling:** Obsessive, meditative, suspended in a single memory
-- **Use case:** Pad holds, ambient swells, creating "frozen" textures from transient sounds
+### Scenario 3: "Fading Memory" (Looper: Active, Any Puck Position)
+- 4 bars of reverb captured and looped
+- Each iteration degrades: filters converge, pitch drifts, dropouts occur
+- Ghost engine locked onto specific moments, replaying with variation
+- Puck Y controls decay rate (top = fast fade, bottom = slow fade)
+- **Feeling:** Obsessive, meditative, impermanent—a memory that won't stay still
+- **Use case:** Evolving drones, ambient beds, William Basinski-style tape decay
 
 ### Scenario 4: "Memory Overload" (Puck: Top-Center, Ghost: Max, Drift: High)
 - Mix of recent and distant memories
@@ -184,7 +186,7 @@ Each feature maps to a real aspect of human memory. Users don't need to understa
 Instead of adding 10 new knobs, we:
 - Overload existing controls (puck X now does double-duty)
 - Scale effects by existing parameters (ghost amount gates reverse probability)
-- Tie to existing features (freeze becomes spectral freeze automatically)
+- Tie to existing features (looper triggers spectral grain locking automatically)
 
 Result: More expression, same interface complexity.
 
@@ -209,12 +211,12 @@ When describing these features in documentation or marketing:
 ### Don't say:
 - "Grains spawn from different buffer positions based on puck X"
 - "Reverse playback probability is squared-scaled by ghost amount"
-- "Spectral freeze captures discrete spawn points"
+- "The looper captures discrete spawn points for grain replay"
 
 ### Do say:
 - "The puck lets you choose between recent memories (left) and distant memories (right)"
 - "At high ghost levels, memories sometimes play backwards through time"
-- "Freeze locks onto a moment and replays it over and over, each time with a different perspective"
+- "The looper captures a moment and replays it, gradually degrading with each pass"
 
 The metaphor does the explaining. The DSP is just implementation.
 
@@ -255,7 +257,7 @@ This is what separates Unravel from other reverbs. It's not trying to model a re
 | Memory Phenomenon | Neuroscience | Unravel Implementation |
 |-------------------|--------------|------------------------|
 | Memory consolidation | Recent memories more detailed | Proximity modulation (puckX) |
-| Memory reconsolidation | Each recall slightly changes the memory | Spectral freeze variations |
+| Memory reconsolidation | Each recall slightly changes the memory | Disintegration looper degradation |
 | Time distortion | Memories compress/expand temporal experience | Reverse playback, detune |
 | Spatial memory | Hippocampal place cells | Stereo positioning |
 | Intrusive thoughts | Repetitive unwanted memories | Frozen grain repetition |

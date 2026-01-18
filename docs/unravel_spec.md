@@ -7,7 +7,7 @@
 * **Core DSP:**
     * 8×8 FDN (Feedback Delay Network) with damping + modulation.
     * Ghost engine: tiny granular smear feeding the FDN.
-    * Early reflections, Freeze, Ducking.
+    * Early reflections, Disintegration Looper, Ducking.
 * **Control Model:**
     * Single puck in a 2D macro space (Body ↔ Air, Near ↔ Distant).
     * Simple advanced controls in a drawer.
@@ -50,7 +50,7 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
     * Frequency-dependent decay.
     * Gentle but persistent modulation.
     * Integrated ghost “memory” character.
-    * Freeze + ducking that feel instantly usable.
+    * Disintegration looper + ducking that feel instantly usable.
 
 ---
 
@@ -70,7 +70,7 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
 3.  **Bottom strip**
     * Left: x,y compact readouts with a range of 0.00-11.00.
     * Right: settings icon → opens advanced drawer.
-    * Right: freeze icon to the left of the sliders icon → activates 2.3.3 Freeze mode.
+    * Right: looper icon to the left of the sliders icon → activates 2.3.3 Disintegration Looper.
 
 ### 2.2 Look & Feel
 * **Background:** `#31312b` (warm gray)
@@ -101,11 +101,18 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
 * **Blend/Mix:** 0–100% wet.
 * **Output Gain:** e.g. −24 dB to +12 dB.
 
-#### 2.3.3 Freeze
+#### 2.3.3 Disintegration Looper
 * Small button near sliders icon (∞).
-* **When ON:**
-    * Tail “locks” and holds.
-    * Dry still passes normally.
+* **Three-state operation:**
+    1. **Idle:** Normal reverb operation. Button shows infinity symbol.
+    2. **Recording:** Click to start. Captures dry+wet signal for N bars (default 4). Button pulses during recording.
+    3. **Looping:** After recording completes, loop plays back with gradual degradation. Click again to stop and return to Idle.
+* **Behavior:**
+    * Loop plays back with entropy-based degradation (William Basinski-inspired tape decay).
+    * Puck Y controls decay rate: top = fast disintegration (~2 loops), bottom = slow (~endless).
+    * Puck X controls character: left (Ghost) = spectral thinning, right (Fog) = diffuse smearing.
+    * As entropy increases: filters converge, saturation increases, dropouts occur, pitch wobbles.
+    * When entropy reaches 1.0, loop fades gracefully back to normal reverb.
 
 #### 2.3.4 Advanced Drawer
 **Contains:**
@@ -135,7 +142,9 @@ Orb is visual only. It reflects state.
 * `tailLevel` (wet level).
 * `puckX`, `puckY`.
 * `decay`, `size`, `ghost`, `drift`.
-* `freeze` (bool).
+* `looperState` (0=Idle, 1=Recording, 2=Looping).
+* `loopProgress` (0–1, recording progress indicator).
+* `entropy` (0–1, disintegration amount).
 * `time` (monotonic).
 
 **Mapping:**
@@ -164,8 +173,8 @@ Orb is visual only. It reflects state.
 6.  FDN tail:
     * 8 delay lines + feedback matrix.
     * Per-line damping & modulation.
-7.  Freeze logic:
-    * Controls feedback gains & FDN input gain.
+7.  Disintegration Looper:
+    * When active, captures and loops processed signal with degradation effects.
 8.  Ducking:
     * Envelope follower on dry; modulates wet gain.
 9.  Mix Dry/Wet.
@@ -251,60 +260,58 @@ static constexpr float kReverseProbability = 0.25f;
 static constexpr float kReverseGainReduction = 0.75f;
 ```
 
-#### 3.6.2 Spectral Freezing of Grains
-**Concept:** When Freeze is active, the ghost engine "locks" onto specific moments in the history buffer and replays them indefinitely with variation, rather than continuing to record new material.
+#### 3.6.2 Grain Position Locking (During Looper)
+**Concept:** When the Disintegration Looper is active (Looping state), the ghost engine "locks" onto specific moments in the history buffer and replays them with variation. This creates the "fixation" aspect of the memory metaphor—the same moments replaying with subtle differences.
 
 **Implementation:**
-1. **Freeze Transition (OFF → ON):**
-    * When freeze button pressed:
+1. **Looper Transition (Recording → Looping):**
+    * When looper enters Looping state:
         * **Snapshot current history buffer** positions for all active grains.
-        * Mark these positions as "frozen spawn points" (store in fixed array, max 8 positions).
+        * Mark these positions as "locked spawn points" (store in fixed array, max 8 positions).
         * If fewer than 4 grains active, add random positions from recent 500ms of buffer.
-    * Stop advancing `ghostWriteHead` (or continue writing but ignore for grain spawning).
 
-2. **Grain Spawning While Frozen:**
-    * New grains spawn **only from the frozen spawn points** (not random positions).
+2. **Grain Spawning While Looping:**
+    * New grains spawn **only from the locked spawn points** (not random positions).
     * Each new grain:
-        * Picks one of the frozen positions (round-robin or random).
+        * Picks one of the locked positions (weighted random selection).
         * Applies **varied** detune/speed (still use existing randomization).
         * Applies **varied** grain length (still use existing randomization).
         * Applies **varied** stereo pan position.
     * Result: same source material, but constantly re-examined with different "lenses."
 
-3. **Freeze Transition (ON → OFF):**
+3. **Looper Transition (Looping → Idle):**
     * Resume normal random position spawning.
-    * Clear frozen spawn points array.
-    * Resume advancing `ghostWriteHead`.
+    * Clear locked spawn points array.
 
-**Data Structure (add to `UnravelReverb` class):**
+**Data Structure (in `UnravelReverb` class):**
 ```cpp
-// Spectral freeze state
-bool ghostFreezeActive = false;
+// Grain position locking state (used during looper)
+bool ghostFreezeActive = false;  // true when looper is in Looping state
 std::array<float, 8> frozenSpawnPositions;
 std::size_t numFrozenPositions = 0;
 ```
 
-**Selection Strategy (Revised - Weighted Random):**
+**Selection Strategy (Weighted Random):**
 * Use **weighted random selection** instead of round-robin to avoid audible patterns.
-* Each frozen position has equal probability (uniform distribution).
+* Each locked position has equal probability (uniform distribution).
 * This creates more organic, less predictable repetition.
 
-**Freeze Shimmer Enhancement:**
-* When frozen, increase shimmer probability to create more variation from limited source material:
+**Shimmer Enhancement During Loop:**
+* When looping, increase shimmer probability to create more variation:
     ```cpp
     float shimmerProb = ghostFreezeActive ? kFreezeShimmerProbability : kShimmerProbability;
-    // 40% vs 25% - helps boring source material stay interesting when frozen
+    // 40% vs 25% - helps source material stay interesting during degradation
     ```
 
-**Integration with Existing Freeze:**
-* Freeze button controls **both**:
-    * FDN feedback → near 1.0 (existing behavior).
-    * Ghost engine spawn positions → frozen mode (new behavior).
-* Both systems freeze simultaneously for unified effect.
+**Integration with Disintegration Looper:**
+* Looper button controls **both**:
+    * Loop capture, playback, and degradation (Disintegration system).
+    * Ghost engine spawn positions → locked mode (grain position locking).
+* Both systems work together for the complete "fading memory" experience.
 
-**Tuning Constants (add to `UnravelTuning.h::Ghost`):**
+**Tuning Constants (in `UnravelTuning.h::Ghost`):**
 ```cpp
-// Shimmer probability when frozen (higher for more variation)
+// Shimmer probability when looper active (higher for more variation)
 static constexpr float kFreezeShimmerProbability = 0.40f; // vs 0.25f normally
 ```
 
@@ -418,17 +425,31 @@ static constexpr float kMaxPanWidth = 1.0f;
 static constexpr bool kMirrorReverseGrains = true;
 ```
 
-### 3.7 Freeze
-* **When Freeze goes OFF → ON:**
-    * Slowly ramp FDN feedback gains to near 1.0 (slightly <1).
-    * Fade FDN input down to almost zero (ER + Ghost).
-* **When ON:**
-    * Tail effectively infinite.
-    * No new content enters tank, dry still passes.
-* **When ON → OFF:**
-    * Fade feedback gains back to RT60-based values.
-    * Fade FDN input back to normal.
-* Ramps are short (tens of ms) and smoothed.
+### 3.7 Disintegration Looper
+William Basinski-inspired loop degradation with "Ascension" filter model. The loop evaporates upward (HPF+LPF converge) with warm saturation.
+
+#### 3.7.1 State Machine
+* **Idle → Recording:** Button press starts capturing dry+wet mix into loop buffer. Records for N bars (synced to DAW tempo, default 4 bars).
+* **Recording → Looping:** Recording completes, playback begins with crossfade. Entropy starts at 0.
+* **Looping → Idle:** Button press fades loop out and returns to normal reverb.
+
+#### 3.7.2 Degradation Effects (scaled by entropy 0→1)
+* **Ascension Filter:** HPF sweeps 20→800Hz, LPF sweeps 20kHz→2kHz. Frequencies converge as entropy increases.
+* **Saturation:** Warm tape saturation increases with entropy (0→0.6).
+* **Oxide Shedding:** Stochastic dropouts (probability scales with entropy).
+* **Motor Death:** Brownian pitch drag with downward bias (±40 cents max).
+* **Azimuth Drift:** L/R channels degrade at slightly different rates.
+* **Wow & Flutter:** Authentic tape transport wobble.
+* **Noise Floor:** Pink noise fades in as loop degrades.
+
+#### 3.7.3 Puck Mapping During Loop
+* **Puck Y:** Controls entropy rate. Top = fast (~2 loops to full decay), Bottom = slow (~endless).
+* **Puck X:** Controls degradation character:
+    * Left (Ghost): Spectral thinning, emphasize highs (HPF boost ×4).
+    * Right (Fog): Diffuse smearing, preserve mids (LPF reduction ×0.25).
+
+#### 3.7.4 Tuning Constants
+See `UnravelTuning.h::Disintegration` for all degradation parameters.
 
 ### 3.8 Ducking
 * Envelope follower on mono-summed dry input.
@@ -739,7 +760,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 ---
 
 #### 9. **stasis**
-*Freeze-optimized—long decay, max ghost, ready to lock.*
+*Looper-optimized—long decay, max ghost, ready to capture.*
 - **Puck:** X=0.0, Y=0.30
 - **Decay:** 20.0s
 - **Pre-delay:** 0ms
@@ -750,7 +771,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Duck:** 0.0
 - **Blend:** 75%
 - **Output:** -3dB
-- **Use case:** Hit Freeze to lock the tail into infinite sustain. Perfect for creating instant drone pads.
+- **Use case:** Hit the looper to capture and gradually degrade. Perfect for creating evolving drone pads.
 
 ---
 
@@ -781,7 +802,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - ✅ Body vs Air extremes (#2 close, #6 mist)
 - ✅ Near vs Distant extremes (#2 close, #10 shiver)
 - ✅ Ghost engine showcase (#7 rewind, #9 stasis)
-- ✅ Freeze-ready (#9 stasis)
+- ✅ Looper-ready (#9 stasis)
 - ✅ Ducking showcase (#3 tether, #4 pulse)
 - ✅ Drift/modulation showcase (#8 halation, #10 shiver)
 - ✅ Source-specific (guitar: #3, vocals: #2, synths: #5, #8)

@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2025-12-30T02:59:02.784Z
+// Generated at: 2026-01-12T13:59:00.363Z
 // =============================================================================
 #pragma once
 
@@ -32,7 +32,7 @@ struct UnravelGeneratedParams
             params.push_back(std::make_unique<juce::AudioParameterFloat>("decay", "Decay", range, 5.0f));
         }
 
-        params.push_back(std::make_unique<juce::AudioParameterFloat>("tone", "Tone", -1.0f, 1.0f, 0.0f));
+        params.push_back(std::make_unique<juce::AudioParameterFloat>("tone", "Brightness", -1.0f, 1.0f, 0.0f));
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>("drift", "Drift", 0.0f, 1.0f, 0.2f));
 

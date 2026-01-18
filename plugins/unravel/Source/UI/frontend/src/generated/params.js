@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2025-12-30T02:59:02.789Z
+// Generated at: 2026-01-12T13:59:00.367Z
 // =============================================================================
 
 /**
@@ -54,7 +54,7 @@ export const PARAMS = {
   },
   tone: {
     id: 'tone',
-    name: 'Tone',
+    name: 'Brightness',
     type: 'float',
     min: -1,
     max: 1,

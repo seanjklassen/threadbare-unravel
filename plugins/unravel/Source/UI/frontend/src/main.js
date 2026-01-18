@@ -129,8 +129,6 @@ const initApp = () => {
     console.error('Failed to initialize Threadbare shell!')
     return
   }
-
-  console.log('Unravel initialized with Threadbare shell')
 }
 
 // Handler for state updates from C++ backend

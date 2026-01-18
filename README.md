@@ -61,20 +61,30 @@ cmake --build build --target ThreadbareUnravel_All -j8
 ## Project Structure
 
 ```
-Source/
-├── DSP/                 # Pure C++ audio processing
-│   ├── UnravelReverb.h/cpp
-│   └── GhostEngine.h/cpp
-├── Processors/          # JUCE AudioProcessor
-│   └── UnravelProcessor.h/cpp
-├── UI/                  # WebView integration
-│   ├── UnravelEditor.h/cpp
-│   └── frontend/        # Web UI source
-│       ├── src/         # Edit these files
-│       └── dist/        # Bundled output (don't edit)
-└── UnravelTuning.h      # All magic numbers / tuning constants
+plugins/unravel/
+├── Source/
+│   ├── DSP/                 # Pure C++ audio processing
+│   │   └── UnravelReverb.h/cpp  # FDN reverb + ghost engine + disintegration looper
+│   ├── Processors/          # JUCE AudioProcessor
+│   │   └── UnravelProcessor.h/cpp
+│   ├── UI/                  # WebView integration
+│   │   ├── UnravelEditor.h/cpp
+│   │   └── frontend/        # Web UI source
+│   │       ├── src/         # Edit these files
+│   │       └── dist/        # Bundled output (don't edit)
+│   ├── UnravelTuning.h      # All magic numbers / tuning constants
+│   └── UnravelGeneratedParams.h  # Auto-generated from params.json
+├── config/
+│   └── params.json          # Parameter definitions (source of truth)
+└── assets/
+    └── app-icon.png
 
-docs/                    # Design specs and implementation guides
+shared/                      # Shared code across plugins
+├── core/                    # ProcessorBase, WebViewBridge
+├── scripts/                 # generate_params.js
+└── ui/shell/                # Shared UI components
+
+docs/                        # Design specs and implementation guides
 ```
 
 ## Documentation

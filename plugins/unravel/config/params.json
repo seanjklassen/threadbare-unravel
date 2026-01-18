@@ -51,7 +51,7 @@
     },
     {
       "id": "tone",
-      "name": "Tone",
+      "name": "Brightness",
       "type": "float",
       "min": -1.0,
       "max": 1.0,

@@ -33,7 +33,8 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 - `kMinPanWidth = 0.3`, `kMaxPanWidth = 0.85`: stereo width scaling.
 - `kFreezeShimmerProbability = 0.40`: increased shimmer when frozen.
 
-## Freeze
+## Freeze (Legacy Multi-Head Loop)
+*Note: These constants support internal FDN freeze behavior. See Disintegration for the main looper feature.*
 - `kLoopBufferSeconds = 5.0`: multi-head loop buffer duration.
 - `kNumReadHeads = 6`: smooth blend without excessive CPU.
 - `kTransitionSeconds = 0.3`: glide into/out of freeze.
@@ -42,6 +43,38 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 - `kLoopWarmingCoef = 0.15`: ≈1.5kHz cutoff for warmth.
 - `kFrozenFeedback = 1.0`: true infinite sustain.
 - `kRampTimeSec = 0.05`: fast ramp for freeze transitions.
+
+## Disintegration (William Basinski-inspired Loop Degradation)
+*Main looper feature with "Ascension" filter model. Loop evaporates upward with warm saturation.*
+
+### Buffer & Recording
+- `kLoopBufferSeconds = 20.0`: supports 4 bars at 60 BPM with headroom.
+- `kDefaultBars = 4`: default recording length.
+- `kCrossfadeMs = 50.0`: seamless loop boundary crossfade.
+
+### Ascension Filter (converging HPF + LPF)
+- `kHpfStartHz = 20`, `kHpfEndHz = 800`: HPF sweeps up as entropy increases.
+- `kLpfStartHz = 20000`, `kLpfEndHz = 2000`: LPF sweeps down as entropy increases.
+- `kFilterResonance = 0.3`: subtle Q for musical sweep.
+
+### Warmth & Saturation
+- `kSaturationMin = 0.0`, `kSaturationMax = 0.6`: saturation increases with entropy.
+
+### Focus Mapping (Puck X during loop)
+- `kFocusGhostHpfBoost = 4.0`: left (Ghost) emphasizes highs with HPF boost.
+- `kFocusFogLpfBoost = 0.25`: right (Fog) preserves mids with LPF reduction.
+
+### Entropy Timing
+- `kEntropyLoopsMin = 2.0`: fastest decay (~2 loop iterations at puck Y top).
+- `kEntropyLoopsMax = 10000.0`: practically endless decay (puck Y bottom).
+
+### Physical Degradation (Tape Failure Simulation)
+- `kOxideDropoutProbabilityMax = 0.50`: stochastic dropouts at full entropy.
+- `kMotorDragMaxCents = 40.0`: pitch deviation from motor struggling.
+- `kAzimuthDriftMaxOffset = 0.18`: L/R channel degradation divergence.
+- `kWowFreqHz = 0.5`, `kWowDepthCents = 12.0`: slow pitch wobble.
+- `kFlutterFreqHz = 6.0`, `kFlutterDepthCents = 4.0`: fast pitch wobble.
+- `kNoiseFloorMaxLevel = 0.0025`: pink noise (~-52dB) as tape hiss.
 
 ## Ducking
 - `kAttackSec = 0.01`, `kReleaseSec = 0.25`: pump timing.
@@ -55,4 +88,18 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 - `kAttackSec = 0.01`, `kReleaseSec = 0.10`: envelope follower for orb visualization.
 
 ## Safety
-- `kAntiDenormal = 1e-18`: injects microscopic noise to keep FDN CPU-stable.
+- `kAntiDenormal = 0.0f`: **DISABLED** - was causing audible grain. `ScopedNoDenormals` handles CPU stability.
+
+## Debug
+*Toggle subsystems to isolate crackling/distortion sources during development.*
+- `kEnableNoiseInjection = false`: additive noise in feedback path.
+- `kEnableDelayModulation = true`: LFO-based read position modulation.
+- `kEnableFeedbackNonlinearity = true`: tanh saturation in FDN write path.
+- `kEnableEqAndDuck = true`: tone filters and ducking envelope.
+- `kEnableGhostEngine = true`: granular clouds.
+- `kEnableFdnInputLimiting = true`: tanh before feedback loop.
+- `kEnableOutputClipping = true`: tanh on mix output.
+- `kShimmerGrainsOnly = false`: isolate shimmer grains for testing.
+- `kMaxActiveGrains = 0`: 0 = unlimited, 1-8 for testing.
+- `kGhostInjectionGainDb = 0.0`: gain reduction for testing.
+- `kInternalHeadroomDb = 6.0`: extra headroom before nonlinearities.

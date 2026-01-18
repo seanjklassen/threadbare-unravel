@@ -75,7 +75,6 @@ export class Presets {
         const presets = await getPresetListFn()
         this.presetList = presets || []
         this.populatePresets()
-        console.log('Presets loaded:', this.presetList)
       } catch (error) {
         console.error('Failed to load presets:', error)
       }
@@ -436,7 +435,6 @@ export class Presets {
         if (success) {
           this.currentPresetIndex = index
           this.updatePresetName()
-          console.log('Loaded preset:', this.presetList[index])
         } else {
           console.error('Failed to load preset:', index)
         }
