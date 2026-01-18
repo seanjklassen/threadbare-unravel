@@ -72,6 +72,19 @@ export class Controls {
     this.dimensions = null
     this.state = { puckX: 0.5, puckY: 0.5, freeze: false }
     this.looperState = 'idle'  // 'idle' | 'recording' | 'looping'
+    
+    // Axis labels (visible when dragging puck)
+    this.axisLabels = {
+      left: document.querySelector('.axis-label-left'),
+      right: document.querySelector('.axis-label-right'),
+      top: document.querySelector('.axis-label-top'),
+      bottom: document.querySelector('.axis-label-bottom'),
+    }
+    this.axisLabelText = {
+      normal: { left: 'vivid', right: 'hazy', top: 'distant', bottom: 'recent' },
+      loop: { left: 'spectral', right: 'diffuse', top: 'fleeting', bottom: 'lingering' },
+    }
+    
     this.isDragging = false
     this.pointerId = null
     this.dragOffset = { x: 0, y: 0 }
@@ -114,6 +127,9 @@ export class Controls {
     
     // Initialize puck position with retry logic for slow DAW WebViews
     this.initPuckPosition()
+    
+    // Initialize axis labels with default text
+    this.updateAxisLabels()
   }
 
   _buildParamMetadata() {
@@ -331,6 +347,7 @@ export class Controls {
     this.isDragging = true
     this.pointerId = event.pointerId
     this.puck.classList.add('active')
+    this.surface?.classList.add('puck-dragging')
     this.puck.setPointerCapture?.(event.pointerId)
     
     const bounds = this.bounds
@@ -369,6 +386,7 @@ export class Controls {
     this.isDragging = false
     this.pointerId = null
     this.puck?.classList.remove('active')
+    this.surface?.classList.remove('puck-dragging')
     this.puck?.releasePointerCapture?.(event.pointerId)
     window.removeEventListener('pointermove', this.handlePointerMove)
     this.startInertia()
@@ -545,6 +563,20 @@ export class Controls {
   }
 
   /**
+   * Update axis label text based on looper state
+   * Labels show different descriptors for normal vs loop mode
+   */
+  updateAxisLabels() {
+    const isLooping = this.looperState === 'looping'
+    const labels = isLooping ? this.axisLabelText.loop : this.axisLabelText.normal
+    
+    if (this.axisLabels.left) this.axisLabels.left.textContent = labels.left
+    if (this.axisLabels.right) this.axisLabels.right.textContent = labels.right
+    if (this.axisLabels.top) this.axisLabels.top.textContent = labels.top
+    if (this.axisLabels.bottom) this.axisLabels.bottom.textContent = labels.bottom
+  }
+
+  /**
    * Toggle the full-screen settings view
    * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
    */
@@ -657,6 +689,7 @@ export class Controls {
         
         this.looperState = newLooperState
         this.updateLooperVisual()
+        this.updateAxisLabels()
       }
     }
     

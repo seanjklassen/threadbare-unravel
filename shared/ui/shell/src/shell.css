@@ -181,6 +181,61 @@ body {
   box-shadow: 0 0 8px #C5CC7A;
 }
 
+/* === AXIS LABELS (visible when dragging puck) === */
+.tb-canvas-shell .axis-label {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+/* Show labels when puck is being dragged */
+.tb-canvas-shell.puck-dragging .axis-label {
+  opacity: 0.35;
+}
+
+/* Label positioning */
+.tb-canvas-shell .axis-label-left {
+  left: 24px;
+  right: auto;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center center;
+}
+
+.tb-canvas-shell .axis-label-right {
+  right: 24px;
+  left: auto;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(90deg);
+  transform-origin: center center;
+}
+
+.tb-canvas-shell .axis-label-top {
+  top: 24px;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.tb-canvas-shell .axis-label-bottom {
+  bottom: 24px;
+  top: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
 /* === DISINTEGRATION LOOPER: Pupil States === */
 
 /* Recording state: pupil turns salmon/coral to match button */
