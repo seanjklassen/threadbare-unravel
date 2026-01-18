@@ -113,8 +113,7 @@ export class Presets {
         this.presetPill.addEventListener('mouseup', this.onPillPointerUp)
       }
 
-      // Legacy click handler left in place for now but becomes a no-op under suppression.
-      // (We keep it to preserve any accessibility quirks from older browsers.)
+      // Click handler for keyboard accessibility and older browsers
       this.presetPill.addEventListener('click', this.handlePillClick)
       this.presetPill.addEventListener('keydown', this.handleKeyDown)
     }
@@ -128,7 +127,7 @@ export class Presets {
       document.addEventListener('mouseup', this.onDocPointerUpCapture, { capture: true })
     }
 
-    // Legacy outside click handler (bubble) kept for safety, but should be redundant now.
+    // Fallback outside click handler (bubble phase)
     document.addEventListener('click', this.handleClickOutside)
 
     // Allow other modules (e.g. settings) to close presets deterministically

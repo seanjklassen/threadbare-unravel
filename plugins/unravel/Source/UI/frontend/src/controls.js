@@ -382,8 +382,7 @@ export class Controls {
     this.entropy = 0
 
     // Settings drawer state
-    this.elasticSliders = {}  // New elastic slider instances
-    this.sliders = {}  // Legacy reference (deprecated)
+    this.elasticSliders = {}
     this.paramMetadata = {
       decay: { min: 0.4, max: 50.0, format: this.formatDecay.bind(this) },
       erPreDelay: { min: 0, max: 100, format: this.formatPredelay.bind(this) },
@@ -925,7 +924,7 @@ export class Controls {
       }
     }
     
-    // Legacy freeze visual (for backwards compatibility, though looper state takes precedence)
+    // Handle freeze param for backwards compatibility (looper state takes precedence)
     if (typeof state.freeze !== 'undefined' && this.looperState === 'idle') {
       this.setFreezeVisual(Boolean(state.freeze))
     }

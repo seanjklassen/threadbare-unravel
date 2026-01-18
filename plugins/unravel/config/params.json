@@ -1,6 +1,6 @@
 {
   "$schema": "https://threadbare.audio/schemas/params.json",
-  "version": "1.0.0",
+  "version": "0.4.0",
   "plugin": "unravel",
   "parameters": [
     {
@@ -96,7 +96,7 @@
     },
     {
       "id": "freeze",
-      "name": "Freeze",
+      "name": "Looper",
       "type": "bool",
       "default": false
     },

@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2026-01-12T13:59:00.367Z
+// Generated at: 2026-01-18T19:31:13.840Z
 // =============================================================================
 
 /**
@@ -95,7 +95,7 @@ export const PARAMS = {
   },
   freeze: {
     id: 'freeze',
-    name: 'Freeze',
+    name: 'Looper',
     type: 'bool',
     default: false
   },
