@@ -11,11 +11,16 @@ const DECAY_RANGE = { min: 0, max: 1 }
 const SIZE_RANGE = { min: 0, max: 1 }
 const PUCK_RADIUS = 40
 const PUCK_MOTION = {
-  speedForMax: 0.05,
-  maxStretchX: 0.06,
-  maxStretchY: 0.04,
-  maxPupilOffset: 6,
+  speedForMax: 0.02,      // Sensitivity for max visual effect
+  maxStretchX: 0.20,      // 20% stretch
+  maxStretchY: 0.18,      // 18% squash
+  maxPupilOffset: 10,     // 10px pupil lag
   externalEpsilon: 0.01,
+  // Inertia tuning (robust for JUCE WebView which may have slower/irregular event timing)
+  inertiaFriction: 0.95,       // Higher = longer coast
+  inertiaThreshold: 0.0003,    // Lower = more sensitive to small velocities
+  inertiaBounce: -0.3,         // Wall bounce damping
+  inertiaHistoryMs: 200,       // Look back window for velocity (longer for WebView)
   // Frosted glass "liquid lens" tuning (UI-only)
   glass: {
     blurMinPx: 8,
@@ -109,9 +114,12 @@ export class Controls {
     this.pointerId = null
     this.dragOffset = { x: 0, y: 0 }
     this.velocity = { x: 0, y: 0 }
+    this.velocityHistory = []  // Track recent velocities for reliable inertia
+    this.positionHistory = []  // Track positions with timestamps for WebView robustness
     this.lastPointerNorm = { x: 0, y: 0 }
     this.puckRadius = 24
     this.inertiaFrame = null
+    this.lastSentPosition = { x: 0.5, y: 0.5, time: 0 }  // Track what we sent to DSP to filter echoes
 
     // Smooth puck animation state
     this.targetPuckX = 0.5
@@ -441,6 +449,8 @@ export class Controls {
     
     this.lastPointerNorm = { x: this.state.puckX, y: this.state.puckY }
     this.velocity = { x: 0, y: 0 }
+    this.velocityHistory = []  // Clear history on new drag
+    this.positionHistory = [{ x: this.state.puckX, y: this.state.puckY, time: performance.now() }]
     window.addEventListener('pointermove', this.handlePointerMove)
   }
 
@@ -517,13 +527,22 @@ export class Controls {
       return
     }
 
-    const stretchX = 1 + speedNorm * PUCK_MOTION.maxStretchX
-    const stretchY = 1 - speedNorm * PUCK_MOTION.maxStretchY
+    // Calculate stretch along the direction of motion
+    const stretch = 1 + speedNorm * PUCK_MOTION.maxStretchX
+    const squash = 1 - speedNorm * PUCK_MOTION.maxStretchY
+    
+    // Get angle of velocity (in degrees) - stretch should be along this direction
+    const angle = Math.atan2(velocity.y, velocity.x) * (180 / Math.PI)
+    
+    // Pupil lags behind the motion (opposite direction)
     const offsetX = clamp(-velocity.x / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset
     const offsetY = clamp(-velocity.y / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset
 
-    this.puck.style.setProperty('--puck-stretch-x', stretchX.toFixed(3))
-    this.puck.style.setProperty('--puck-stretch-y', stretchY.toFixed(3))
+    // Apply directional stretch via rotation trick:
+    // rotate to align with velocity -> scale -> rotate back
+    this.puck.style.setProperty('--puck-motion-angle', `${angle.toFixed(1)}deg`)
+    this.puck.style.setProperty('--puck-stretch', stretch.toFixed(3))
+    this.puck.style.setProperty('--puck-squash', squash.toFixed(3))
     this.puck.style.setProperty('--pupil-offset-x', `${offsetX.toFixed(2)}px`)
     this.puck.style.setProperty('--pupil-offset-y', `${offsetY.toFixed(2)}px`)
 
@@ -533,8 +552,9 @@ export class Controls {
 
   resetPuckMotionStyles() {
     if (!this.puck) return
-    this.puck.style.setProperty('--puck-stretch-x', '1')
-    this.puck.style.setProperty('--puck-stretch-y', '1')
+    this.puck.style.setProperty('--puck-motion-angle', '0deg')
+    this.puck.style.setProperty('--puck-stretch', '1')
+    this.puck.style.setProperty('--puck-squash', '1')
     this.puck.style.setProperty('--pupil-offset-x', '0px')
     this.puck.style.setProperty('--pupil-offset-y', '0px')
     this._scheduleGlassUpdate(0)
@@ -545,15 +565,29 @@ export class Controls {
     const { x, y } = this.pointerToNorm(event)
     const nextX = clamp(x)
     const nextY = clamp(y)
-    this.velocity = {
+    const now = performance.now()
+    
+    const frameVelocity = {
       x: nextX - this.lastPointerNorm.x,
       y: nextY - this.lastPointerNorm.y,
     }
+    
+    // Track velocity history (keep last 8 frames for reliable inertia)
+    this.velocityHistory.push({ ...frameVelocity, time: now })
+    if (this.velocityHistory.length > 8) this.velocityHistory.shift()
+    
+    // Track position history for WebView robustness (calculate velocity over longer spans)
+    this.positionHistory.push({ x: nextX, y: nextY, time: now })
+    if (this.positionHistory.length > 10) this.positionHistory.shift()
+    
+    this.velocity = frameVelocity
     this.lastPointerNorm = { x: nextX, y: nextY }
     this.setPuckPositionImmediate(nextX, nextY)
     this.setPuckMotionStyles(this.velocity)
     this.sendParam('puckX', toDsp(nextX))
     this.sendParam('puckY', toDsp(1 - nextY))
+    // Track sent position to filter backend echoes
+    this.lastSentPosition = { x: nextX, y: nextY, time: now }
     this.onPuckChange({ puckX: nextX, puckY: nextY })
     this.renderReadoutsFromNorm(nextX, nextY)
   }
@@ -751,25 +785,34 @@ export class Controls {
     const resolvedX = incomingX !== null ? incomingX : nextX
     const resolvedY = incomingY !== null ? incomingY : nextY
     const hasIncoming = incomingX !== null || incomingY !== null
-    const isAnimating = Boolean(this.inertiaFrame || this.puckAnimationFrame)
-    let allowIncoming = !this.isDragging && !isAnimating
+    
+    // During drag or inertia, COMPLETELY ignore backend position updates
+    // The UI owns the puck during these states - no exceptions for DAW compatibility
+    if (this.isDragging || this.inertiaFrame) {
+      // Skip all position processing - just handle non-position state updates below
+      nextX = this.state.puckX
+      nextY = this.state.puckY
+    } else {
+      const isAnimating = Boolean(this.puckAnimationFrame)
+      let allowIncoming = !isAnimating
 
-    if (!allowIncoming && !this.isDragging && hasIncoming) {
-      const dx = Math.abs(resolvedX - this.state.puckX)
-      const dy = Math.abs(resolvedY - this.state.puckY)
-      if (dx > PUCK_MOTION.externalEpsilon || dy > PUCK_MOTION.externalEpsilon) {
-        this.stopInertia()
-        this.stopPuckAnimation()
-        allowIncoming = true
+      // Only allow external override during puck animation if it's a LARGE jump
+      if (!allowIncoming && hasIncoming) {
+        const dx = Math.abs(resolvedX - this.state.puckX)
+        const dy = Math.abs(resolvedY - this.state.puckY)
+        if (dx > 0.15 || dy > 0.15) {
+          this.stopPuckAnimation()
+          allowIncoming = true
+        }
+      }
+      
+      if (allowIncoming && hasIncoming) {
+        nextX = resolvedX
+        nextY = resolvedY
       }
     }
 
-    if (allowIncoming) {
-      nextX = resolvedX
-      nextY = resolvedY
-    }
-
-    if (!this.isDragging) {
+    if (!this.isDragging && !this.inertiaFrame) {
       // Check if position changed significantly (likely a preset change)
       const dx = Math.abs(nextX - this.state.puckX)
       const dy = Math.abs(nextY - this.state.puckY)
@@ -894,8 +937,59 @@ export class Controls {
 
   startInertia() {
     if (this.inertiaFrame) return
-    const threshold = 0.0002
-    if (Math.abs(this.velocity.x) < threshold && Math.abs(this.velocity.y) < threshold) {
+    
+    const now = performance.now()
+    const historyWindow = PUCK_MOTION.inertiaHistoryMs
+    
+    // Strategy 1: Best single-frame velocity from history
+    let bestVelocity = this.velocity
+    let bestSpeed = Math.hypot(bestVelocity.x, bestVelocity.y)
+    
+    for (const v of this.velocityHistory) {
+      if (now - v.time > historyWindow) continue
+      const speed = Math.hypot(v.x, v.y)
+      if (speed > bestSpeed) {
+        bestSpeed = speed
+        bestVelocity = v
+      }
+    }
+    
+    // Strategy 2: Calculate velocity from position delta over time span
+    // This is more robust for WebViews with irregular/sparse events
+    if (this.positionHistory.length >= 2) {
+      // Find oldest position within window
+      let oldest = null
+      for (const p of this.positionHistory) {
+        if (now - p.time <= historyWindow) {
+          oldest = p
+          break
+        }
+      }
+      
+      if (oldest) {
+        const newest = this.positionHistory[this.positionHistory.length - 1]
+        const dt = (newest.time - oldest.time) / 1000  // seconds
+        if (dt > 0.016) {  // At least 1 frame of time
+          // Calculate velocity as distance/time, normalized to "per-frame" rate
+          const frameTime = 1 / 60
+          const spanVelocity = {
+            x: (newest.x - oldest.x) / dt * frameTime,
+            y: (newest.y - oldest.y) / dt * frameTime,
+          }
+          const spanSpeed = Math.hypot(spanVelocity.x, spanVelocity.y)
+          if (spanSpeed > bestSpeed) {
+            bestSpeed = spanSpeed
+            bestVelocity = spanVelocity
+          }
+        }
+      }
+    }
+    
+    this.velocity = { x: bestVelocity.x, y: bestVelocity.y }
+    this.velocityHistory = []
+    this.positionHistory = []
+    
+    if (bestSpeed < PUCK_MOTION.inertiaThreshold) {
       this.velocity = { x: 0, y: 0 }
       this.resetPuckMotionStyles()
       return
@@ -918,11 +1012,12 @@ export class Controls {
       return
     }
 
-    this.velocity.x *= 0.92
-    this.velocity.y *= 0.92
+    // Apply friction
+    this.velocity.x *= PUCK_MOTION.inertiaFriction
+    this.velocity.y *= PUCK_MOTION.inertiaFriction
 
-    const threshold = 0.001
-    if (Math.abs(this.velocity.x) < threshold && Math.abs(this.velocity.y) < threshold) {
+    const speed = Math.hypot(this.velocity.x, this.velocity.y)
+    if (speed < PUCK_MOTION.inertiaThreshold) {
       this.stopInertia()
       return
     }
@@ -930,19 +1025,22 @@ export class Controls {
     let nextX = this.state.puckX + this.velocity.x
     let nextY = this.state.puckY + this.velocity.y
 
+    // Bounce off walls
     if (nextX <= 0 || nextX >= 1) {
       nextX = clamp(nextX)
-      this.velocity.x *= -0.4
+      this.velocity.x *= PUCK_MOTION.inertiaBounce
     }
     if (nextY <= 0 || nextY >= 1) {
       nextY = clamp(nextY)
-      this.velocity.y *= -0.4
+      this.velocity.y *= PUCK_MOTION.inertiaBounce
     }
 
     this.setPuckPositionImmediate(nextX, nextY)
     this.setPuckMotionStyles(this.velocity)
     this.sendParam('puckX', toDsp(nextX))
     this.sendParam('puckY', toDsp(1 - nextY))
+    // Track what we sent so we can ignore echoes from backend
+    this.lastSentPosition = { x: nextX, y: nextY, time: performance.now() }
     this.onPuckChange({ puckX: nextX, puckY: nextY })
     this.renderReadoutsFromNorm(nextX, nextY)
 

@@ -130,43 +130,42 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 21px;
-  /* Frosted lens material (fallback uses backdrop blur; enhanced mode uses SVG filter) */
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-sizing: content-box;
-  box-shadow: var(--puck-shadow);
+  /* Puck styling - designed to look good without backdrop-filter (not supported in JUCE WebView) */
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(200, 200, 195, 0.06) 100%
+  );
+  box-shadow: 
+    var(--puck-shadow),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
   display: grid;
   place-items: center;
   --puck-press: 1;
-  --puck-stretch-x: 1;
-  --puck-stretch-y: 1;
+  --puck-motion-angle: 0deg;
+  --puck-stretch: 1;
+  --puck-squash: 1;
   --pupil-offset-x: 0px;
   --pupil-offset-y: 0px;
   --puck-glass-blur: 20px; /* driven by JS */
   --puck-grain: 0.18;      /* driven by JS */
-  transform: translate(-50%, -50%) scale(var(--puck-press)) scale(var(--puck-stretch-x), var(--puck-stretch-y));
-  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out, background 0.2s ease-out;
+  /* Directional stretch: rotate to velocity direction, scale, rotate back */
+  transform: translate(-50%, -50%) scale(var(--puck-press)) rotate(var(--puck-motion-angle)) scale(var(--puck-stretch), var(--puck-squash)) rotate(calc(-1 * var(--puck-motion-angle)));
+  /* NOTE: No transform transition here - motion effects (stretch/squash) are applied per-frame via JS.
+     Only transition box-shadow and background for smooth state changes. */
+  transition: box-shadow 0.1s ease-out, background 0.2s ease-out;
   cursor: grab;
   -webkit-tap-highlight-color: transparent;
   z-index: 2;
-  overflow: hidden;
-  /* Backdrop lens effect (works broadly) */
-  backdrop-filter: blur(var(--puck-glass-blur)) saturate(1.15) contrast(1.05);
-  -webkit-backdrop-filter: blur(var(--puck-glass-blur)) saturate(1.15) contrast(1.05);
-  will-change: transform, backdrop-filter;
+  /* NOTE: backdrop-filter and will-change disabled - caused rendering artifacts in JUCE WebView */
   /* CSS fallback: center puck before JS positions it */
   left: 50%;
   top: 50%;
 }
 
-/* Enhanced mode: if the WebView supports URL-based backdrop filters, use the SVG displacement filter.
-   The SVG filter already includes its own blur, so we override the plain blur chain. */
-@supports ((backdrop-filter: url(#tb-frosted)) or (-webkit-backdrop-filter: url(#tb-frosted))) {
-  #puck {
-    backdrop-filter: url(#tb-frosted);
-    -webkit-backdrop-filter: url(#tb-frosted);
-  }
-}
+/* NOTE: SVG backdrop-filter url(#tb-frosted) disabled - causes rendering artifacts in JUCE WebView.
+   Using standard blur backdrop-filter instead which works reliably across all targets. */
 
 #puck.active,
 .puck.active {
@@ -176,26 +175,20 @@ body {
   box-shadow: var(--puck-shadow-pressed);
 }
 
+/* Outer frosted ring effect */
 #puck::before {
-  /* Subtle "riso-ish" grain + highlight layer (small + cheap; helps the lens read) */
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   pointer-events: none;
-  opacity: var(--puck-grain);
-  background:
-    /* paper highlight */
-    radial-gradient(circle at 22% 28%, rgba(255, 255, 255, 0.40) 0%, rgba(255, 255, 255, 0) 58%),
-    /* ink pooling */
-    radial-gradient(circle at 70% 68%, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0) 62%),
-    /* halftone-ish rings */
-    repeating-radial-gradient(circle at 40% 60%, rgba(0, 0, 0, 0.10) 0 0.6px, rgba(0, 0, 0, 0) 0.6px 1.4px),
-    /* misregistration-ish screen */
-    repeating-linear-gradient(22deg, rgba(0, 0, 0, 0.07) 0 1px, rgba(0, 0, 0, 0) 1px 5px);
-  mix-blend-mode: multiply;
-  filter: contrast(1.08) blur(0.25px);
-  box-sizing: content-box;
-  z-index: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(200, 200, 195, 0.1) 100%
+  );
+  z-index: 1;
 }
 
 #puck::after {
@@ -203,12 +196,17 @@ body {
   position: absolute;
   inset: 4px;
   border-radius: 17px;
-  background: #F5F5F0;
-  opacity: 1;
-  mix-blend-mode: difference;
+  background: linear-gradient(
+    145deg, 
+    #FAFAF7 0%, 
+    #F5F5F0 40%,
+    #EEEEE8 100%
+  );
+  box-shadow: 
+    inset 0 1px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.03);
   pointer-events: none;
-  transform: scale(1);
-  box-sizing: content-box;
+  z-index: 0;
 }
 
 
@@ -1178,10 +1176,7 @@ body {
   cursor: ew-resize;
 }
 
-/* SVG Gooey filter - hidden, no longer needed without thumb */
-.elastic-slider-goo {
-  display: none;
-}
+/* SVG filter container is now styled inline in HTML */
 
 /* Container - no gooey filter needed */
 .elastic-slider__goo-container {
