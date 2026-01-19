@@ -10,6 +10,26 @@ const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max)
 const DECAY_RANGE = { min: 0, max: 1 }
 const SIZE_RANGE = { min: 0, max: 1 }
 const PUCK_RADIUS = 40
+const PUCK_MOTION = {
+  speedForMax: 0.05,
+  maxStretchX: 0.06,
+  maxStretchY: 0.04,
+  maxPupilOffset: 6,
+  externalEpsilon: 0.01,
+  // Frosted glass "liquid lens" tuning (UI-only)
+  glass: {
+    blurMinPx: 8,
+    blurRangePx: 10,
+    // Stronger, inkier grain for a more riso feel
+    grainMin: 0.14,
+    grainRange: 0.26,
+    // SVG displacement (if supported by the host WebView)
+    dispScaleMin: 0.6,
+    dispScaleRange: 1.8,
+    turbFreqMin: 0.018,
+    turbFreqRange: 0.03,
+  },
+}
 
 const toDsp = (normValue) => clamp(normValue) * 2 - 1
 const fromDsp = (dspValue) => clamp((dspValue + 1) / 2)
@@ -99,6 +119,19 @@ export class Controls {
     this.puckAnimationFrame = null
     this.lerpSpeed = 0.12  // Smoothing factor (0-1, lower = smoother)
 
+    // Frosted glass (optional SVG filter nodes; safe if absent/unsupported)
+    this.prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.frost = {
+      turb: document.getElementById('tb-frost-turb'),
+      disp: document.getElementById('tb-frost-disp'),
+    }
+    this._glassRaf = null
+    this._glassSpeedNorm = 0
+    this._glassSeed = 2
+
     // Settings drawer state
     this.elasticSliders = {}
     this.sliders = {}  // Legacy reference (deprecated)
@@ -130,6 +163,46 @@ export class Controls {
     
     // Initialize axis labels with default text
     this.updateAxisLabels()
+    this.updateLooperVisual()
+    this.resetPuckMotionStyles()
+  }
+
+  _scheduleGlassUpdate(speedNorm = 0) {
+    this._glassSpeedNorm = clamp(speedNorm, 0, 1)
+    if (this._glassRaf) return
+    this._glassRaf = requestAnimationFrame(() => {
+      this._glassRaf = null
+      this._applyGlassFromSpeed(this._glassSpeedNorm)
+    })
+  }
+
+  _applyGlassFromSpeed(speedNorm = 0) {
+    if (!this.puck) return
+
+    const g = PUCK_MOTION.glass
+    const s = this.prefersReducedMotion ? Math.min(speedNorm, 0.35) : speedNorm
+
+    // CSS fallback path (broad support): blur + subtle grain overlay
+    const blurPx = g.blurMinPx + s * g.blurRangePx
+    const grain = g.grainMin + s * g.grainRange
+    this.puck.style.setProperty('--puck-glass-blur', `${blurPx.toFixed(2)}px`)
+    this.puck.style.setProperty('--puck-grain', grain.toFixed(3))
+
+    // Enhanced path (if supported): animate SVG turbulence/displacement used by backdrop-filter:url(#tb-frosted)
+    // No-op if nodes aren't present or the engine ignores url() backdrop-filters.
+    if (this.frost?.disp) {
+      const scale = g.dispScaleMin + s * g.dispScaleRange
+      this.frost.disp.setAttribute('scale', scale.toFixed(3))
+    }
+    if (this.frost?.turb) {
+      const freq = g.turbFreqMin + s * g.turbFreqRange
+      this.frost.turb.setAttribute('baseFrequency', freq.toFixed(4))
+      // Nudge seed occasionally to keep the lens alive without constant churn
+      if (s > 0.05) {
+        this._glassSeed = (this._glassSeed + 1) % 997
+        this.frost.turb.setAttribute('seed', String(this._glassSeed))
+      }
+    }
   }
 
   _buildParamMetadata() {
@@ -434,6 +507,39 @@ export class Controls {
     return { x: clamp(normX), y: clamp(normY) }
   }
 
+  setPuckMotionStyles(velocity = { x: 0, y: 0 }) {
+    if (!this.puck) return
+    const speed = Math.hypot(velocity.x, velocity.y)
+    const speedNorm = clamp(speed / PUCK_MOTION.speedForMax, 0, 1)
+
+    if (speedNorm < 0.001) {
+      this.resetPuckMotionStyles()
+      return
+    }
+
+    const stretchX = 1 + speedNorm * PUCK_MOTION.maxStretchX
+    const stretchY = 1 - speedNorm * PUCK_MOTION.maxStretchY
+    const offsetX = clamp(-velocity.x / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset
+    const offsetY = clamp(-velocity.y / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset
+
+    this.puck.style.setProperty('--puck-stretch-x', stretchX.toFixed(3))
+    this.puck.style.setProperty('--puck-stretch-y', stretchY.toFixed(3))
+    this.puck.style.setProperty('--pupil-offset-x', `${offsetX.toFixed(2)}px`)
+    this.puck.style.setProperty('--pupil-offset-y', `${offsetY.toFixed(2)}px`)
+
+    // Drive frosted-glass lens distortion from motion
+    this._scheduleGlassUpdate(speedNorm)
+  }
+
+  resetPuckMotionStyles() {
+    if (!this.puck) return
+    this.puck.style.setProperty('--puck-stretch-x', '1')
+    this.puck.style.setProperty('--puck-stretch-y', '1')
+    this.puck.style.setProperty('--pupil-offset-x', '0px')
+    this.puck.style.setProperty('--pupil-offset-y', '0px')
+    this._scheduleGlassUpdate(0)
+  }
+
   updateFromPointer(event) {
     event.preventDefault()
     const { x, y } = this.pointerToNorm(event)
@@ -445,6 +551,7 @@ export class Controls {
     }
     this.lastPointerNorm = { x: nextX, y: nextY }
     this.setPuckPositionImmediate(nextX, nextY)
+    this.setPuckMotionStyles(this.velocity)
     this.sendParam('puckX', toDsp(nextX))
     this.sendParam('puckY', toDsp(1 - nextY))
     this.onPuckChange({ puckX: nextX, puckY: nextY })
@@ -492,6 +599,7 @@ export class Controls {
     if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
       this.setPuckPositionImmediate(this.targetPuckX, this.targetPuckY)
       this.puckAnimationFrame = null
+      this.resetPuckMotionStyles()
       this.renderReadoutsFromNorm(this.targetPuckX, this.targetPuckY)
       // Send final DSP params when animation completes
       this.sendParam('puckX', toDsp(this.targetPuckX))
@@ -503,7 +611,9 @@ export class Controls {
     // Lerp toward target
     const nextX = this.state.puckX + dx * this.lerpSpeed
     const nextY = this.state.puckY + dy * this.lerpSpeed
+    const motionVelocity = { x: nextX - this.state.puckX, y: nextY - this.state.puckY }
     this.setPuckPositionImmediate(nextX, nextY)
+    this.setPuckMotionStyles(motionVelocity)
     this.renderReadoutsFromNorm(nextX, nextY)
     
     // Send DSP params during animation for smooth audio changes
@@ -522,6 +632,7 @@ export class Controls {
       cancelAnimationFrame(this.puckAnimationFrame)
       this.puckAnimationFrame = null
     }
+    this.resetPuckMotionStyles()
   }
 
   setFreezeVisual(isActive) {
@@ -637,8 +748,26 @@ export class Controls {
 
     const incomingX = normalizeCoord(state.puckX)
     const incomingY = normalizeCoord(state.puckY, true)
-    if (incomingX !== null) nextX = incomingX
-    if (incomingY !== null) nextY = incomingY
+    const resolvedX = incomingX !== null ? incomingX : nextX
+    const resolvedY = incomingY !== null ? incomingY : nextY
+    const hasIncoming = incomingX !== null || incomingY !== null
+    const isAnimating = Boolean(this.inertiaFrame || this.puckAnimationFrame)
+    let allowIncoming = !this.isDragging && !isAnimating
+
+    if (!allowIncoming && !this.isDragging && hasIncoming) {
+      const dx = Math.abs(resolvedX - this.state.puckX)
+      const dy = Math.abs(resolvedY - this.state.puckY)
+      if (dx > PUCK_MOTION.externalEpsilon || dy > PUCK_MOTION.externalEpsilon) {
+        this.stopInertia()
+        this.stopPuckAnimation()
+        allowIncoming = true
+      }
+    }
+
+    if (allowIncoming) {
+      nextX = resolvedX
+      nextY = resolvedY
+    }
 
     if (!this.isDragging) {
       // Check if position changed significantly (likely a preset change)
@@ -768,6 +897,7 @@ export class Controls {
     const threshold = 0.0002
     if (Math.abs(this.velocity.x) < threshold && Math.abs(this.velocity.y) < threshold) {
       this.velocity = { x: 0, y: 0 }
+      this.resetPuckMotionStyles()
       return
     }
     this.inertiaFrame = requestAnimationFrame(this.applyInertiaStep)
@@ -779,6 +909,7 @@ export class Controls {
       this.inertiaFrame = null
     }
     this.velocity = { x: 0, y: 0 }
+    this.resetPuckMotionStyles()
   }
 
   applyInertiaStep() {
@@ -809,6 +940,7 @@ export class Controls {
     }
 
     this.setPuckPositionImmediate(nextX, nextY)
+    this.setPuckMotionStyles(this.velocity)
     this.sendParam('puckX', toDsp(nextX))
     this.sendParam('puckY', toDsp(1 - nextY))
     this.onPuckChange({ puckX: nextX, puckY: nextY })

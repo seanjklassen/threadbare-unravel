@@ -11,14 +11,14 @@
   --text: #C8C7B8;
   --accent: #E0E993;
   --accent-hover: #E8B8A8;
-  --puck-shadow: 
-    /*0 35px 49px -3.75px rgba(0, 0, 0, 0.25),*/
-    0 12.92px 16.289px -3.125px rgba(0, 0, 0, 0.18),
-    0 8.01px 11.21px -2.5px rgba(0, 0, 0, 0.25),
-    0 4.23px 5.92px -1.875px rgba(0, 0, 0, 0.25),
-    0 2.11px 2.95px -1.25px rgba(0, 0, 0, 0.25),
-    0 0.824px 1.15px -0.625px rgba(0, 0, 0, 0.25),
-    0 0.824px 1.154px -0.625px rgba(0, 0, 0, 0.26);
+  /* Subtle by default; pressed uses a tighter, "closer to surface" shadow */
+  --puck-shadow:
+    0 10px 16px -10px rgba(0, 0, 0, 0.20),
+    0 4px 7px -6px rgba(0, 0, 0, 0.18),
+    0 1px 2px -1px rgba(0, 0, 0, 0.16);
+  --puck-shadow-pressed:
+    0 4px 8px -7px rgba(0, 0, 0, 0.26),
+    0 1px 2px -1px rgba(0, 0, 0, 0.22);
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Inter',
     sans-serif;
   font-weight: 400;
@@ -130,25 +130,72 @@ body {
   width: 48px;
   height: 48px;
   border-radius: 21px;
-  background: #fff;
+  /* Frosted lens material (fallback uses backdrop blur; enhanced mode uses SVG filter) */
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-sizing: content-box;
   box-shadow: var(--puck-shadow);
   display: grid;
   place-items: center;
-  transform: translate(-50%, -50%);
-  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+  --puck-press: 1;
+  --puck-stretch-x: 1;
+  --puck-stretch-y: 1;
+  --pupil-offset-x: 0px;
+  --pupil-offset-y: 0px;
+  --puck-glass-blur: 20px; /* driven by JS */
+  --puck-grain: 0.18;      /* driven by JS */
+  transform: translate(-50%, -50%) scale(var(--puck-press)) scale(var(--puck-stretch-x), var(--puck-stretch-y));
+  transition: transform 0.1s ease-out, box-shadow 0.1s ease-out, background 0.2s ease-out;
   cursor: grab;
   -webkit-tap-highlight-color: transparent;
   z-index: 2;
   overflow: hidden;
+  /* Backdrop lens effect (works broadly) */
+  backdrop-filter: blur(var(--puck-glass-blur)) saturate(1.15) contrast(1.05);
+  -webkit-backdrop-filter: blur(var(--puck-glass-blur)) saturate(1.15) contrast(1.05);
+  will-change: transform, backdrop-filter;
   /* CSS fallback: center puck before JS positions it */
   left: 50%;
   top: 50%;
 }
 
+/* Enhanced mode: if the WebView supports URL-based backdrop filters, use the SVG displacement filter.
+   The SVG filter already includes its own blur, so we override the plain blur chain. */
+@supports ((backdrop-filter: url(#tb-frosted)) or (-webkit-backdrop-filter: url(#tb-frosted))) {
+  #puck {
+    backdrop-filter: url(#tb-frosted);
+    -webkit-backdrop-filter: url(#tb-frosted);
+  }
+}
+
 #puck.active,
 .puck.active {
   cursor: grabbing;
-  transform: translate(-50%, -50%) scale(.97);
+  --puck-press: 0.97;
+  /* Pressed: tighter shadow = closer to surface */
+  box-shadow: var(--puck-shadow-pressed);
+}
+
+#puck::before {
+  /* Subtle "riso-ish" grain + highlight layer (small + cheap; helps the lens read) */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--puck-grain);
+  background:
+    /* paper highlight */
+    radial-gradient(circle at 22% 28%, rgba(255, 255, 255, 0.40) 0%, rgba(255, 255, 255, 0) 58%),
+    /* ink pooling */
+    radial-gradient(circle at 70% 68%, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0) 62%),
+    /* halftone-ish rings */
+    repeating-radial-gradient(circle at 40% 60%, rgba(0, 0, 0, 0.10) 0 0.6px, rgba(0, 0, 0, 0) 0.6px 1.4px),
+    /* misregistration-ish screen */
+    repeating-linear-gradient(22deg, rgba(0, 0, 0, 0.07) 0 1px, rgba(0, 0, 0, 0) 1px 5px);
+  mix-blend-mode: multiply;
+  filter: contrast(1.08) blur(0.25px);
+  box-sizing: content-box;
+  z-index: 0;
 }
 
 #puck::after {
@@ -156,16 +203,35 @@ body {
   position: absolute;
   inset: 4px;
   border-radius: 17px;
-  opacity: 0.4;
-  background: linear-gradient(313deg, #fff 35.88%, #d4d4d4 85.41%);
+  background: #F5F5F0;
+  opacity: 1;
+  mix-blend-mode: difference;
   pointer-events: none;
+  transform: scale(1);
+  box-sizing: content-box;
+}
+
+
+
+@keyframes puck-idle-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+#puck.idle::after,
+.puck.idle::after {
+  animation: puck-idle-breathe 2.5s ease-in-out infinite;
 }
 
 .puck-pupil {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #C5CC7A;
+  background: #969588;
   display: block;
   position: relative;
   z-index: 1;
@@ -173,11 +239,12 @@ body {
     1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
     0 0 6px rgba(175, 211, 228, 0.4);
   transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1);
 }
 
 #puck.active .puck-pupil,
 .puck.active .puck-pupil {
-  background-color: #C5CC7A;
+  background-color: #9EAE5A;
   box-shadow: 0 0 8px #C5CC7A;
 }
 
@@ -198,7 +265,7 @@ body {
 
 /* Show labels when puck is being dragged */
 .tb-canvas-shell.puck-dragging .axis-label {
-  opacity: 0.35;
+  opacity: 0.45;
 }
 
 /* Label positioning */
@@ -245,23 +312,41 @@ body {
   box-shadow: 
     1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
     0 0 8px rgba(204, 138, 126, 0.6);
+  animation: pupil-recording-pulse 1.1s ease-in-out infinite;
 }
 
 /* Looping state: pupil breathing + blinking animation */
 @keyframes pupil-breathe {
   0%, 100% { 
-    transform: scale(1); 
-    background-color: #9a9a7a;  /* Dimmed grayish-green (blink off) */
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1); 
+    background-color: #969588;  /* Dimmed grayish-green (blink off) */
     box-shadow: 
       1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
       0 0 4px rgba(154, 154, 122, 0.2);
   }
   50% { 
-    transform: scale(1.3); 
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1.3); 
     background-color: #C5CC7A;  /* Full green (blink on) */
     box-shadow: 
       1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
       0 0 14px rgba(197, 204, 122, 0.8);
+  }
+}
+
+@keyframes pupil-recording-pulse {
+  0%, 100% {
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1);
+    background-color: #CC8A7E;
+    box-shadow:
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 6px rgba(204, 138, 126, 0.4);
+  }
+  50% {
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1.25);
+    background-color: #CC8A7E;
+    box-shadow:
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 12px rgba(204, 138, 126, 0.75);
   }
 }
 
