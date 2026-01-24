@@ -115,11 +115,6 @@ private:
     int samplesSinceLastSpawn = 0;
     int grainSpawnInterval = 0; // Cached spawn interval in samples (calculated in prepare())
     
-    // Spectral freeze state - locks grain spawn positions when freeze is active
-    bool ghostFreezeActive = false;
-    std::array<float, 8> frozenSpawnPositions;
-    std::size_t numFrozenPositions = 0;
-    
     // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER STATE
     // ═══════════════════════════════════════════════════════════════════════
@@ -415,8 +410,14 @@ private:
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;
-    void trySpawnGrain(float ghostAmount, float puckX) noexcept;
+    void trySpawnGrain(float ghostAmount, float puckX, float scatterBlend = 0.0f) noexcept;
     void processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept;
+    
+    // Scatter mode helpers - separated to preserve RNG sequence for A/B null testing
+    // spawnCloudGrain: verbatim original behavior (called when scatterBlend <= 0)
+    // spawnScatterGrain: new blended behavior (called when scatterBlend > 0)
+    void spawnCloudGrain(Grain* grain, float ghostAmount, float puckX) noexcept;
+    void spawnScatterGrain(Grain* grain, float ghostAmount, float puckX, float scatterBlend) noexcept;
 };
 
 } // namespace threadbare::dsp

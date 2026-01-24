@@ -130,9 +130,55 @@ struct Ghost {
     // Whether to mirror reverse grains in stereo field.
     static constexpr bool kMirrorReverseGrains = true;
     
-    // === SPECTRAL FREEZE ENHANCEMENTS ===
-    // Shimmer probability when frozen (higher for more variation from limited material).
-    static constexpr float kFreezeShimmerProbability = 0.40f; // vs 0.25f normally
+    // === CLOUD SPAWN DEFAULTS (used for blend=0 baseline) ===
+    // These match the current hardcoded values in process() - centralizing for consistency
+    static constexpr float kCloudSpawnIntervalMs = 15.0f;  // Current grainSpawnInterval (15ms)
+    static constexpr float kCloudSpawnProbability = 0.9f;  // Current spawn probability factor
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCATTER MODE
+// Harmonic grain fragments (root/fifth/octave) that dance around the source
+// Activates automatically in the "ethereal" zone (high ghost + right puck)
+// ═══════════════════════════════════════════════════════════════════════════
+struct Scatter {
+    // === GRAIN CHARACTERISTICS ===
+    // Shorter grains create audible "fragments" vs smooth clouds
+    static constexpr float kGrainMinSec = 0.015f;   // 15ms
+    static constexpr float kGrainMaxSec = 0.080f;   // 80ms
+    
+    // === SPAWN TIMING ===
+    // Sparser spawning = more audible individual grains
+    static constexpr float kSpawnIntervalMs = 60.0f;   // ~16 grains/sec
+    static constexpr float kSpawnProbability = 0.5f;   // Absolute probability (not scaled by ghost)
+    
+    // === THREE HARMONIC STREAMS ===
+    static constexpr float kRootSpeed = 1.0f;          // Unison
+    static constexpr float kFifthSpeed = 1.4983f;      // 2^(7/12) perfect fifth
+    static constexpr float kOctaveSpeed = 2.0f;        // Octave up
+    
+    // Stream selection weights (sum to 1.0)
+    static constexpr float kRootWeight = 0.50f;
+    static constexpr float kFifthWeight = 0.30f;
+    static constexpr float kOctaveWeight = 0.20f;
+    
+    // === AMPLITUDE VARIATION ===
+    static constexpr float kAmpVariationDb = 6.0f;     // Creates breathing rhythm
+    
+    // === ACTIVATION THRESHOLDS ===
+    static constexpr float kPuckXThreshold = 0.6f;     // Must be in "Air" zone
+    static constexpr float kBlendStartGhost = 0.6f;    // Blend begins
+    static constexpr float kBlendEndGhost = 0.8f;      // Full scatter
+    
+    // === PROXIMITY CLAMP ===
+    static constexpr float kMaxLookbackMs = 200.0f;    // Recent material only for coherent fragments
+    
+    // === STEREO PLACEMENT ===
+    static constexpr float kMaxPanWidth = 1.0f;        // Full stereo field at high scatter
+    
+    // === SAFETY: Write-head margin for fast grains ===
+    // 2x speed grains need extra buffer from write head to avoid catching up
+    static constexpr float kFastGrainSafetyMarginMs = 50.0f;
 };
 
 struct Freeze {
@@ -368,6 +414,9 @@ struct Debug {
     // (11) Internal headroom boost (scales down before nonlinearities, up after)
     // Higher values = more headroom, less saturation/aliasing
     static constexpr float kInternalHeadroomDb = 6.0f; // 6dB extra headroom
+    
+    // (12) Scatter mode enable (for A/B testing during tuning)
+    static constexpr bool kEnableScatter = true;
 };
 
 } // namespace threadbare::tuning

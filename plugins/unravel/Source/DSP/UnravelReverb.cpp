@@ -493,7 +493,7 @@ float UnravelReverb::readGhostHistory(float readPosition) const noexcept
     return cubicInterp(y0, y1, y2, y3, frac);
 }
 
-void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
+void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float scatterBlend) noexcept
 {
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
@@ -525,75 +525,73 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
     if (!inactiveGrain)
         return; // All grains are active
     
-    // Activate the grain
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ACTIVATE FIRST - matches original timing (this happens BEFORE configuration)
+    // ═══════════════════════════════════════════════════════════════════════════
     inactiveGrain->active = true;
     
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DISPATCH: scatterBlend == 0 routes to verbatim cloud path for null test
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (scatterBlend <= 0.0f)
+    {
+        // VERBATIM original behavior - preserves exact RNG sequence
+        spawnCloudGrain(inactiveGrain, ghostAmount, puckX);
+    }
+    else
+    {
+        // New scatter path - only runs when scatterBlend > 0
+        spawnScatterGrain(inactiveGrain, ghostAmount, puckX, scatterBlend);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// spawnCloudGrain: VERBATIM COPY of original trySpawnGrain configuration logic
+// This MUST preserve exact RNG call count and order for A/B null testing
+// DO NOT modify without updating spawnScatterGrain to match RNG consumption
+// ═══════════════════════════════════════════════════════════════════════════════
+void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX) noexcept
+{
     // Calculate puckX bias once (used for both proximity and stereo width)
     // distantBias: 0.0 at left (body/recent), 1.0 at right (air/distant)
     const float distantBias = (1.0f + puckX) * 0.5f;
     
-    // === SPECTRAL FREEZE / MEMORY PROXIMITY (Phase 3 & 4) ===
-    // If frozen: use locked positions; otherwise: use proximity-based spawn
+    // === MEMORY PROXIMITY ===
     const int historyLength = static_cast<int>(ghostHistory.size());
     
-    if (ghostFreezeActive && numFrozenPositions > 0)
-    {
-        // FROZEN MODE: Pick from frozen positions using weighted random
-        // This creates organic variation without audible patterns
-        const std::size_t randomIndex = static_cast<std::size_t>(
-            ghostRng.nextFloat() * static_cast<float>(numFrozenPositions));
-        const std::size_t safeIndex = std::min(randomIndex, numFrozenPositions - 1);
-        
-        inactiveGrain->pos = frozenSpawnPositions[safeIndex];
-        
-        // Ensure position is still valid within current buffer
-        while (inactiveGrain->pos < 0.0f)
-            inactiveGrain->pos += static_cast<float>(historyLength);
-        while (inactiveGrain->pos >= static_cast<float>(historyLength))
-            inactiveGrain->pos -= static_cast<float>(historyLength);
-    }
-    else
-    {
-        // NORMAL MODE: Use proximity-based position (Phase 3)
-        // Interpolate between min and max lookback time based on puckX
-        // puckX = -1.0 (Body): maxLookback = 150ms (recent)
-        // puckX =  0.0 (Center): maxLookback = 450ms (medium)
-        // puckX = +1.0 (Air): maxLookback = 750ms (distant)
-        const float maxLookbackMs = threadbare::tuning::Ghost::kMinLookbackMs + 
-                                    (distantBias * (threadbare::tuning::Ghost::kMaxLookbackMs - 
-                                                    threadbare::tuning::Ghost::kMinLookbackMs));
-        
-        // Random position within [0, maxLookback]
-        const float spawnPosMs = ghostRng.nextFloat() * maxLookbackMs;
-        const float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
-        
-        // Set spawn position relative to write head
-        inactiveGrain->pos = static_cast<float>(ghostWriteHead) - sampleOffset;
-        
-        // Wrap within buffer bounds
-        while (inactiveGrain->pos < 0.0f)
-            inactiveGrain->pos += static_cast<float>(historyLength);
-        while (inactiveGrain->pos >= static_cast<float>(historyLength))
-            inactiveGrain->pos -= static_cast<float>(historyLength);
-    }
+    const float maxLookbackMs = threadbare::tuning::Ghost::kMinLookbackMs + 
+                                (distantBias * (threadbare::tuning::Ghost::kMaxLookbackMs - 
+                                                threadbare::tuning::Ghost::kMinLookbackMs));
+    
+    // Random position within [0, maxLookback]
+    const float spawnPosMs = ghostRng.nextFloat() * maxLookbackMs;
+    const float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
+    
+    // Set spawn position relative to write head
+    grain->pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+    
+    // Wrap within buffer bounds
+    while (grain->pos < 0.0f)
+        grain->pos += static_cast<float>(historyLength);
+    while (grain->pos >= static_cast<float>(historyLength))
+        grain->pos -= static_cast<float>(historyLength);
 
-    // Grain duration: random between min and max (80-300ms for smooth overlap)
+    // Grain duration: random between min and max (50-300ms for smooth overlap)
     const float durationSec = juce::jmap(ghostRng.nextFloat(),
                                          0.0f,
                                          1.0f,
                                          threadbare::tuning::Ghost::kGrainMinSec,
                                          threadbare::tuning::Ghost::kGrainMaxSec);
     const float durationSamples = durationSec * static_cast<float>(sampleRate);
-    inactiveGrain->windowInc = 1.0f / durationSamples; // Phase runs 0 to 1 (normalized)
-    inactiveGrain->windowPhase = 0.0f;
+    grain->windowInc = 1.0f / durationSamples;
+    grain->windowPhase = 0.0f;
 
     // Pitch/speed: mostly subtle detune, with prominent shimmer
     float detuneSemi = 0.0f;
     
-    // Debug: shimmer-only mode forces all grains to octave-up for isolation testing
     if constexpr (threadbare::tuning::Debug::kShimmerGrainsOnly)
     {
-        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Always octave up
+        detuneSemi = threadbare::tuning::Ghost::kShimmerSemi;
     }
     else
     {
@@ -603,59 +601,44 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
                                 -threadbare::tuning::Ghost::kDetuneSemi,
                                  threadbare::tuning::Ghost::kDetuneSemi);
         
-        // === SPECTRAL FREEZE SHIMMER ENHANCEMENT (Phase 4) ===
-        // Increase shimmer probability when frozen to add variation from limited source material
-        const float shimmerProb = ghostFreezeActive 
-                                  ? threadbare::tuning::Ghost::kFreezeShimmerProbability 
-                                  : threadbare::tuning::Ghost::kShimmerProbability;
-        
-        if (ghostRng.nextFloat() < shimmerProb)
-            detuneSemi = threadbare::tuning::Ghost::kShimmerSemi; // Octave up
-
-        // 10% chance of octave down for thickness
+        if (ghostRng.nextFloat() < threadbare::tuning::Ghost::kShimmerProbability)
+            detuneSemi = threadbare::tuning::Ghost::kShimmerSemi;
         else if (ghostRng.nextFloat() < 0.1f)
             detuneSemi = -12.0f;
     }
     
-    // Calculate speed ratio from detune
     float speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
     
-    // === REVERSE MEMORY PLAYBACK (Phase 1) ===
-    // Determine if this grain should play backwards through memory
+    // === REVERSE MEMORY PLAYBACK ===
     bool isReverse = false;
-    if (ghostAmount > 0.5f) // Only consider reverse at moderate-to-high ghost
+    if (ghostAmount > 0.5f)
     {
-        // Probability scales with ghost² for gentle onset
         const float reverseProb = threadbare::tuning::Ghost::kReverseProbability 
                                   * ghostAmount * ghostAmount;
         if (ghostRng.nextFloat() < reverseProb)
         {
             isReverse = true;
-            speedRatio = -speedRatio; // Negative speed = backward playback
+            speedRatio = -speedRatio;
         }
     }
     
-    inactiveGrain->speed = speedRatio;
+    grain->speed = speedRatio;
     
-    // === ENHANCED STEREO POSITIONING (Phase 2) ===
-    // Calculate dynamic pan width based on ghost amount and puckX position
-    // Recent memories (left puck) = narrower, distant memories (right puck) = wider
+    // === ENHANCED STEREO POSITIONING ===
     const float panWidth = threadbare::tuning::Ghost::kMinPanWidth + 
                           (ghostAmount * distantBias * 
                            (threadbare::tuning::Ghost::kMaxPanWidth - threadbare::tuning::Ghost::kMinPanWidth));
     
-    // Randomize pan within calculated width, centered at 0.5
-    const float panOffset = (ghostRng.nextFloat() - 0.5f) * panWidth; // -width/2 to +width/2
-    inactiveGrain->pan = 0.5f + panOffset; // Center ± offset
-    inactiveGrain->pan = juce::jlimit(0.0f, 1.0f, inactiveGrain->pan);
+    const float panOffset = (ghostRng.nextFloat() - 0.5f) * panWidth;
+    grain->pan = 0.5f + panOffset;
+    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
     
-    // Mirror reverse grains in stereo field for spatial separation
     if (isReverse && threadbare::tuning::Ghost::kMirrorReverseGrains)
     {
-        inactiveGrain->pan = 1.0f - inactiveGrain->pan;
+        grain->pan = 1.0f - grain->pan;
     }
     
-    // Amplitude based on ghost amount (louder range for presence)
+    // Amplitude
     const float gainDb = juce::jmap(ghostAmount,
                                     0.0f,
                                     1.0f,
@@ -663,11 +646,137 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
                                     threadbare::tuning::Ghost::kMaxGainDb);
     float grainAmp = juce::Decibels::decibelsToGain(gainDb);
     
-    // Apply gain reduction to reverse grains (helps them sit "behind" forward grains)
     if (isReverse)
         grainAmp *= threadbare::tuning::Ghost::kReverseGainReduction;
     
-    inactiveGrain->amp = grainAmp;
+    grain->amp = grainAmp;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// spawnScatterGrain: New blended behavior for scatter mode (scatterBlend > 0)
+// Harmonic grain fragments (root/fifth/octave) with per-aspect blending
+// ═══════════════════════════════════════════════════════════════════════════════
+void UnravelReverb::spawnScatterGrain(Grain* grain, float ghostAmount, float puckX, float scatterBlend) noexcept
+{
+    using namespace threadbare::tuning;
+    
+    const float distantBias = (1.0f + puckX) * 0.5f;
+    const int historyLength = static_cast<int>(ghostHistory.size());
+    const float historyLengthF = static_cast<float>(historyLength);
+    
+    // === DURATION: Blend cloud (50-300ms) -> scatter (15-80ms) ===
+    const float cloudDuration = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, Ghost::kGrainMinSec, Ghost::kGrainMaxSec);
+    const float scatterDuration = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, Scatter::kGrainMinSec, Scatter::kGrainMaxSec);
+    const float durationSec = cloudDuration * (1.0f - scatterBlend) + 
+                              scatterDuration * scatterBlend;
+    const float durationSamples = durationSec * static_cast<float>(sampleRate);
+    grain->windowInc = 1.0f / durationSamples;
+    grain->windowPhase = 0.0f;
+    
+    // === PITCH: Blend normal detune vs harmonic streams ===
+    float speedRatio;
+    bool isReverse = false;
+    
+    if (ghostRng.nextFloat() < scatterBlend)
+    {
+        // Scatter path: pick from harmonic streams
+        const float streamRoll = ghostRng.nextFloat();
+        if (streamRoll < Scatter::kRootWeight)
+            speedRatio = Scatter::kRootSpeed;
+        else if (streamRoll < Scatter::kRootWeight + Scatter::kFifthWeight)
+            speedRatio = Scatter::kFifthSpeed;
+        else
+            speedRatio = Scatter::kOctaveSpeed;
+    }
+    else
+    {
+        // Normal path: subtle detune + shimmer
+        float detuneSemi = juce::jmap(ghostRng.nextFloat(),
+            0.0f, 1.0f, -Ghost::kDetuneSemi, Ghost::kDetuneSemi);
+        
+        if (ghostRng.nextFloat() < Ghost::kShimmerProbability)
+            detuneSemi = Ghost::kShimmerSemi;
+        else if (ghostRng.nextFloat() < 0.1f)
+            detuneSemi = -12.0f;
+        
+        speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
+    }
+    
+    // Reverse logic applies to both paths
+    if (ghostAmount > 0.5f)
+    {
+        const float reverseProb = Ghost::kReverseProbability * ghostAmount * ghostAmount;
+        if (ghostRng.nextFloat() < reverseProb)
+        {
+            isReverse = true;
+            speedRatio = -speedRatio;
+        }
+    }
+    
+    grain->speed = speedRatio;
+    
+    // === POSITION: Blend proximity with scatter clamp ===
+    const float normalMaxLookbackMs = Ghost::kMinLookbackMs + 
+        (distantBias * (Ghost::kMaxLookbackMs - Ghost::kMinLookbackMs));
+    const float effectiveMaxLookbackMs = normalMaxLookbackMs * (1.0f - scatterBlend) + 
+        std::min(normalMaxLookbackMs, Scatter::kMaxLookbackMs) * scatterBlend;
+    
+    const float spawnPosMs = ghostRng.nextFloat() * effectiveMaxLookbackMs;
+    float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
+    
+    // Safety margin for fast grains (2x speed) - only apply extra when speed > 1
+    const float absSpeed = std::abs(speedRatio);
+    if (absSpeed > 1.0f)
+    {
+        const float extraMargin = Scatter::kFastGrainSafetyMarginMs * (absSpeed - 1.0f);
+        const float extraMarginSamples = (extraMargin * static_cast<float>(sampleRate)) / 1000.0f;
+        sampleOffset = std::max(sampleOffset, extraMarginSamples);
+    }
+    
+    // Clamp offset to prevent wrap loops from iterating many times
+    sampleOffset = juce::jmin(sampleOffset, historyLengthF - 1.0f);
+    
+    // Calculate position with bounded wrap
+    float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+    pos = std::fmod(pos, historyLengthF);
+    if (pos < 0.0f) pos += historyLengthF;
+    grain->pos = pos;
+    
+    // === STEREO: Blend pan widths (single blend, no double-weighting) ===
+    const float normalPanWidth = Ghost::kMinPanWidth + 
+        (ghostAmount * distantBias * (Ghost::kMaxPanWidth - Ghost::kMinPanWidth));
+    const float scatterPanWidth = Scatter::kMaxPanWidth;
+    const float effectivePanWidth = normalPanWidth * (1.0f - scatterBlend) + 
+                                    scatterPanWidth * scatterBlend;
+    
+    const float panOffset = (ghostRng.nextFloat() - 0.5f) * effectivePanWidth;
+    grain->pan = 0.5f + panOffset;
+    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
+    
+    if (isReverse && Ghost::kMirrorReverseGrains)
+    {
+        grain->pan = 1.0f - grain->pan;
+    }
+    
+    // === AMPLITUDE: Base gain + scatter variation ===
+    const float gainDb = juce::jmap(ghostAmount,
+        0.0f, 1.0f, Ghost::kMinGainDb, Ghost::kMaxGainDb);
+    
+    float scatterVariation = 0.0f;
+    if (scatterBlend > 0.0f)
+    {
+        scatterVariation = (ghostRng.nextFloat() - 0.5f) * 2.0f * 
+            Scatter::kAmpVariationDb * scatterBlend;
+    }
+    
+    float grainAmp = juce::Decibels::decibelsToGain(gainDb + scatterVariation);
+    
+    if (isReverse)
+        grainAmp *= Ghost::kReverseGainReduction;
+    
+    grain->amp = grainAmp;
 }
 
 void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept
@@ -811,52 +920,6 @@ void UnravelReverb::process(std::span<float> left,
     feedbackSmoother.setTargetValue(targetFeedback);
     
     // ═════════════════════════════════════════════════════════════════════════
-    // SPECTRAL FREEZE (Phase 4): Lock grain spawn positions when freeze activates
-    // ═════════════════════════════════════════════════════════════════════════
-    const bool freezeTransition = (state.freeze != ghostFreezeActive);
-    const bool freezeActivating = (!ghostFreezeActive && state.freeze);
-    const bool freezeDeactivating = (ghostFreezeActive && !state.freeze);
-    
-    if (freezeActivating)
-    {
-        // Snapshot current grain positions as frozen spawn points
-        numFrozenPositions = 0;
-        
-        // Capture positions of currently active grains
-        for (const auto& grain : grainPool)
-        {
-            if (grain.active && numFrozenPositions < frozenSpawnPositions.size())
-            {
-                frozenSpawnPositions[numFrozenPositions++] = grain.pos;
-            }
-        }
-        
-        // If fewer than 4 positions captured, add random recent positions
-        while (numFrozenPositions < 4 && numFrozenPositions < frozenSpawnPositions.size())
-        {
-            const float recentMs = ghostRng.nextFloat() * 500.0f; // Random within last 500ms
-            const float sampleOffset = (recentMs * static_cast<float>(sampleRate)) / 1000.0f;
-            float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
-            
-            // Wrap within buffer bounds
-            const int historyLength = static_cast<int>(ghostHistory.size());
-            while (pos < 0.0f) pos += static_cast<float>(historyLength);
-            while (pos >= static_cast<float>(historyLength)) pos -= static_cast<float>(historyLength);
-            
-            frozenSpawnPositions[numFrozenPositions++] = pos;
-        }
-        
-        ghostFreezeActive = true;
-    }
-    
-    if (freezeDeactivating)
-    {
-        // Clear frozen state
-        numFrozenPositions = 0;
-        ghostFreezeActive = false;
-    }
-    
-    // ═════════════════════════════════════════════════════════════════════════
     // PUCK X MACRO: "Physical/Close → Ethereal/Distant" (Proximity Control)
     // ═════════════════════════════════════════════════════════════════════════
     const float puckX = juce::jlimit(-1.0f, 1.0f, state.puckX);
@@ -876,11 +939,7 @@ void UnravelReverb::process(std::span<float> left,
     const float baseGhost = juce::jlimit(0.0f, 1.0f, state.ghost); // Manual knob
     const float combinedGhost = baseGhost * (1.0f - normX * 0.3f) + macroGhost; // Blend
     
-    // INFINITE CLOUD: Keep ghost active during freeze for shimmer texture
-    // Ghost adds variation from limited source material (octave-up shimmer grains)
-    const float targetGhost = state.freeze 
-        ? threadbare::tuning::Freeze::kFreezeGhostLevel * baseGhost  // Reduced but present
-        : juce::jlimit(0.0f, 1.0f, combinedGhost);
+    const float targetGhost = juce::jlimit(0.0f, 1.0f, combinedGhost);
     ghostSmoother.setTargetValue(targetGhost);
     
     // 3. DRIFT (Tape Warble): Stable (20 samples) → Seasick (80 samples)
@@ -911,6 +970,43 @@ void UnravelReverb::process(std::span<float> left,
     const float targetFdnSend = 0.2f + (0.8f * normX); // 0.2 at Left → 1.0 at Right
     erGainSmoother.setTargetValue(targetErGain);
     fdnSendSmoother.setTargetValue(targetFdnSend);
+    
+    // ═════════════════════════════════════════════════════════════════════════
+    // 5. SCATTER MODE: Harmonic grain fragments (root/fifth/octave)
+    //    Activates in "Air" zone (puckX >= 0.6) and ramps with ghost (0.6 -> 0.8)
+    // ═════════════════════════════════════════════════════════════════════════
+    float scatterBlend = 0.0f;
+    if constexpr (threadbare::tuning::Debug::kEnableScatter)
+    {
+        using namespace threadbare::tuning;
+        const bool inScatterZone = (puckX >= Scatter::kPuckXThreshold);
+        if (inScatterZone)
+        {
+            // Defensive guard against division by zero if constants are misconfigured
+            const float blendDenom = Scatter::kBlendEndGhost - Scatter::kBlendStartGhost;
+            if (blendDenom > 1.0e-6f)
+            {
+                // Use ghostSmoother's current value for consistency with in-loop behavior
+                const float currentGhostApprox = ghostSmoother.getCurrentValue();
+                scatterBlend = juce::jlimit(0.0f, 1.0f,
+                    (currentGhostApprox - Scatter::kBlendStartGhost) / blendDenom);
+            }
+        }
+    }
+    
+    // Blended spawn parameters: cloud (15ms) -> scatter (60ms)
+    // Reference tuning constants to ensure blend=0 matches original behavior
+    const float cloudIntervalMs = threadbare::tuning::Ghost::kCloudSpawnIntervalMs;
+    const float scatterIntervalMs = threadbare::tuning::Scatter::kSpawnIntervalMs;
+    const float effectiveIntervalMs = cloudIntervalMs * (1.0f - scatterBlend) + 
+                                      scatterIntervalMs * scatterBlend;
+    // Clamp to at least 1 sample to prevent constant spawning
+    int effectiveSpawnInterval = static_cast<int>(effectiveIntervalMs * 0.001f * sampleRate);
+    effectiveSpawnInterval = std::max(1, effectiveSpawnInterval);
+    
+    // Blended spawn probability: cloud (scaled by ghost) vs scatter (absolute)
+    const float cloudSpawnProb = threadbare::tuning::Ghost::kCloudSpawnProbability;
+    const float scatterSpawnProb = threadbare::tuning::Scatter::kSpawnProbability;
     
     // Pre-delay is now smoothed per-sample (see inside loop) for click-free transitions
     preDelaySmoother.setTargetValue(state.erPreDelay);
@@ -1307,11 +1403,16 @@ void UnravelReverb::process(std::span<float> left,
         if constexpr (threadbare::tuning::Debug::kEnableGhostEngine)
         {
             ++samplesSinceLastSpawn;
-            if (samplesSinceLastSpawn >= grainSpawnInterval && currentGhost > 0.01f)
+            if (samplesSinceLastSpawn >= effectiveSpawnInterval && currentGhost > 0.01f)
             {
-                // Probabilistic spawning based on ghost amount
-                if (ghostRng.nextFloat() < (currentGhost * 0.9f)) // Higher ghost = more grains
-                    trySpawnGrain(currentGhost, puckX);
+                // Cloud mode: probability scaled by currentGhost (more ghost = more grains)
+                // Scatter mode: absolute probability (fixed sparse rhythm)
+                const float cloudProb = currentGhost * cloudSpawnProb;
+                const float effectiveProb = cloudProb * (1.0f - scatterBlend) + 
+                                            scatterSpawnProb * scatterBlend;
+                
+                if (ghostRng.nextFloat() < effectiveProb)
+                    trySpawnGrain(currentGhost, puckX, scatterBlend);
                 
                 samplesSinceLastSpawn = 0;
             }
@@ -1324,7 +1425,6 @@ void UnravelReverb::process(std::span<float> left,
         //    fdnSend: 0.2 (Left/Physical) → 1.0 (Right/Ethereal)
         //    At Left: ERs dominate, less dry signal to FDN
         //    At Right: Full dry signal + ghost to FDN, no ERs
-        //    INFINITE CLOUD: During freeze, disable all injection - tail is self-sustaining
         // Scale down ghost sum based on expected density to prevent input clipping
         // Multiple overlapping grains can create massive peaks before hitting the FDN
         constexpr float kGhostHeadroom = 0.5f;
