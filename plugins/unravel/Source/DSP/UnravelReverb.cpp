@@ -493,7 +493,7 @@ float UnravelReverb::readGhostHistory(float readPosition) const noexcept
     return cubicInterp(y0, y1, y2, y3, frac);
 }
 
-void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float scatterBlend) noexcept
+void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float glitchBlend, float howlBlend) noexcept
 {
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
@@ -531,17 +531,24 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float scatterB
     inactiveGrain->active = true;
     
     // ═══════════════════════════════════════════════════════════════════════════
-    // DISPATCH: scatterBlend == 0 routes to verbatim cloud path for null test
+    // THREE-ZONE DISPATCH: Glitch (left) / Cloud (mid) / Howl (right)
+    // Routes to appropriate helper based on zone blend values
+    // Mid-zone (both blends near 0) uses verbatim cloud path for RNG preservation
     // ═══════════════════════════════════════════════════════════════════════════
-    if (scatterBlend <= 0.0f)
+    if (glitchBlend > 0.01f && howlBlend <= 0.01f)
     {
-        // VERBATIM original behavior - preserves exact RNG sequence
-        spawnCloudGrain(inactiveGrain, ghostAmount, puckX);
+        // Left zone: tempo-synced rhythmic fragments
+        spawnGlitchGrain(inactiveGrain, ghostAmount, puckX, glitchBlend);
+    }
+    else if (howlBlend > 0.01f && glitchBlend <= 0.01f)
+    {
+        // Right zone: sustained ghostly howl
+        spawnHowlGrain(inactiveGrain, ghostAmount, puckX, howlBlend);
     }
     else
     {
-        // New scatter path - only runs when scatterBlend > 0
-        spawnScatterGrain(inactiveGrain, ghostAmount, puckX, scatterBlend);
+        // Mid zone: VERBATIM original behavior - preserves exact RNG sequence
+        spawnCloudGrain(inactiveGrain, ghostAmount, puckX);
     }
 }
 
@@ -653,46 +660,51 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// spawnScatterGrain: New blended behavior for scatter mode (scatterBlend > 0)
-// Harmonic grain fragments (root/fifth/octave) with per-aspect blending
+// spawnGlitchGrain: Tempo-synced rhythmic fragments for left zone
+// Short-medium grains with harmonic pitch shifts, transient-preserving
 // ═══════════════════════════════════════════════════════════════════════════════
-void UnravelReverb::spawnScatterGrain(Grain* grain, float ghostAmount, float puckX, float scatterBlend) noexcept
+void UnravelReverb::spawnGlitchGrain(Grain* grain, float ghostAmount, float /*puckX*/, float glitchBlend) noexcept
 {
     using namespace threadbare::tuning;
     
-    const float distantBias = (1.0f + puckX) * 0.5f;
     const int historyLength = static_cast<int>(ghostHistory.size());
     const float historyLengthF = static_cast<float>(historyLength);
     
-    // === DURATION: Blend cloud (50-300ms) -> scatter (15-80ms) ===
+    // === DURATION: Blend cloud -> glitch (short for transient preservation) ===
     const float cloudDuration = juce::jmap(ghostRng.nextFloat(),
         0.0f, 1.0f, Ghost::kGrainMinSec, Ghost::kGrainMaxSec);
-    const float scatterDuration = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, Scatter::kGrainMinSec, Scatter::kGrainMaxSec);
-    const float durationSec = cloudDuration * (1.0f - scatterBlend) + 
-                              scatterDuration * scatterBlend;
+    const float glitchDuration = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, Glitch::kGrainMinSec, Glitch::kGrainMaxSec);
+    const float durationSec = cloudDuration * (1.0f - glitchBlend) + 
+                              glitchDuration * glitchBlend;
     const float durationSamples = durationSec * static_cast<float>(sampleRate);
     grain->windowInc = 1.0f / durationSamples;
     grain->windowPhase = 0.0f;
     
-    // === PITCH: Blend normal detune vs harmonic streams ===
+    // === PITCH: Harmonic streams (root/fifth/octave) with humanize detune ===
     float speedRatio;
     bool isReverse = false;
     
-    if (ghostRng.nextFloat() < scatterBlend)
+    // Boosted probability for harmonics when glitch is active
+    const float harmonicProb = std::min(1.0f, glitchBlend * 1.8f);
+    if (ghostRng.nextFloat() < harmonicProb)
     {
-        // Scatter path: pick from harmonic streams
+        // Pick harmonic stream
         const float streamRoll = ghostRng.nextFloat();
-        if (streamRoll < Scatter::kRootWeight)
-            speedRatio = Scatter::kRootSpeed;
-        else if (streamRoll < Scatter::kRootWeight + Scatter::kFifthWeight)
-            speedRatio = Scatter::kFifthSpeed;
+        if (streamRoll < Glitch::kRootWeight)
+            speedRatio = Glitch::kRootSpeed;
+        else if (streamRoll < Glitch::kRootWeight + Glitch::kFifthWeight)
+            speedRatio = Glitch::kFifthSpeed;
         else
-            speedRatio = Scatter::kOctaveSpeed;
+            speedRatio = Glitch::kOctaveSpeed;
+        
+        // Add humanize detune (±cents converted to ratio multiplier)
+        const float detuneCents = (ghostRng.nextFloat() - 0.5f) * 2.0f * Glitch::kDetuneMaxCents;
+        speedRatio *= std::pow(2.0f, detuneCents / 1200.0f);
     }
     else
     {
-        // Normal path: subtle detune + shimmer
+        // Normal subtle detune + shimmer
         float detuneSemi = juce::jmap(ghostRng.nextFloat(),
             0.0f, 1.0f, -Ghost::kDetuneSemi, Ghost::kDetuneSemi);
         
@@ -704,52 +716,48 @@ void UnravelReverb::spawnScatterGrain(Grain* grain, float ghostAmount, float puc
         speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
     }
     
-    // Reverse logic applies to both paths
-    if (ghostAmount > 0.5f)
+    // Glitch has its own reverse probability (blended)
+    const float cloudReverseProb = (ghostAmount > 0.5f) 
+        ? Ghost::kReverseProbability * ghostAmount * ghostAmount 
+        : 0.0f;
+    const float effectiveReverseProb = cloudReverseProb * (1.0f - glitchBlend) + 
+                                       Glitch::kReverseProbability * glitchBlend;
+    if (ghostRng.nextFloat() < effectiveReverseProb)
     {
-        const float reverseProb = Ghost::kReverseProbability * ghostAmount * ghostAmount;
-        if (ghostRng.nextFloat() < reverseProb)
-        {
-            isReverse = true;
-            speedRatio = -speedRatio;
-        }
+        isReverse = true;
+        speedRatio = -speedRatio;
     }
     
     grain->speed = speedRatio;
     
-    // === POSITION: Blend proximity with scatter clamp ===
-    const float normalMaxLookbackMs = Ghost::kMinLookbackMs + 
-        (distantBias * (Ghost::kMaxLookbackMs - Ghost::kMinLookbackMs));
-    const float effectiveMaxLookbackMs = normalMaxLookbackMs * (1.0f - scatterBlend) + 
-        std::min(normalMaxLookbackMs, Scatter::kMaxLookbackMs) * scatterBlend;
+    // === POSITION: Recent material for punch (glitch uses short lookback) ===
+    const float cloudMaxLookbackMs = Ghost::kMinLookbackMs; // Body/recent for left zone
+    const float effectiveMaxLookbackMs = cloudMaxLookbackMs * (1.0f - glitchBlend) + 
+                                         Glitch::kMaxLookbackMs * glitchBlend;
     
     const float spawnPosMs = ghostRng.nextFloat() * effectiveMaxLookbackMs;
     float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
     
-    // Safety margin for fast grains (2x speed) - only apply extra when speed > 1
+    // Safety margin from write head
     const float absSpeed = std::abs(speedRatio);
     if (absSpeed > 1.0f)
     {
-        const float extraMargin = Scatter::kFastGrainSafetyMarginMs * (absSpeed - 1.0f);
+        const float extraMargin = Glitch::kSafetyMarginMs * (absSpeed - 1.0f);
         const float extraMarginSamples = (extraMargin * static_cast<float>(sampleRate)) / 1000.0f;
         sampleOffset = std::max(sampleOffset, extraMarginSamples);
     }
     
-    // Clamp offset to prevent wrap loops from iterating many times
     sampleOffset = juce::jmin(sampleOffset, historyLengthF - 1.0f);
     
-    // Calculate position with bounded wrap
     float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
     pos = std::fmod(pos, historyLengthF);
     if (pos < 0.0f) pos += historyLengthF;
     grain->pos = pos;
     
-    // === STEREO: Blend pan widths (single blend, no double-weighting) ===
-    const float normalPanWidth = Ghost::kMinPanWidth + 
-        (ghostAmount * distantBias * (Ghost::kMaxPanWidth - Ghost::kMinPanWidth));
-    const float scatterPanWidth = Scatter::kMaxPanWidth;
-    const float effectivePanWidth = normalPanWidth * (1.0f - scatterBlend) + 
-                                    scatterPanWidth * scatterBlend;
+    // === STEREO: Narrower for punch (glitch is more mono-focused) ===
+    const float cloudPanWidth = Ghost::kMinPanWidth;
+    const float effectivePanWidth = cloudPanWidth * (1.0f - glitchBlend) + 
+                                    Glitch::kPanWidth * glitchBlend;
     
     const float panOffset = (ghostRng.nextFloat() - 0.5f) * effectivePanWidth;
     grain->pan = 0.5f + panOffset;
@@ -760,18 +768,128 @@ void UnravelReverb::spawnScatterGrain(Grain* grain, float ghostAmount, float puc
         grain->pan = 1.0f - grain->pan;
     }
     
-    // === AMPLITUDE: Base gain + scatter variation ===
-    const float gainDb = juce::jmap(ghostAmount,
+    // === AMPLITUDE: Glitch gain with moderate variation ===
+    const float cloudGainDb = juce::jmap(ghostAmount,
         0.0f, 1.0f, Ghost::kMinGainDb, Ghost::kMaxGainDb);
+    const float glitchGainDb = juce::jmap(ghostAmount,
+        0.0f, 1.0f, Glitch::kMinGainDb, Glitch::kMaxGainDb);
+    const float gainDb = cloudGainDb * (1.0f - glitchBlend) + glitchGainDb * glitchBlend;
     
-    float scatterVariation = 0.0f;
-    if (scatterBlend > 0.0f)
+    // Amplitude variation for rhythmic breathing
+    const float ampVariation = (ghostRng.nextFloat() - 0.5f) * 2.0f * 
+                               Glitch::kAmpVariationDb * glitchBlend;
+    
+    float grainAmp = juce::Decibels::decibelsToGain(gainDb + ampVariation);
+    
+    if (isReverse)
+        grainAmp *= Glitch::kReverseGainReduction;
+    
+    grain->amp = grainAmp;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// spawnHowlGrain: Sustained ghostly texture for right zone
+// Long grains with shimmer bias, deep lookback, wide stereo
+// ═══════════════════════════════════════════════════════════════════════════════
+void UnravelReverb::spawnHowlGrain(Grain* grain, float ghostAmount, float puckX, float howlBlend) noexcept
+{
+    using namespace threadbare::tuning;
+    
+    const float distantBias = (1.0f + puckX) * 0.5f;
+    const int historyLength = static_cast<int>(ghostHistory.size());
+    const float historyLengthF = static_cast<float>(historyLength);
+    
+    // === DURATION: Blend cloud -> howl (long for sustained texture) ===
+    const float cloudDuration = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, Ghost::kGrainMinSec, Ghost::kGrainMaxSec);
+    const float howlDuration = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, Howl::kGrainMinSec, Howl::kGrainMaxSec);
+    const float durationSec = cloudDuration * (1.0f - howlBlend) + 
+                              howlDuration * howlBlend;
+    const float durationSamples = durationSec * static_cast<float>(sampleRate);
+    grain->windowInc = 1.0f / durationSamples;
+    grain->windowPhase = 0.0f;
+    
+    // === PITCH: Shimmer-biased with subtle detune ===
+    float detuneSemi = juce::jmap(ghostRng.nextFloat(),
+        0.0f, 1.0f, -Howl::kDetuneSemi, Howl::kDetuneSemi);
+    
+    // Blended shimmer probability (higher for howl)
+    const float cloudShimmerProb = Ghost::kShimmerProbability;
+    const float effectiveShimmerProb = cloudShimmerProb * (1.0f - howlBlend) + 
+                                       Howl::kShimmerProbability * howlBlend;
+    
+    if (ghostRng.nextFloat() < effectiveShimmerProb)
+        detuneSemi = Ghost::kShimmerSemi; // Octave up shimmer
+    else if (ghostRng.nextFloat() < 0.08f)
+        detuneSemi = -12.0f; // Occasional octave down
+    
+    float speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
+    
+    // Reverse (less common in howl to preserve sustained feel)
+    bool isReverse = false;
+    if (ghostAmount > 0.6f)
     {
-        scatterVariation = (ghostRng.nextFloat() - 0.5f) * 2.0f * 
-            Scatter::kAmpVariationDb * scatterBlend;
+        const float reverseProb = Ghost::kReverseProbability * ghostAmount * ghostAmount * 0.5f;
+        if (ghostRng.nextFloat() < reverseProb)
+        {
+            isReverse = true;
+            speedRatio = -speedRatio;
+        }
     }
     
-    float grainAmp = juce::Decibels::decibelsToGain(gainDb + scatterVariation);
+    grain->speed = speedRatio;
+    
+    // === POSITION: Deep lookback for distant/ghostly feel ===
+    const float cloudMaxLookbackMs = Ghost::kMinLookbackMs + 
+        (distantBias * (Ghost::kMaxLookbackMs - Ghost::kMinLookbackMs));
+    const float howlLookbackMs = Howl::kMinLookbackMs + 
+        (distantBias * (Howl::kMaxLookbackMs - Howl::kMinLookbackMs));
+    const float effectiveMaxLookbackMs = cloudMaxLookbackMs * (1.0f - howlBlend) + 
+                                         howlLookbackMs * howlBlend;
+    
+    const float spawnPosMs = ghostRng.nextFloat() * effectiveMaxLookbackMs;
+    float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
+    
+    // Extended safety margin for long lookback + fast grains
+    const float absSpeed = std::abs(speedRatio);
+    if (absSpeed > 1.0f)
+    {
+        const float extraMargin = Howl::kSafetyMarginMs * (absSpeed - 1.0f);
+        const float extraMarginSamples = (extraMargin * static_cast<float>(sampleRate)) / 1000.0f;
+        sampleOffset = std::max(sampleOffset, extraMarginSamples);
+    }
+    
+    sampleOffset = juce::jmin(sampleOffset, historyLengthF - 1.0f);
+    
+    float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+    pos = std::fmod(pos, historyLengthF);
+    if (pos < 0.0f) pos += historyLengthF;
+    grain->pos = pos;
+    
+    // === STEREO: Wide for immersion ===
+    const float cloudPanWidth = Ghost::kMinPanWidth + 
+        (ghostAmount * distantBias * (Ghost::kMaxPanWidth - Ghost::kMinPanWidth));
+    const float effectivePanWidth = cloudPanWidth * (1.0f - howlBlend) + 
+                                    Howl::kPanWidth * howlBlend;
+    
+    const float panOffset = (ghostRng.nextFloat() - 0.5f) * effectivePanWidth;
+    grain->pan = 0.5f + panOffset;
+    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
+    
+    if (isReverse && Ghost::kMirrorReverseGrains)
+    {
+        grain->pan = 1.0f - grain->pan;
+    }
+    
+    // === AMPLITUDE: Quieter base for ethereal feel ===
+    const float cloudGainDb = juce::jmap(ghostAmount,
+        0.0f, 1.0f, Ghost::kMinGainDb, Ghost::kMaxGainDb);
+    const float howlGainDb = juce::jmap(ghostAmount,
+        0.0f, 1.0f, Howl::kMinGainDb, Howl::kMaxGainDb);
+    const float gainDb = cloudGainDb * (1.0f - howlBlend) + howlGainDb * howlBlend;
+    
+    float grainAmp = juce::Decibels::decibelsToGain(gainDb);
     
     if (isReverse)
         grainAmp *= Ghost::kReverseGainReduction;
@@ -972,41 +1090,87 @@ void UnravelReverb::process(std::span<float> left,
     fdnSendSmoother.setTargetValue(targetFdnSend);
     
     // ═════════════════════════════════════════════════════════════════════════
-    // 5. SCATTER MODE: Harmonic grain fragments (root/fifth/octave)
-    //    Activates in "Air" zone (puckX >= 0.6) and ramps with ghost (0.6 -> 0.8)
+    // 5. ZONE MODES: Left=Glitch, Mid=Cloud, Right=Howl
+    //    Linear blend based on puckX position with ghost-scaled activation
     // ═════════════════════════════════════════════════════════════════════════
-    float scatterBlend = 0.0f;
+    float glitchBlend = 0.0f;
+    float howlBlend = 0.0f;
+    
     if constexpr (threadbare::tuning::Debug::kEnableScatter)
     {
         using namespace threadbare::tuning;
-        const bool inScatterZone = (puckX >= Scatter::kPuckXThreshold);
-        if (inScatterZone)
+        const float currentGhostApprox = ghostSmoother.getCurrentValue();
+        
+        // Ghost activation ramp (0 at kGhostMin, 1 at kGhostMax)
+        const float ghostDenom = Zones::kGhostMax - Zones::kGhostMin;
+        const float ghostActivation = (ghostDenom > 1.0e-6f) 
+            ? juce::jlimit(0.0f, 1.0f, (currentGhostApprox - Zones::kGhostMin) / ghostDenom)
+            : 0.0f;
+        
+        // Glitch blend: ramps up as puckX goes left of threshold
+        // puckX = -1.0 -> full glitch, puckX = -0.7 -> start blending
+        if (puckX < Zones::kLeftThreshold)
         {
-            // Defensive guard against division by zero if constants are misconfigured
-            const float blendDenom = Scatter::kBlendEndGhost - Scatter::kBlendStartGhost;
-            if (blendDenom > 1.0e-6f)
-            {
-                // Use ghostSmoother's current value for consistency with in-loop behavior
-                const float currentGhostApprox = ghostSmoother.getCurrentValue();
-                scatterBlend = juce::jlimit(0.0f, 1.0f,
-                    (currentGhostApprox - Scatter::kBlendStartGhost) / blendDenom);
-            }
+            glitchBlend = ghostActivation; // Full glitch when left of threshold
+        }
+        else if (puckX < 0.0f)
+        {
+            // Linear ramp from 0 at center to full at left threshold
+            const float leftRamp = -puckX / (-Zones::kLeftThreshold);
+            glitchBlend = ghostActivation * juce::jlimit(0.0f, 1.0f, leftRamp);
+        }
+        
+        // Howl blend: ramps up as puckX goes right of threshold
+        // puckX = +1.0 -> full howl, puckX = +0.7 -> start blending
+        if (puckX > Zones::kRightThreshold)
+        {
+            howlBlend = ghostActivation; // Full howl when right of threshold
+        }
+        else if (puckX > 0.0f)
+        {
+            // Linear ramp from 0 at center to full at right threshold
+            const float rightRamp = puckX / Zones::kRightThreshold;
+            howlBlend = ghostActivation * juce::jlimit(0.0f, 1.0f, rightRamp);
         }
     }
     
-    // Blended spawn parameters: cloud (15ms) -> scatter (60ms)
-    // Reference tuning constants to ensure blend=0 matches original behavior
+    // ═════════════════════════════════════════════════════════════════════════
+    // TEMPO-SYNCED GRID (for Glitch mode)
+    // Calculate spawn interval from host tempo with jitter
+    // ═════════════════════════════════════════════════════════════════════════
+    const float clampedTempo = juce::jlimit(
+        threadbare::tuning::Glitch::kMinTempo,
+        threadbare::tuning::Glitch::kMaxTempo,
+        state.tempo > 0.0f ? state.tempo : 120.0f);
+    
+    // Grid interval: beat duration * division (e.g., 1/8 note at 120 BPM = 250ms)
+    const float beatMs = 60000.0f / clampedTempo;
+    const float glitchGridMs = beatMs * threadbare::tuning::Glitch::kDefaultDivision;
+    
+    // Cloud and howl intervals (not tempo-synced)
     const float cloudIntervalMs = threadbare::tuning::Ghost::kCloudSpawnIntervalMs;
-    const float scatterIntervalMs = threadbare::tuning::Scatter::kSpawnIntervalMs;
-    const float effectiveIntervalMs = cloudIntervalMs * (1.0f - scatterBlend) + 
-                                      scatterIntervalMs * scatterBlend;
+    const float howlIntervalMs = threadbare::tuning::Howl::kSpawnIntervalMs;
+    
+    // Effective interval: blend based on active zone
+    // Priority: glitch (left), howl (right), cloud (mid)
+    float effectiveIntervalMs = cloudIntervalMs;
+    if (glitchBlend > 0.01f)
+    {
+        effectiveIntervalMs = cloudIntervalMs * (1.0f - glitchBlend) + glitchGridMs * glitchBlend;
+    }
+    else if (howlBlend > 0.01f)
+    {
+        effectiveIntervalMs = cloudIntervalMs * (1.0f - howlBlend) + howlIntervalMs * howlBlend;
+    }
+    
     // Clamp to at least 1 sample to prevent constant spawning
     int effectiveSpawnInterval = static_cast<int>(effectiveIntervalMs * 0.001f * sampleRate);
     effectiveSpawnInterval = std::max(1, effectiveSpawnInterval);
     
-    // Blended spawn probability: cloud (scaled by ghost) vs scatter (absolute)
+    // Spawn probabilities per zone
     const float cloudSpawnProb = threadbare::tuning::Ghost::kCloudSpawnProbability;
-    const float scatterSpawnProb = threadbare::tuning::Scatter::kSpawnProbability;
+    const float glitchSpawnProb = threadbare::tuning::Glitch::kSpawnProbability;
+    const float howlSpawnProb = threadbare::tuning::Howl::kSpawnProbability;
     
     // Pre-delay is now smoothed per-sample (see inside loop) for click-free transitions
     preDelaySmoother.setTargetValue(state.erPreDelay);
@@ -1403,16 +1567,33 @@ void UnravelReverb::process(std::span<float> left,
         if constexpr (threadbare::tuning::Debug::kEnableGhostEngine)
         {
             ++samplesSinceLastSpawn;
-            if (samplesSinceLastSpawn >= effectiveSpawnInterval && currentGhost > 0.01f)
+            
+            // Add jitter for glitch mode (organic timing variation)
+            int jitteredInterval = effectiveSpawnInterval;
+            if (glitchBlend > 0.01f)
             {
-                // Cloud mode: probability scaled by currentGhost (more ghost = more grains)
-                // Scatter mode: absolute probability (fixed sparse rhythm)
+                const float jitterSamples = threadbare::tuning::Glitch::kJitterMs * 0.001f * sampleRate;
+                const float jitter = (ghostRng.nextFloat() - 0.5f) * 2.0f * jitterSamples * glitchBlend;
+                jitteredInterval = std::max(1, effectiveSpawnInterval + static_cast<int>(jitter));
+            }
+            
+            if (samplesSinceLastSpawn >= jitteredInterval && currentGhost > 0.01f)
+            {
+                // Zone-based probability: cloud (ghost-scaled), glitch/howl (absolute)
                 const float cloudProb = currentGhost * cloudSpawnProb;
-                const float effectiveProb = cloudProb * (1.0f - scatterBlend) + 
-                                            scatterSpawnProb * scatterBlend;
+                float effectiveProb = cloudProb;
+                
+                if (glitchBlend > 0.01f)
+                {
+                    effectiveProb = cloudProb * (1.0f - glitchBlend) + glitchSpawnProb * glitchBlend;
+                }
+                else if (howlBlend > 0.01f)
+                {
+                    effectiveProb = cloudProb * (1.0f - howlBlend) + howlSpawnProb * howlBlend;
+                }
                 
                 if (ghostRng.nextFloat() < effectiveProb)
-                    trySpawnGrain(currentGhost, puckX, scatterBlend);
+                    trySpawnGrain(currentGhost, puckX, glitchBlend, howlBlend);
                 
                 samplesSinceLastSpawn = 0;
             }

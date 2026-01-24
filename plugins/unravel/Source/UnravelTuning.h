@@ -137,48 +137,93 @@ struct Ghost {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SCATTER MODE
-// Harmonic grain fragments (root/fifth/octave) that dance around the source
-// Activates automatically in the "ethereal" zone (high ghost + right puck)
+// ZONE THRESHOLDS
+// Left = Glitch (rhythmic fragments), Mid = Cloud (baseline), Right = Howl (ghostly)
 // ═══════════════════════════════════════════════════════════════════════════
-struct Scatter {
+struct Zones {
+    static constexpr float kLeftThreshold = -0.7f;    // Below this = full glitch
+    static constexpr float kRightThreshold = 0.7f;    // Above this = full howl
+    // Linear blend between thresholds; mid-zone uses cloud baseline
+    
+    // Ghost activation (same for both zones)
+    static constexpr float kGhostMin = 0.2f;          // Start blending at 20% ghost
+    static constexpr float kGhostMax = 0.6f;          // Full effect at 60% ghost
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLITCH MODE (Left puckX)
+// Tempo-synced rhythmic fragments with pitch-shifting
+// Evokes "fragmented playback" - recent, punchy, transient-preserving
+// ═══════════════════════════════════════════════════════════════════════════
+struct Glitch {
     // === GRAIN CHARACTERISTICS ===
-    // Shorter grains create audible "fragments" vs smooth clouds
-    static constexpr float kGrainMinSec = 0.015f;   // 15ms
-    static constexpr float kGrainMaxSec = 0.080f;   // 80ms
+    // Short-medium for transient preservation without clicks
+    static constexpr float kGrainMinSec = 0.025f;     // 25ms
+    static constexpr float kGrainMaxSec = 0.070f;     // 70ms
+    
+    // === TEMPO SYNC ===
+    static constexpr float kDefaultDivision = 0.125f; // 1/8 note base
+    static constexpr float kJitterMs = 8.0f;          // ±8ms organic variation
+    static constexpr float kMinTempo = 40.0f;         // Clamp slow tempos
+    static constexpr float kMaxTempo = 240.0f;        // Clamp fast tempos
+    static constexpr float kSpawnProbability = 0.9f;  // High probability on grid
+    
+    // === PITCH (Harmonic streams + humanize) ===
+    static constexpr float kRootSpeed = 1.0f;
+    static constexpr float kFifthSpeed = 1.4983f;     // 2^(7/12)
+    static constexpr float kOctaveSpeed = 2.0f;
+    static constexpr float kRootWeight = 0.55f;       // Favor root for clarity
+    static constexpr float kFifthWeight = 0.28f;
+    static constexpr float kOctaveWeight = 0.17f;
+    static constexpr float kDetuneMaxCents = 8.0f;    // Subtle humanize (±8 cents)
+    
+    // === REVERSE ===
+    static constexpr float kReverseProbability = 0.12f; // Some reverse for interest
+    static constexpr float kReverseGainReduction = 0.8f;
+    
+    // === POSITION: Recent material for punch ===
+    static constexpr float kMaxLookbackMs = 120.0f;   // Very recent
+    static constexpr float kSafetyMarginMs = 40.0f;   // Buffer from write head
+    
+    // === AMPLITUDE ===
+    static constexpr float kMinGainDb = -18.0f;
+    static constexpr float kMaxGainDb = -6.0f;
+    static constexpr float kAmpVariationDb = 4.0f;    // Moderate variation
+    
+    // === STEREO ===
+    static constexpr float kPanWidth = 0.5f;          // Narrower for punch
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HOWL MODE (Right puckX)
+// Sustained ghostly texture with shimmer bias
+// Evokes "distant memories" - long, shimmering, ethereal
+// ═══════════════════════════════════════════════════════════════════════════
+struct Howl {
+    // === GRAIN CHARACTERISTICS ===
+    // Long grains for sustained howl/pad texture
+    static constexpr float kGrainMinSec = 0.120f;     // 120ms
+    static constexpr float kGrainMaxSec = 0.400f;     // 400ms
     
     // === SPAWN TIMING ===
-    // Sparser spawning = more audible individual grains
-    static constexpr float kSpawnIntervalMs = 60.0f;   // ~16 grains/sec
-    static constexpr float kSpawnProbability = 0.5f;   // Absolute probability (not scaled by ghost)
+    static constexpr float kSpawnIntervalMs = 35.0f;  // Moderate density
+    static constexpr float kSpawnProbability = 0.85f;
     
-    // === THREE HARMONIC STREAMS ===
-    static constexpr float kRootSpeed = 1.0f;          // Unison
-    static constexpr float kFifthSpeed = 1.4983f;      // 2^(7/12) perfect fifth
-    static constexpr float kOctaveSpeed = 2.0f;        // Octave up
+    // === LOOKBACK: Distant memories ===
+    static constexpr float kMinLookbackMs = 300.0f;   // Not too recent
+    static constexpr float kMaxLookbackMs = 900.0f;   // Deep into history
+    static constexpr float kSafetyMarginMs = 100.0f;  // Extra margin for 2x grains + long lookback
     
-    // Stream selection weights (sum to 1.0)
-    static constexpr float kRootWeight = 0.50f;
-    static constexpr float kFifthWeight = 0.30f;
-    static constexpr float kOctaveWeight = 0.20f;
+    // === SHIMMER BIAS ===
+    static constexpr float kShimmerProbability = 0.40f;  // High shimmer for ghostly feel
+    static constexpr float kDetuneSemi = 0.15f;          // Slightly more detune
     
-    // === AMPLITUDE VARIATION ===
-    static constexpr float kAmpVariationDb = 6.0f;     // Creates breathing rhythm
+    // === AMPLITUDE ===
+    static constexpr float kMinGainDb = -21.0f;       // Quieter base
+    static constexpr float kMaxGainDb = -9.0f;
     
-    // === ACTIVATION THRESHOLDS ===
-    static constexpr float kPuckXThreshold = 0.6f;     // Must be in "Air" zone
-    static constexpr float kBlendStartGhost = 0.6f;    // Blend begins
-    static constexpr float kBlendEndGhost = 0.8f;      // Full scatter
-    
-    // === PROXIMITY CLAMP ===
-    static constexpr float kMaxLookbackMs = 200.0f;    // Recent material only for coherent fragments
-    
-    // === STEREO PLACEMENT ===
-    static constexpr float kMaxPanWidth = 1.0f;        // Full stereo field at high scatter
-    
-    // === SAFETY: Write-head margin for fast grains ===
-    // 2x speed grains need extra buffer from write head to avoid catching up
-    static constexpr float kFastGrainSafetyMarginMs = 50.0f;
+    // === STEREO ===
+    static constexpr float kPanWidth = 0.9f;          // Wide for immersion
 };
 
 struct Freeze {

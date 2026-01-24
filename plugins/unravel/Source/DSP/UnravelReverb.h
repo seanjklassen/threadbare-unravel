@@ -410,14 +410,16 @@ private:
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;
-    void trySpawnGrain(float ghostAmount, float puckX, float scatterBlend = 0.0f) noexcept;
+    void trySpawnGrain(float ghostAmount, float puckX, float glitchBlend, float howlBlend) noexcept;
     void processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept;
     
-    // Scatter mode helpers - separated to preserve RNG sequence for A/B null testing
-    // spawnCloudGrain: verbatim original behavior (called when scatterBlend <= 0)
-    // spawnScatterGrain: new blended behavior (called when scatterBlend > 0)
+    // Zone-based grain spawn helpers - separated to preserve RNG sequence for A/B null testing
+    // spawnCloudGrain: verbatim original behavior (mid zone baseline)
+    // spawnGlitchGrain: tempo-synced rhythmic fragments (left zone)
+    // spawnHowlGrain: sustained ghostly texture (right zone)
     void spawnCloudGrain(Grain* grain, float ghostAmount, float puckX) noexcept;
-    void spawnScatterGrain(Grain* grain, float ghostAmount, float puckX, float scatterBlend) noexcept;
+    void spawnGlitchGrain(Grain* grain, float ghostAmount, float puckX, float glitchBlend) noexcept;
+    void spawnHowlGrain(Grain* grain, float ghostAmount, float puckX, float howlBlend) noexcept;
 };
 
 } // namespace threadbare::dsp
