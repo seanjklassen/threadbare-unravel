@@ -265,7 +265,7 @@ void UnravelProcessor::initialiseFactoryPresets()
     };
 
     factoryPresets = {
-        // 1. unravel [INIT/DEFAULT]
+        // 1. unravel [INIT/DEFAULT] - balanced starting point
         preset("unravel",
                {{"puckX", 0.0f},
                 {"puckY", 0.2f},
@@ -275,42 +275,45 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"tone", -0.2f},
                 {"drift", 0.35f},
                 {"ghost", 0.4f},
+                {"glitch", 0.0f},
                 {"duck", 0.0f},
                 {"mix", 0.45f},
                 {"output", 0.0f},
                 {"freeze", 0.0f}}),
 
-        // 2. close
+        // 2. close - dry and intimate with max sparkle fragments
         preset("close",
-               {{"puckX", -0.9f},
-                {"puckY", -0.4f},
-                {"decay", 1.1f},
-                {"erPreDelay", 8.0f},
-                {"size", 0.75f},
-                {"tone", -0.45f},
-                {"drift", 0.10f},
-                {"ghost", 0.05f},
-                {"duck", 0.15f},
-                {"mix", 0.28f},
-                {"output", 0.0f},
-                {"freeze", 0.0f}}),
-
-        // 3. tether
-        preset("tether",
-               {{"puckX", -0.7f},
-                {"puckY", 0.0f},
-                {"decay", 2.4f},
-                {"erPreDelay", 18.0f},
-                {"size", 0.95f},
-                {"tone", -0.35f},
-                {"drift", 0.20f},
+               {{"puckX", -0.8f},
+                {"puckY", -0.6f},
+                {"decay", 0.8f},
+                {"erPreDelay", 5.0f},
+                {"size", 0.6f},
+                {"tone", -0.30f},
+                {"drift", 0.05f},
                 {"ghost", 0.15f},
-                {"duck", 0.45f},
+                {"glitch", 1.0f},
+                {"duck", 0.0f},
                 {"mix", 0.35f},
                 {"output", 0.0f},
                 {"freeze", 0.0f}}),
 
-        // 4. pulse
+        // 3. tether - grounded with subtle sparkle
+        preset("tether",
+               {{"puckX", -0.5f},
+                {"puckY", 0.1f},
+                {"decay", 2.4f},
+                {"erPreDelay", 18.0f},
+                {"size", 0.95f},
+                {"tone", -0.25f},
+                {"drift", 0.20f},
+                {"ghost", 0.20f},
+                {"glitch", 0.15f},
+                {"duck", 0.30f},
+                {"mix", 0.38f},
+                {"output", 0.0f},
+                {"freeze", 0.0f}}),
+
+        // 4. pulse - rhythmic ducking
         preset("pulse",
                {{"puckX", 0.25f},
                 {"puckY", 0.10f},
@@ -320,12 +323,13 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"tone", -0.15f},
                 {"drift", 0.35f},
                 {"ghost", 0.25f},
+                {"glitch", 0.0f},
                 {"duck", 0.85f},
                 {"mix", 0.55f},
                 {"output", -1.0f},
                 {"freeze", 0.0f}}),
 
-        // 5. bloom
+        // 5. bloom - lush expansion with gentle sparkle
         preset("bloom",
                {{"puckX", 0.40f},
                 {"puckY", 0.80f},
@@ -335,12 +339,13 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"tone", 0.05f},
                 {"drift", 0.50f},
                 {"ghost", 0.55f},
+                {"glitch", 0.20f},
                 {"duck", 0.0f},
                 {"mix", 0.60f},
                 {"output", -2.0f},
                 {"freeze", 0.0f}}),
 
-        // 6. mist
+        // 6. mist - dark fog, no sparkle
         preset("mist",
                {{"puckX", 0.90f},
                 {"puckY", 0.60f},
@@ -350,42 +355,45 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"tone", -0.60f},
                 {"drift", 0.60f},
                 {"ghost", 0.70f},
+                {"glitch", 0.0f},
                 {"duck", 0.0f},
                 {"mix", 0.65f},
                 {"output", -3.0f},
                 {"freeze", 0.0f}}),
 
-        // 7. rewind
+        // 7. rewind - memory playback, sparkle fragments
         preset("rewind",
-               {{"puckX", 0.10f},
-                {"puckY", 0.75f},
+               {{"puckX", 0.30f},
+                {"puckY", 0.5f},
                 {"decay", 6.0f},
                 {"erPreDelay", 20.0f},
                 {"size", 1.25f},
-                {"tone", -0.35f},
+                {"tone", -0.20f},
                 {"drift", 0.55f},
-                {"ghost", 0.95f},
+                {"ghost", 0.85f},
+                {"glitch", 0.45f},
                 {"duck", 0.0f},
                 {"mix", 0.50f},
                 {"output", -1.0f},
                 {"freeze", 0.0f}}),
 
-        // 8. halation
+        // 8. halation - bright glow with shimmer
         preset("halation",
-               {{"puckX", 1.0f},
-                {"puckY", 0.90f},
+               {{"puckX", 0.85f},
+                {"puckY", 0.70f},
                 {"decay", 9.0f},
                 {"erPreDelay", 45.0f},
                 {"size", 1.90f},
-                {"tone", 0.60f},
+                {"tone", 0.50f},
                 {"drift", 0.45f},
-                {"ghost", 0.65f},
+                {"ghost", 0.60f},
+                {"glitch", 0.30f},
                 {"duck", 0.0f},
                 {"mix", 0.55f},
                 {"output", -2.0f},
                 {"freeze", 0.0f}}),
 
-        // 9. stasis (freeze intentionally off; user can enable once audio is flowing)
+        // 9. stasis - frozen stillness
         preset("stasis",
                {{"puckX", 0.0f},
                 {"puckY", 0.30f},
@@ -395,24 +403,26 @@ void UnravelProcessor::initialiseFactoryPresets()
                 {"tone", -0.40f},
                 {"drift", 0.60f},
                 {"ghost", 1.0f},
+                {"glitch", 0.0f},
                 {"duck", 0.0f},
                 {"mix", 0.75f},
                 {"output", -3.0f},
                 {"freeze", 0.0f}}),
 
-        // 10. shiver (freeze intentionally off; user can enable once audio is flowing)
+        // 10. shiver - extreme with sparkle bursts
         preset("shiver",
                {{"puckX", 1.0f},
                 {"puckY", 1.0f},
-                {"decay", 30.0f},
-                {"erPreDelay", 0.0f},
+                {"decay", 25.0f},
+                {"erPreDelay", 15.0f},
                 {"size", 2.0f},
-                {"tone", 0.45f},
+                {"tone", 0.35f},
                 {"drift", 0.80f},
                 {"ghost", 1.0f},
+                {"glitch", 0.60f},
                 {"duck", 0.0f},
-                {"mix", 0.80f},
-                {"output", -4.0f},
+                {"mix", 0.75f},
+                {"output", -3.0f},
                 {"freeze", 0.0f}})
     };
 

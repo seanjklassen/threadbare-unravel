@@ -1073,6 +1073,7 @@ body {
 .settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 230ms; }
 .settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 246ms; }
 .settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 260ms; }
+.settings-view.open .settings-content > .control-row:nth-child(10) { transition-delay: 272ms; }
 
 /* ===== CONTROL ROWS ===== */
 /* Control rows (no cascade animation - DAW-friendly) */
