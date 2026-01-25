@@ -2201,23 +2201,31 @@ void UnravelReverb::processGlitchLooper(
                 }
                 
                 // === MICRO-DETUNE (per-voice, adds organic richness) ===
-                // Random ±cents converted to speed multiplier
-                const float detuneRand = sparkleRng.nextFloat() * 2.0f - 1.0f; // -1 to +1
-                const float detuneCents = detuneRand * GlitchLooper::kMicroDetuneCents;
-                freeVoice->microDetune = std::pow(2.0f, detuneCents / 1200.0f);
+                if constexpr (GlitchLooper::kEnableMicroDetune) {
+                    // Random ±cents converted to speed multiplier
+                    const float detuneRand = sparkleRng.nextFloat() * 2.0f - 1.0f; // -1 to +1
+                    const float detuneCents = detuneRand * GlitchLooper::kMicroDetuneCents;
+                    freeVoice->microDetune = std::pow(2.0f, detuneCents / 1200.0f);
+                } else {
+                    freeVoice->microDetune = 1.0f;
+                }
                 
-                // === STEREO MICRO-DELAY (Haas effect for width) ===
-                // Random offset for L/R, opposite directions
-                const float delayMs = GlitchLooper::kMicroDelayMinMs + 
-                    sparkleRng.nextFloat() * (GlitchLooper::kMicroDelayMaxMs - GlitchLooper::kMicroDelayMinMs);
-                const float delaySamples = delayMs * 0.001f * srFloat;
-                // One channel gets positive offset, other gets near-zero
-                if (sparkleRng.nextFloat() < 0.5f) {
-                    freeVoice->microDelayL = delaySamples;
-                    freeVoice->microDelayR = 0.0f;
+                // === STEREO MICRO-DELAY (subtle Haas effect for width) ===
+                if constexpr (GlitchLooper::kEnableMicroDelay) {
+                    const float delayMs = GlitchLooper::kMicroDelayMinMs + 
+                        sparkleRng.nextFloat() * (GlitchLooper::kMicroDelayMaxMs - GlitchLooper::kMicroDelayMinMs);
+                    const float delaySamples = delayMs * 0.001f * srFloat;
+                    // Randomly assign delay to L or R (creates width without comb filtering)
+                    if (sparkleRng.nextFloat() < 0.5f) {
+                        freeVoice->microDelayL = delaySamples;
+                        freeVoice->microDelayR = 0.0f;
+                    } else {
+                        freeVoice->microDelayL = 0.0f;
+                        freeVoice->microDelayR = delaySamples;
+                    }
                 } else {
                     freeVoice->microDelayL = 0.0f;
-                    freeVoice->microDelayR = delaySamples;
+                    freeVoice->microDelayR = 0.0f;
                 }
                 
                 // Repeat count
@@ -2276,8 +2284,22 @@ void UnravelReverb::processGlitchLooper(
     for (auto& voice : sparkleVoices) {
         if (!voice.active) continue;
         
-        // Read sample (single position, no micro-delay for now)
-        const float sample = readGhostHistoryInterpolated(voice.readPos);
+        // Read samples with optional micro-delay offset for stereo width
+        float sampleL, sampleR;
+        if constexpr (GlitchLooper::kEnableMicroDelay) {
+            // Offset read positions for L/R (subtle Haas effect)
+            float readPosL = voice.readPos - voice.microDelayL;
+            float readPosR = voice.readPos - voice.microDelayR;
+            // Wrap positions
+            while (readPosL < 0.0f) readPosL += histSizeF;
+            while (readPosR < 0.0f) readPosR += histSizeF;
+            sampleL = readGhostHistoryInterpolated(readPosL);
+            sampleR = readGhostHistoryInterpolated(readPosR);
+        } else {
+            const float sample = readGhostHistoryInterpolated(voice.readPos);
+            sampleL = sample;
+            sampleR = sample;
+        }
         
         // === GRAIN ENVELOPE ===
         float envelope = 1.0f;
@@ -2328,13 +2350,14 @@ void UnravelReverb::processGlitchLooper(
                 voice.pan + voice.panDir * pingPongDepth * lfoValue * 0.5f);
         }
         
-        // Apply gain, envelope, and pan (same sample for L/R, panned)
-        const float voiceSample = sample * envelope * voiceGain;
-        sumL += voiceSample * (1.0f - currentPan);
-        sumR += voiceSample * currentPan;
+        // Apply gain, envelope, and pan
+        const float voiceGainEnv = envelope * voiceGain;
+        sumL += sampleL * voiceGainEnv * (1.0f - currentPan);
+        sumR += sampleR * voiceGainEnv * currentPan;
         
-        // Advance read position (no micro-detune for now)
-        voice.readPos += voice.speedRatio;
+        // Advance read position with micro-detune applied
+        const float effectiveSpeed = voice.speedRatio * voice.microDetune;
+        voice.readPos += effectiveSpeed;
         while (voice.readPos >= histSizeF) voice.readPos -= histSizeF;
         while (voice.readPos < 0.0f) voice.readPos += histSizeF;
         
@@ -2354,7 +2377,23 @@ void UnravelReverb::processGlitchLooper(
         }
     }
     
-    // Filters disabled for now - direct output
+    // === SPARKLE-ONLY FILTERING (gentle HPF + LPF) ===
+    if constexpr (GlitchLooper::kEnableSparkleFilters) {
+        // Simple 1-pole DC blocker (HPF at 30Hz - inaudible, just removes DC)
+        const float hpfAlpha = 1.0f - std::exp(-kTwoPi * GlitchLooper::kSparkleHpfHz / srFloat);
+        sparkleHpfStateL += hpfAlpha * (sumL - sparkleHpfStateL);
+        sparkleHpfStateR += hpfAlpha * (sumR - sparkleHpfStateR);
+        sumL = sumL - sparkleHpfStateL;
+        sumR = sumR - sparkleHpfStateR;
+        
+        // Simple 1-pole LPF at 16kHz (catches aliasing from pitch shifting)
+        const float lpfAlpha = 1.0f - std::exp(-kTwoPi * GlitchLooper::kSparkleLpfHz / srFloat);
+        sparkleLpfStateL += lpfAlpha * (sumL - sparkleLpfStateL);
+        sparkleLpfStateR += lpfAlpha * (sumR - sparkleLpfStateR);
+        sumL = sparkleLpfStateL;
+        sumR = sparkleLpfStateR;
+    }
+    
     outL = sumL;
     outR = sumR;
 }

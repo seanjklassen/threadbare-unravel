@@ -256,17 +256,19 @@ struct GlitchLooper {
     static constexpr float kExpCurvature = 4.0f;      // Higher = snappier attack/release
     
     // === SPARKLE-ONLY FILTERING (HPF + LPF) ===
-    // Gentle filtering - just remove extreme mud and harsh aliasing
-    static constexpr float kSparkleHpfHz = 80.0f;          // Very gentle - only subsonic mud
-    static constexpr float kSparkleLpfHzLow = 18000.0f;    // Nearly transparent at low glitch
-    static constexpr float kSparkleLpfHzHigh = 14000.0f;   // Still bright at high glitch
+    // Disabled - was causing "underwater" sound even at conservative settings
+    static constexpr bool kEnableSparkleFilters = false;
+    static constexpr float kSparkleHpfHz = 30.0f;
+    static constexpr float kSparkleLpfHz = 16000.0f;
     
     // === MICRO-DETUNE (per voice, adds organic richness) ===
-    static constexpr float kMicroDetuneCents = 4.0f;       // Max detune ±4 cents (subtle)
+    static constexpr bool kEnableMicroDetune = true;
+    static constexpr float kMicroDetuneCents = 3.0f;       // Max detune ±3 cents (very subtle)
     
     // === STEREO MICRO-DELAY (Haas effect for width) ===
-    static constexpr float kMicroDelayMinMs = 1.0f;        // Minimum offset
-    static constexpr float kMicroDelayMaxMs = 6.0f;        // Maximum offset (< 8ms to avoid echo)
+    static constexpr bool kEnableMicroDelay = true;
+    static constexpr float kMicroDelayMinMs = 0.3f;        // Very subtle minimum
+    static constexpr float kMicroDelayMaxMs = 1.5f;        // Small max (avoids phase issues)
     
     // === PITCH GATING FOR TINY GRAINS ===
     // Don't play 4x pitch on very short grains (sounds like clicks)
