@@ -187,26 +187,26 @@ struct GlitchLooper {
     static constexpr int kVoicesAtMid = 3;            // Active voices at mid glitch  
     static constexpr int kVoicesAtHigh = 4;           // Active voices at high glitch
     
-    // === FRAGMENT SIZES (ms) - shorter for granular sparkle ===
-    static constexpr float kMinFragmentMs = 20.0f;    // Shortest grain (articulate, not timbral)
-    static constexpr float kMaxFragmentMs = 150.0f;   // Longest grain at low glitch
+    // === FRAGMENT SIZES (ms) - longer for dreamy/ethereal ===
+    static constexpr float kMinFragmentMs = 60.0f;    // Longer minimum (more melodic)
+    static constexpr float kMaxFragmentMs = 400.0f;   // Extended max (flowing phrases)
     
     // === MEMORY SCRUBBING (random buffer access) ===
     static constexpr float kMinScrubDepth = 0.1f;     // 10% of buffer = recent
     static constexpr float kMaxScrubDepth = 0.8f;     // 80% of buffer = deep memory
     
     // === TRIGGER TIMING (ms between new voices) ===
-    static constexpr float kMinTriggerMs = 15.0f;     // Fastest trigger at high glitch
-    static constexpr float kMaxTriggerMs = 400.0f;    // Slowest trigger at low glitch
-    static constexpr float kTriggerJitter = 0.3f;     // +/- random variation
+    static constexpr float kMinTriggerMs = 30.0f;     // Slower minimum (more space)
+    static constexpr float kMaxTriggerMs = 600.0f;    // Extended max (dreamy gaps)
+    static constexpr float kTriggerJitter = 0.4f;     // More variation (organic)
     
-    // === PITCH PALETTE (harmonic, sparkly) ===
-    static constexpr float kRootProb = 0.30f;         // Normal pitch (grounding)
-    static constexpr float kOctaveUpProb = 0.25f;     // 2x speed (sparkle)
-    static constexpr float kDoubleOctaveProb = 0.15f; // 4x speed (twinkle)
-    static constexpr float kFifthProb = 0.15f;        // 1.5x speed (ethereal)
-    static constexpr float kOctaveDownProb = 0.10f;   // 0.5x speed (warmth)
-    static constexpr float kMicroShimmerProb = 0.05f; // 1.02-1.08x (chorus)
+    // === PITCH PALETTE (ethereal/dreamy with reverse) ===
+    static constexpr float kRootProb = 0.25f;         // Normal pitch (grounding)
+    static constexpr float kOctaveUpProb = 0.20f;     // 2x speed (sparkle)
+    static constexpr float kDoubleOctaveProb = 0.08f; // 4x speed (reduced - less harsh)
+    static constexpr float kFifthProb = 0.25f;        // 1.5x speed (ethereal - boosted)
+    static constexpr float kOctaveDownProb = 0.15f;   // 0.5x speed (warmth - boosted)
+    static constexpr float kMicroShimmerProb = 0.07f; // 1.02-1.08x (chorus)
     static constexpr float kMicroShimmerMin = 1.02f;
     static constexpr float kMicroShimmerMax = 1.08f;
     
@@ -235,8 +235,8 @@ struct GlitchLooper {
     static constexpr float kEnvelopeAttackMs = 0.5f;
     static constexpr float kEnvelopeReleaseMs = 50.0f;
     
-    // === REVERSE (occasional) ===
-    static constexpr float kReverseProb = 0.08f;      // 8% chance of reverse grain
+    // === REVERSE (more frequent for dreamy effect) ===
+    static constexpr float kReverseProb = 0.20f;      // 20% chance of reverse grain
     
     // === TEMPO/SAFETY ===
     static constexpr float kFallbackTempo = 120.0f;
@@ -251,9 +251,9 @@ struct GlitchLooper {
     // Exponential: natural analog-style attack/release (musical, organic)
     // S-curve: polynomial smoothstep (mathematical, precise)
     static constexpr bool kUseExponentialEnvelope = true;
-    static constexpr float kExpAttackRatio = 0.15f;   // 15% of grain is attack
-    static constexpr float kExpReleaseRatio = 0.25f;  // 25% of grain is release
-    static constexpr float kExpCurvature = 4.0f;      // Higher = snappier attack/release
+    static constexpr float kExpAttackRatio = 0.20f;   // 20% attack (softer entrance)
+    static constexpr float kExpReleaseRatio = 0.35f;  // 35% release (longer fade)
+    static constexpr float kExpCurvature = 3.0f;      // Gentler curve (dreamier)
     
     // === SPARKLE-ONLY FILTERING (HPF + LPF) ===
     // Disabled - was causing "underwater" sound even at conservative settings
