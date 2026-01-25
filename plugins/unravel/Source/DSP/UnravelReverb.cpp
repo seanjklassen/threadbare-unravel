@@ -1276,7 +1276,7 @@ void UnravelReverb::process(std::span<float> left,
         // (Glitch now ducks the entire mix, not just the input)
         float glitchOutL = 0.0f, glitchOutR = 0.0f;
         if (glitchAmount > 0.01f) {
-            processGlitchLooper(glitchOutL, glitchOutR, glitchAmount, safeGlitchTempo);
+            processGlitchLooper(glitchOutL, glitchOutR, glitchAmount, safeGlitchTempo, puckX, puckY);
         }
         
         // Use original input for downstream processing (glitch applied at output)
@@ -2079,7 +2079,7 @@ float UnravelReverb::readGhostHistoryInterpolated(float position) const noexcept
 
 void UnravelReverb::processGlitchLooper(
     float& outL, float& outR,
-    float glitchAmount, float safeTempo) noexcept
+    float glitchAmount, float safeTempo, float puckX, float puckY) noexcept
 {
     using namespace threadbare::tuning;
     
@@ -2093,6 +2093,17 @@ void UnravelReverb::processGlitchLooper(
     const float histSizeF = static_cast<float>(historySize);
     const float srFloat = static_cast<float>(sampleRate);
     constexpr float kTwoPi = 6.28318530718f;
+    
+    // === PUCK MODULATION ===
+    // Puck X (-1 to +1): Body (left) ↔ Air (right)
+    //   - Body: Recent memories, warmer pitches
+    //   - Air: Deep memory scrub, brighter pitches
+    const float normPuckX = (puckX + 1.0f) * 0.5f;  // 0 (body) to 1 (air)
+    
+    // Puck Y (-1 to +1): Bottom ↔ Top
+    //   - Bottom: Longer fragments, slower
+    //   - Top: Shorter fragments, more active
+    const float normPuckY = (puckY + 1.0f) * 0.5f;  // 0 (bottom) to 1 (top)
     
     // ═══════════════════════════════════════════════════════════════════════
     // 1. TRANSIENT DETECTION (for reactive triggering)
@@ -2151,9 +2162,11 @@ void UnravelReverb::processGlitchLooper(
                 // SPAWN NEW SPARKLE VOICE
                 // ═══════════════════════════════════════════════════════════
                 
-                // Fragment length: shorter at high glitch, even shorter on transients
+                // Fragment length: shorter at high glitch, modulated by puck Y
+                // Puck Y: Bottom = longer (flowing), Top = shorter (granular)
                 float lengthMs = juce::jmap(glitchAmount,
                     GlitchLooper::kMaxFragmentMs, GlitchLooper::kMinFragmentMs);
+                lengthMs *= (2.5f - 2.0f * normPuckY);  // 0.5x at top, 2.5x at bottom (more dramatic)
                 if (isTransient) {
                     lengthMs *= 0.6f;  // 40% shorter on transients (snappier)
                 }
@@ -2163,8 +2176,10 @@ void UnravelReverb::processGlitchLooper(
                     static_cast<int>(actualLengthMs * 0.001f * srFloat));
                 
                 // Memory scrubbing: random position in history buffer
-                const float scrubDepth = juce::jmap(glitchAmount,
+                // Puck X modulates depth: Body (left) = recent, Air (right) = deep history
+                const float baseScrubDepth = juce::jmap(glitchAmount,
                     GlitchLooper::kMinScrubDepth, GlitchLooper::kMaxScrubDepth);
+                const float scrubDepth = baseScrubDepth * (0.1f + 0.9f * normPuckX);  // 10-100% based on puckX (dramatic)
                 const float randomDepth = sparkleRng.nextFloat() * scrubDepth;
                 const int safetyMargin = freeVoice->lengthSamples + 512;
                 float startPos = static_cast<float>(ghostWriteHead) - 
@@ -2191,21 +2206,26 @@ void UnravelReverb::processGlitchLooper(
                         speed = 2.0f;  // Fallback to octave up
                     }
                 } else {
-                    // Normal palette from tuning
+                    // Normal palette from tuning, modulated by puck X
+                    // Puck X: Body (left) biases toward warmer, Air (right) biases toward brighter
+                    // Shift pitchRoll to favor different ranges based on puckX
+                    const float puckXBias = (normPuckX - 0.5f) * 0.5f;  // -0.25 to +0.25 (dramatic)
+                    const float biasedRoll = juce::jlimit(0.0f, 0.999f, pitchRoll + puckXBias);
+                    
                     float cumProb = GlitchLooper::kRootProb;
-                    if (pitchRoll < cumProb) {
+                    if (biasedRoll < cumProb) {
                         speed = 1.0f;  // Root
-                    } else if ((cumProb += GlitchLooper::kOctaveUpProb), pitchRoll < cumProb) {
+                    } else if ((cumProb += GlitchLooper::kOctaveUpProb), biasedRoll < cumProb) {
                         speed = 2.0f;  // Octave up (sparkle)
-                    } else if ((cumProb += GlitchLooper::kDoubleOctaveProb), pitchRoll < cumProb) {
+                    } else if ((cumProb += GlitchLooper::kDoubleOctaveProb), biasedRoll < cumProb) {
                         if (actualLengthMs >= GlitchLooper::kMinFragmentFor4xMs) {
                             speed = 4.0f;  // 2 octaves up (twinkle)
                         } else {
                             speed = 2.0f;  // Fall back to octave up
                         }
-                    } else if ((cumProb += GlitchLooper::kFifthProb), pitchRoll < cumProb) {
+                    } else if ((cumProb += GlitchLooper::kFifthProb), biasedRoll < cumProb) {
                         speed = 1.4983f;  // Fifth (ethereal)
-                    } else if ((cumProb += GlitchLooper::kOctaveDownProb), pitchRoll < cumProb) {
+                    } else if ((cumProb += GlitchLooper::kOctaveDownProb), biasedRoll < cumProb) {
                         speed = 0.5f;  // Octave down (warmth)
                     } else {
                         // Micro-shimmer (chorus-like)

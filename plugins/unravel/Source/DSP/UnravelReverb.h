@@ -454,7 +454,7 @@ private:
     void processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept;
     
     // Glitch Looper functions
-    void processGlitchLooper(float& outL, float& outR, float glitchAmount, float safeTempo) noexcept;
+    void processGlitchLooper(float& outL, float& outR, float glitchAmount, float safeTempo, float puckX, float puckY) noexcept;
     void triggerGlitchSlice(float tempo, float glitchAmount) noexcept;
     float readGhostHistoryInterpolated(float position) const noexcept;
 };
