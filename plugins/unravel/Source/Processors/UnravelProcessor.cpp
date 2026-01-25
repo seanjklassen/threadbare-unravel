@@ -46,6 +46,7 @@ void UnravelProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     toneParam = getFloat("tone");
     driftParam = getFloat("drift");
     ghostParam = getFloat("ghost");
+    glitchParam = getFloat("glitch");
     duckParam = getFloat("duck");
     erPreDelayParam = getFloat("erPreDelay");
     freezeParam = dynamic_cast<juce::AudioParameterBool*>(apvts.getParameter("freeze"));
@@ -100,6 +101,7 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     currentState.tone = clamp(readParam(toneParam, 0.0f), -1.0f, 1.0f);
     currentState.drift = clamp(readParam(driftParam, 0.2f), 0.0f, 1.0f);
     currentState.ghost = clamp(readParam(ghostParam, 0.0f), 0.0f, 1.0f);
+    currentState.glitch = clamp(readParam(glitchParam, 0.0f), 0.0f, 1.0f);
     currentState.duck = clamp(readParam(duckParam, 0.0f), 0.0f, 1.0f);
     currentState.erPreDelay = clamp(readParam(erPreDelayParam, 0.0f), 
                                    0.0f, 
@@ -233,6 +235,7 @@ void UnravelProcessor::pushCurrentState() noexcept
     state.tone = clamp(readParam(toneParam, 0.0f), -1.0f, 1.0f);
     state.drift = clamp(readParam(driftParam, 0.2f), 0.0f, 1.0f);
     state.ghost = clamp(readParam(ghostParam, 0.0f), 0.0f, 1.0f);
+    state.glitch = clamp(readParam(glitchParam, 0.0f), 0.0f, 1.0f);
     state.duck = clamp(readParam(duckParam, 0.0f), 0.0f, 1.0f);
     state.erPreDelay = clamp(readParam(erPreDelayParam, 0.0f), 
                              0.0f, 

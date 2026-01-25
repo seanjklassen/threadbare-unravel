@@ -185,6 +185,34 @@ void UnravelReverb::prepare(const juce::dsp::ProcessSpec& spec)
     grainSpawnInterval = static_cast<int>(sampleRate * 0.015f);
     
     // ═══════════════════════════════════════════════════════════════════════
+    // GLITCH SPARKLE INITIALIZATION
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // Clear all sparkle voices
+    for (auto& voice : sparkleVoices) {
+        voice = SparkleVoice{};
+    }
+    
+    // Initialize trigger timing
+    sparkleTriggerSamples = 0;
+    sparklePingPongLfoPhase = 0.0f;
+    sparkleRng.setSeedRandomly();
+    
+    // Transient detection coefficients
+    const float attackMs = threadbare::tuning::GlitchLooper::kEnvelopeAttackMs;
+    const float releaseMs = threadbare::tuning::GlitchLooper::kEnvelopeReleaseMs;
+    transientAttackCoeff = std::exp(-1.0f / (attackMs * 0.001f * sampleRate));
+    transientReleaseCoeff = std::exp(-1.0f / (releaseMs * 0.001f * sampleRate));
+    transientEnvelope = 0.0f;
+    transientPeak = 0.0f;
+    
+    // Sparkle-only filter state
+    sparkleHpfStateL = 0.0f;
+    sparkleHpfStateR = 0.0f;
+    sparkleLpfStateL = 0.0f;
+    sparkleLpfStateR = 0.0f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER INITIALIZATION
     // ═══════════════════════════════════════════════════════════════════════
     
@@ -357,6 +385,21 @@ void UnravelReverb::reset() noexcept
     erWriteHead = 0;
     
     // ═══════════════════════════════════════════════════════════════════════
+    // GLITCH SPARKLE RESET
+    // ═══════════════════════════════════════════════════════════════════════
+    for (auto& voice : sparkleVoices) {
+        voice = SparkleVoice{};
+    }
+    sparkleTriggerSamples = 0;
+    sparklePingPongLfoPhase = 0.0f;
+    transientEnvelope = 0.0f;
+    transientPeak = 0.0f;
+    sparkleHpfStateL = 0.0f;
+    sparkleHpfStateR = 0.0f;
+    sparkleLpfStateL = 0.0f;
+    sparkleLpfStateR = 0.0f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER RESET
     // ═══════════════════════════════════════════════════════════════════════
     
@@ -493,7 +536,7 @@ float UnravelReverb::readGhostHistory(float readPosition) const noexcept
     return cubicInterp(y0, y1, y2, y3, frac);
 }
 
-void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float glitchBlend, float howlBlend) noexcept
+void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX) noexcept
 {
     if (ghostHistory.empty() || ghostAmount <= 0.0f)
         return;
@@ -525,40 +568,9 @@ void UnravelReverb::trySpawnGrain(float ghostAmount, float puckX, float glitchBl
     if (!inactiveGrain)
         return; // All grains are active
     
-    // ═══════════════════════════════════════════════════════════════════════════
-    // ACTIVATE FIRST - matches original timing (this happens BEFORE configuration)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // Activate grain
     inactiveGrain->active = true;
     
-    // ═══════════════════════════════════════════════════════════════════════════
-    // THREE-ZONE DISPATCH: Glitch (left) / Cloud (mid) / Howl (right)
-    // Routes to appropriate helper based on zone blend values
-    // Mid-zone (both blends near 0) uses verbatim cloud path for RNG preservation
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (glitchBlend > 0.01f && howlBlend <= 0.01f)
-    {
-        // Left zone: tempo-synced rhythmic fragments
-        spawnGlitchGrain(inactiveGrain, ghostAmount, puckX, glitchBlend);
-    }
-    else if (howlBlend > 0.01f && glitchBlend <= 0.01f)
-    {
-        // Right zone: sustained ghostly howl
-        spawnHowlGrain(inactiveGrain, ghostAmount, puckX, howlBlend);
-    }
-    else
-    {
-        // Mid zone: VERBATIM original behavior - preserves exact RNG sequence
-        spawnCloudGrain(inactiveGrain, ghostAmount, puckX);
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// spawnCloudGrain: VERBATIM COPY of original trySpawnGrain configuration logic
-// This MUST preserve exact RNG call count and order for A/B null testing
-// DO NOT modify without updating spawnScatterGrain to match RNG consumption
-// ═══════════════════════════════════════════════════════════════════════════════
-void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX) noexcept
-{
     // Calculate puckX bias once (used for both proximity and stereo width)
     // distantBias: 0.0 at left (body/recent), 1.0 at right (air/distant)
     const float distantBias = (1.0f + puckX) * 0.5f;
@@ -575,13 +587,13 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
     const float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
     
     // Set spawn position relative to write head
-    grain->pos = static_cast<float>(ghostWriteHead) - sampleOffset;
+    inactiveGrain->pos = static_cast<float>(ghostWriteHead) - sampleOffset;
     
     // Wrap within buffer bounds
-    while (grain->pos < 0.0f)
-        grain->pos += static_cast<float>(historyLength);
-    while (grain->pos >= static_cast<float>(historyLength))
-        grain->pos -= static_cast<float>(historyLength);
+    while (inactiveGrain->pos < 0.0f)
+        inactiveGrain->pos += static_cast<float>(historyLength);
+    while (inactiveGrain->pos >= static_cast<float>(historyLength))
+        inactiveGrain->pos -= static_cast<float>(historyLength);
 
     // Grain duration: random between min and max (50-300ms for smooth overlap)
     const float durationSec = juce::jmap(ghostRng.nextFloat(),
@@ -590,8 +602,8 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
                                          threadbare::tuning::Ghost::kGrainMinSec,
                                          threadbare::tuning::Ghost::kGrainMaxSec);
     const float durationSamples = durationSec * static_cast<float>(sampleRate);
-    grain->windowInc = 1.0f / durationSamples;
-    grain->windowPhase = 0.0f;
+    inactiveGrain->windowInc = 1.0f / durationSamples;
+    inactiveGrain->windowPhase = 0.0f;
 
     // Pitch/speed: mostly subtle detune, with prominent shimmer
     float detuneSemi = 0.0f;
@@ -629,7 +641,7 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
         }
     }
     
-    grain->speed = speedRatio;
+    inactiveGrain->speed = speedRatio;
     
     // === ENHANCED STEREO POSITIONING ===
     const float panWidth = threadbare::tuning::Ghost::kMinPanWidth + 
@@ -637,12 +649,12 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
                            (threadbare::tuning::Ghost::kMaxPanWidth - threadbare::tuning::Ghost::kMinPanWidth));
     
     const float panOffset = (ghostRng.nextFloat() - 0.5f) * panWidth;
-    grain->pan = 0.5f + panOffset;
-    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
+    inactiveGrain->pan = 0.5f + panOffset;
+    inactiveGrain->pan = juce::jlimit(0.0f, 1.0f, inactiveGrain->pan);
     
     if (isReverse && threadbare::tuning::Ghost::kMirrorReverseGrains)
     {
-        grain->pan = 1.0f - grain->pan;
+        inactiveGrain->pan = 1.0f - inactiveGrain->pan;
     }
     
     // Amplitude
@@ -656,245 +668,7 @@ void UnravelReverb::spawnCloudGrain(Grain* grain, float ghostAmount, float puckX
     if (isReverse)
         grainAmp *= threadbare::tuning::Ghost::kReverseGainReduction;
     
-    grain->amp = grainAmp;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// spawnGlitchGrain: Tempo-synced rhythmic fragments for left zone
-// Short-medium grains with harmonic pitch shifts, transient-preserving
-// ═══════════════════════════════════════════════════════════════════════════════
-void UnravelReverb::spawnGlitchGrain(Grain* grain, float ghostAmount, float /*puckX*/, float glitchBlend) noexcept
-{
-    using namespace threadbare::tuning;
-    
-    const int historyLength = static_cast<int>(ghostHistory.size());
-    const float historyLengthF = static_cast<float>(historyLength);
-    
-    // === DURATION: Blend cloud -> glitch (short for transient preservation) ===
-    const float cloudDuration = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, Ghost::kGrainMinSec, Ghost::kGrainMaxSec);
-    const float glitchDuration = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, Glitch::kGrainMinSec, Glitch::kGrainMaxSec);
-    const float durationSec = cloudDuration * (1.0f - glitchBlend) + 
-                              glitchDuration * glitchBlend;
-    const float durationSamples = durationSec * static_cast<float>(sampleRate);
-    grain->windowInc = 1.0f / durationSamples;
-    grain->windowPhase = 0.0f;
-    
-    // === PITCH: Harmonic streams (root/fifth/octave) with humanize detune ===
-    float speedRatio;
-    bool isReverse = false;
-    
-    // Boosted probability for harmonics when glitch is active
-    const float harmonicProb = std::min(1.0f, glitchBlend * 1.8f);
-    if (ghostRng.nextFloat() < harmonicProb)
-    {
-        // Pick harmonic stream
-        const float streamRoll = ghostRng.nextFloat();
-        if (streamRoll < Glitch::kRootWeight)
-            speedRatio = Glitch::kRootSpeed;
-        else if (streamRoll < Glitch::kRootWeight + Glitch::kFifthWeight)
-            speedRatio = Glitch::kFifthSpeed;
-        else
-            speedRatio = Glitch::kOctaveSpeed;
-        
-        // Add humanize detune (±cents converted to ratio multiplier)
-        const float detuneCents = (ghostRng.nextFloat() - 0.5f) * 2.0f * Glitch::kDetuneMaxCents;
-        speedRatio *= std::pow(2.0f, detuneCents / 1200.0f);
-    }
-    else
-    {
-        // Normal subtle detune + shimmer
-        float detuneSemi = juce::jmap(ghostRng.nextFloat(),
-            0.0f, 1.0f, -Ghost::kDetuneSemi, Ghost::kDetuneSemi);
-        
-        if (ghostRng.nextFloat() < Ghost::kShimmerProbability)
-            detuneSemi = Ghost::kShimmerSemi;
-        else if (ghostRng.nextFloat() < 0.1f)
-            detuneSemi = -12.0f;
-        
-        speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
-    }
-    
-    // Glitch has its own reverse probability (blended)
-    const float cloudReverseProb = (ghostAmount > 0.5f) 
-        ? Ghost::kReverseProbability * ghostAmount * ghostAmount 
-        : 0.0f;
-    const float effectiveReverseProb = cloudReverseProb * (1.0f - glitchBlend) + 
-                                       Glitch::kReverseProbability * glitchBlend;
-    if (ghostRng.nextFloat() < effectiveReverseProb)
-    {
-        isReverse = true;
-        speedRatio = -speedRatio;
-    }
-    
-    grain->speed = speedRatio;
-    
-    // === POSITION: Recent material for punch (glitch uses short lookback) ===
-    const float cloudMaxLookbackMs = Ghost::kMinLookbackMs; // Body/recent for left zone
-    const float effectiveMaxLookbackMs = cloudMaxLookbackMs * (1.0f - glitchBlend) + 
-                                         Glitch::kMaxLookbackMs * glitchBlend;
-    
-    const float spawnPosMs = ghostRng.nextFloat() * effectiveMaxLookbackMs;
-    float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
-    
-    // Safety margin from write head
-    const float absSpeed = std::abs(speedRatio);
-    if (absSpeed > 1.0f)
-    {
-        const float extraMargin = Glitch::kSafetyMarginMs * (absSpeed - 1.0f);
-        const float extraMarginSamples = (extraMargin * static_cast<float>(sampleRate)) / 1000.0f;
-        sampleOffset = std::max(sampleOffset, extraMarginSamples);
-    }
-    
-    sampleOffset = juce::jmin(sampleOffset, historyLengthF - 1.0f);
-    
-    float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
-    pos = std::fmod(pos, historyLengthF);
-    if (pos < 0.0f) pos += historyLengthF;
-    grain->pos = pos;
-    
-    // === STEREO: Narrower for punch (glitch is more mono-focused) ===
-    const float cloudPanWidth = Ghost::kMinPanWidth;
-    const float effectivePanWidth = cloudPanWidth * (1.0f - glitchBlend) + 
-                                    Glitch::kPanWidth * glitchBlend;
-    
-    const float panOffset = (ghostRng.nextFloat() - 0.5f) * effectivePanWidth;
-    grain->pan = 0.5f + panOffset;
-    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
-    
-    if (isReverse && Ghost::kMirrorReverseGrains)
-    {
-        grain->pan = 1.0f - grain->pan;
-    }
-    
-    // === AMPLITUDE: Glitch gain with moderate variation ===
-    const float cloudGainDb = juce::jmap(ghostAmount,
-        0.0f, 1.0f, Ghost::kMinGainDb, Ghost::kMaxGainDb);
-    const float glitchGainDb = juce::jmap(ghostAmount,
-        0.0f, 1.0f, Glitch::kMinGainDb, Glitch::kMaxGainDb);
-    const float gainDb = cloudGainDb * (1.0f - glitchBlend) + glitchGainDb * glitchBlend;
-    
-    // Amplitude variation for rhythmic breathing
-    const float ampVariation = (ghostRng.nextFloat() - 0.5f) * 2.0f * 
-                               Glitch::kAmpVariationDb * glitchBlend;
-    
-    float grainAmp = juce::Decibels::decibelsToGain(gainDb + ampVariation);
-    
-    if (isReverse)
-        grainAmp *= Glitch::kReverseGainReduction;
-    
-    grain->amp = grainAmp;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// spawnHowlGrain: Sustained ghostly texture for right zone
-// Long grains with shimmer bias, deep lookback, wide stereo
-// ═══════════════════════════════════════════════════════════════════════════════
-void UnravelReverb::spawnHowlGrain(Grain* grain, float ghostAmount, float puckX, float howlBlend) noexcept
-{
-    using namespace threadbare::tuning;
-    
-    const float distantBias = (1.0f + puckX) * 0.5f;
-    const int historyLength = static_cast<int>(ghostHistory.size());
-    const float historyLengthF = static_cast<float>(historyLength);
-    
-    // === DURATION: Blend cloud -> howl (long for sustained texture) ===
-    const float cloudDuration = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, Ghost::kGrainMinSec, Ghost::kGrainMaxSec);
-    const float howlDuration = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, Howl::kGrainMinSec, Howl::kGrainMaxSec);
-    const float durationSec = cloudDuration * (1.0f - howlBlend) + 
-                              howlDuration * howlBlend;
-    const float durationSamples = durationSec * static_cast<float>(sampleRate);
-    grain->windowInc = 1.0f / durationSamples;
-    grain->windowPhase = 0.0f;
-    
-    // === PITCH: Shimmer-biased with subtle detune ===
-    float detuneSemi = juce::jmap(ghostRng.nextFloat(),
-        0.0f, 1.0f, -Howl::kDetuneSemi, Howl::kDetuneSemi);
-    
-    // Blended shimmer probability (higher for howl)
-    const float cloudShimmerProb = Ghost::kShimmerProbability;
-    const float effectiveShimmerProb = cloudShimmerProb * (1.0f - howlBlend) + 
-                                       Howl::kShimmerProbability * howlBlend;
-    
-    if (ghostRng.nextFloat() < effectiveShimmerProb)
-        detuneSemi = Ghost::kShimmerSemi; // Octave up shimmer
-    else if (ghostRng.nextFloat() < 0.08f)
-        detuneSemi = -12.0f; // Occasional octave down
-    
-    float speedRatio = std::pow(2.0f, detuneSemi / 12.0f);
-    
-    // Reverse (less common in howl to preserve sustained feel)
-    bool isReverse = false;
-    if (ghostAmount > 0.6f)
-    {
-        const float reverseProb = Ghost::kReverseProbability * ghostAmount * ghostAmount * 0.5f;
-        if (ghostRng.nextFloat() < reverseProb)
-        {
-            isReverse = true;
-            speedRatio = -speedRatio;
-        }
-    }
-    
-    grain->speed = speedRatio;
-    
-    // === POSITION: Deep lookback for distant/ghostly feel ===
-    const float cloudMaxLookbackMs = Ghost::kMinLookbackMs + 
-        (distantBias * (Ghost::kMaxLookbackMs - Ghost::kMinLookbackMs));
-    const float howlLookbackMs = Howl::kMinLookbackMs + 
-        (distantBias * (Howl::kMaxLookbackMs - Howl::kMinLookbackMs));
-    const float effectiveMaxLookbackMs = cloudMaxLookbackMs * (1.0f - howlBlend) + 
-                                         howlLookbackMs * howlBlend;
-    
-    const float spawnPosMs = ghostRng.nextFloat() * effectiveMaxLookbackMs;
-    float sampleOffset = (spawnPosMs * static_cast<float>(sampleRate)) / 1000.0f;
-    
-    // Extended safety margin for long lookback + fast grains
-    const float absSpeed = std::abs(speedRatio);
-    if (absSpeed > 1.0f)
-    {
-        const float extraMargin = Howl::kSafetyMarginMs * (absSpeed - 1.0f);
-        const float extraMarginSamples = (extraMargin * static_cast<float>(sampleRate)) / 1000.0f;
-        sampleOffset = std::max(sampleOffset, extraMarginSamples);
-    }
-    
-    sampleOffset = juce::jmin(sampleOffset, historyLengthF - 1.0f);
-    
-    float pos = static_cast<float>(ghostWriteHead) - sampleOffset;
-    pos = std::fmod(pos, historyLengthF);
-    if (pos < 0.0f) pos += historyLengthF;
-    grain->pos = pos;
-    
-    // === STEREO: Wide for immersion ===
-    const float cloudPanWidth = Ghost::kMinPanWidth + 
-        (ghostAmount * distantBias * (Ghost::kMaxPanWidth - Ghost::kMinPanWidth));
-    const float effectivePanWidth = cloudPanWidth * (1.0f - howlBlend) + 
-                                    Howl::kPanWidth * howlBlend;
-    
-    const float panOffset = (ghostRng.nextFloat() - 0.5f) * effectivePanWidth;
-    grain->pan = 0.5f + panOffset;
-    grain->pan = juce::jlimit(0.0f, 1.0f, grain->pan);
-    
-    if (isReverse && Ghost::kMirrorReverseGrains)
-    {
-        grain->pan = 1.0f - grain->pan;
-    }
-    
-    // === AMPLITUDE: Quieter base for ethereal feel ===
-    const float cloudGainDb = juce::jmap(ghostAmount,
-        0.0f, 1.0f, Ghost::kMinGainDb, Ghost::kMaxGainDb);
-    const float howlGainDb = juce::jmap(ghostAmount,
-        0.0f, 1.0f, Howl::kMinGainDb, Howl::kMaxGainDb);
-    const float gainDb = cloudGainDb * (1.0f - howlBlend) + howlGainDb * howlBlend;
-    
-    float grainAmp = juce::Decibels::decibelsToGain(gainDb);
-    
-    if (isReverse)
-        grainAmp *= Ghost::kReverseGainReduction;
-    
-    grain->amp = grainAmp;
+    inactiveGrain->amp = grainAmp;
 }
 
 void UnravelReverb::processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept
@@ -1090,87 +864,25 @@ void UnravelReverb::process(std::span<float> left,
     fdnSendSmoother.setTargetValue(targetFdnSend);
     
     // ═════════════════════════════════════════════════════════════════════════
-    // 5. ZONE MODES: Left=Glitch, Mid=Cloud, Right=Howl
-    //    Linear blend based on puckX position with ghost-scaled activation
+    // 5. GHOST ENGINE SPAWN TIMING
     // ═════════════════════════════════════════════════════════════════════════
-    float glitchBlend = 0.0f;
-    float howlBlend = 0.0f;
-    
-    if constexpr (threadbare::tuning::Debug::kEnableScatter)
-    {
-        using namespace threadbare::tuning;
-        const float currentGhostApprox = ghostSmoother.getCurrentValue();
-        
-        // Ghost activation ramp (0 at kGhostMin, 1 at kGhostMax)
-        const float ghostDenom = Zones::kGhostMax - Zones::kGhostMin;
-        const float ghostActivation = (ghostDenom > 1.0e-6f) 
-            ? juce::jlimit(0.0f, 1.0f, (currentGhostApprox - Zones::kGhostMin) / ghostDenom)
-            : 0.0f;
-        
-        // Glitch blend: ramps up as puckX goes left of threshold
-        // puckX = -1.0 -> full glitch, puckX = -0.7 -> start blending
-        if (puckX < Zones::kLeftThreshold)
-        {
-            glitchBlend = ghostActivation; // Full glitch when left of threshold
-        }
-        else if (puckX < 0.0f)
-        {
-            // Linear ramp from 0 at center to full at left threshold
-            const float leftRamp = -puckX / (-Zones::kLeftThreshold);
-            glitchBlend = ghostActivation * juce::jlimit(0.0f, 1.0f, leftRamp);
-        }
-        
-        // Howl blend: ramps up as puckX goes right of threshold
-        // puckX = +1.0 -> full howl, puckX = +0.7 -> start blending
-        if (puckX > Zones::kRightThreshold)
-        {
-            howlBlend = ghostActivation; // Full howl when right of threshold
-        }
-        else if (puckX > 0.0f)
-        {
-            // Linear ramp from 0 at center to full at right threshold
-            const float rightRamp = puckX / Zones::kRightThreshold;
-            howlBlend = ghostActivation * juce::jlimit(0.0f, 1.0f, rightRamp);
-        }
-    }
+    const float spawnIntervalMs = threadbare::tuning::Ghost::kCloudSpawnIntervalMs;
+    const int effectiveSpawnInterval = std::max(1, static_cast<int>(spawnIntervalMs * 0.001f * sampleRate));
+    const float spawnProb = threadbare::tuning::Ghost::kCloudSpawnProbability;
     
     // ═════════════════════════════════════════════════════════════════════════
-    // TEMPO-SYNCED GRID (for Glitch mode)
-    // Calculate spawn interval from host tempo with jitter
+    // 6. GLITCH LOOPER PER-BLOCK SETUP
     // ═════════════════════════════════════════════════════════════════════════
-    const float clampedTempo = juce::jlimit(
-        threadbare::tuning::Glitch::kMinTempo,
-        threadbare::tuning::Glitch::kMaxTempo,
-        state.tempo > 0.0f ? state.tempo : 120.0f);
+    const float glitchAmount = juce::jlimit(0.0f, 1.0f, state.glitch);
     
-    // Grid interval: beat duration * division (e.g., 1/8 note at 120 BPM = 250ms)
-    const float beatMs = 60000.0f / clampedTempo;
-    const float glitchGridMs = beatMs * threadbare::tuning::Glitch::kDefaultDivision;
+    // Guard tempo with safe fallback (prevents division by zero)
+    const float safeGlitchTempo = juce::jlimit(
+        threadbare::tuning::GlitchLooper::kMinTempo,
+        threadbare::tuning::GlitchLooper::kMaxTempo,
+        state.tempo > 0.0f ? state.tempo : threadbare::tuning::GlitchLooper::kFallbackTempo);
     
-    // Cloud and howl intervals (not tempo-synced)
-    const float cloudIntervalMs = threadbare::tuning::Ghost::kCloudSpawnIntervalMs;
-    const float howlIntervalMs = threadbare::tuning::Howl::kSpawnIntervalMs;
-    
-    // Effective interval: blend based on active zone
-    // Priority: glitch (left), howl (right), cloud (mid)
-    float effectiveIntervalMs = cloudIntervalMs;
-    if (glitchBlend > 0.01f)
-    {
-        effectiveIntervalMs = cloudIntervalMs * (1.0f - glitchBlend) + glitchGridMs * glitchBlend;
-    }
-    else if (howlBlend > 0.01f)
-    {
-        effectiveIntervalMs = cloudIntervalMs * (1.0f - howlBlend) + howlIntervalMs * howlBlend;
-    }
-    
-    // Clamp to at least 1 sample to prevent constant spawning
-    int effectiveSpawnInterval = static_cast<int>(effectiveIntervalMs * 0.001f * sampleRate);
-    effectiveSpawnInterval = std::max(1, effectiveSpawnInterval);
-    
-    // Spawn probabilities per zone
-    const float cloudSpawnProb = threadbare::tuning::Ghost::kCloudSpawnProbability;
-    const float glitchSpawnProb = threadbare::tuning::Glitch::kSpawnProbability;
-    const float howlSpawnProb = threadbare::tuning::Howl::kSpawnProbability;
+    // NOTE: Glitch sparkle processing is self-contained in processGlitchLooper()
+    // No per-block setup needed - voices are triggered and rendered per-sample
     
     // Pre-delay is now smoothed per-sample (see inside loop) for click-free transitions
     preDelaySmoother.setTargetValue(state.erPreDelay);
@@ -1549,16 +1261,26 @@ void UnravelReverb::process(std::span<float> left,
                 erWriteHead = 0;
         }
         
-        // B. Record input into Ghost History
-        const float gainedInput = monoInput;
+        // B. Record input into Ghost History (before glitch processing)
+        const float originalGainedInput = monoInput;
         
         if (!ghostHistory.empty())
         {
-            ghostHistory[static_cast<std::size_t>(ghostWriteHead)] = gainedInput;
+            ghostHistory[static_cast<std::size_t>(ghostWriteHead)] = originalGainedInput;
             ++ghostWriteHead;
             if (ghostWriteHead >= static_cast<int>(ghostHistory.size()))
                 ghostWriteHead = 0;
         }
+        
+        // B2. GLITCH LOOPER - moved to final output stage for bypass effect
+        // (Glitch now ducks the entire mix, not just the input)
+        float glitchOutL = 0.0f, glitchOutR = 0.0f;
+        if (glitchAmount > 0.01f) {
+            processGlitchLooper(glitchOutL, glitchOutR, glitchAmount, safeGlitchTempo);
+        }
+        
+        // Use original input for downstream processing (glitch applied at output)
+        const float gainedInput = originalGainedInput;
         
         // C. Spawn grains at high density for smooth overlap (can be disabled via debug switch)
         float ghostOutputL = 0.0f;
@@ -1568,32 +1290,13 @@ void UnravelReverb::process(std::span<float> left,
         {
             ++samplesSinceLastSpawn;
             
-            // Add jitter for glitch mode (organic timing variation)
-            int jitteredInterval = effectiveSpawnInterval;
-            if (glitchBlend > 0.01f)
+            if (samplesSinceLastSpawn >= effectiveSpawnInterval && currentGhost > 0.01f)
             {
-                const float jitterSamples = threadbare::tuning::Glitch::kJitterMs * 0.001f * sampleRate;
-                const float jitter = (ghostRng.nextFloat() - 0.5f) * 2.0f * jitterSamples * glitchBlend;
-                jitteredInterval = std::max(1, effectiveSpawnInterval + static_cast<int>(jitter));
-            }
-            
-            if (samplesSinceLastSpawn >= jitteredInterval && currentGhost > 0.01f)
-            {
-                // Zone-based probability: cloud (ghost-scaled), glitch/howl (absolute)
-                const float cloudProb = currentGhost * cloudSpawnProb;
-                float effectiveProb = cloudProb;
-                
-                if (glitchBlend > 0.01f)
-                {
-                    effectiveProb = cloudProb * (1.0f - glitchBlend) + glitchSpawnProb * glitchBlend;
-                }
-                else if (howlBlend > 0.01f)
-                {
-                    effectiveProb = cloudProb * (1.0f - howlBlend) + howlSpawnProb * howlBlend;
-                }
+                // Spawn probability scaled by ghost amount
+                const float effectiveProb = currentGhost * spawnProb;
                 
                 if (ghostRng.nextFloat() < effectiveProb)
-                    trySpawnGrain(currentGhost, puckX, glitchBlend, howlBlend);
+                    trySpawnGrain(currentGhost, puckX);
                 
                 samplesSinceLastSpawn = 0;
             }
@@ -1608,7 +1311,8 @@ void UnravelReverb::process(std::span<float> left,
         //    At Right: Full dry signal + ghost to FDN, no ERs
         // Scale down ghost sum based on expected density to prevent input clipping
         // Multiple overlapping grains can create massive peaks before hitting the FDN
-        constexpr float kGhostHeadroom = 0.5f;
+        // With 8 grains at -12dB each, max sum = 2.0; headroom 0.35 brings to ~0.7
+        constexpr float kGhostHeadroom = 0.35f;
         
         // Apply debug ghost injection gain (0dB normal, -6 or -12 for testing)
         const float ghostDebugGain = juce::Decibels::decibelsToGain(
@@ -2265,10 +1969,28 @@ void UnravelReverb::process(std::span<float> left,
         }
         
         // Mix: Dry + Wet FDN + Early Reflections
-        // ERs are added directly (already scaled by erGain/proximity control)
+        // Soft limit ER output to prevent tap stacking distortion
+        const float limitedErL = std::tanh(erOutputL) * 0.8f;
+        const float limitedErR = std::tanh(erOutputR) * 0.8f;
+        
         const float dry = 1.0f - currentMix;
-        float outL = inputL * dry + wetL * currentMix + erOutputL;
-        float outR = inputR * dry + wetR * currentMix + erOutputR;
+        float outL = inputL * dry + wetL * currentMix + limitedErL;
+        float outR = inputR * dry + wetR * currentMix + limitedErR;
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // GLITCH SPARKLE INJECTION (at output stage - bypasses reverb entirely)
+        // Layer sparkle fragments on top of reverb - gain already applied per voice
+        // ═══════════════════════════════════════════════════════════════════════
+        if (glitchAmount > 0.01f) {
+            // Soft limit glitch output before mixing to prevent stacking distortion
+            // tanh provides gentle saturation that sounds musical
+            constexpr float glitchHeadroom = 0.7f;  // Leave room for reverb
+            const float limitedGlitchL = std::tanh(glitchOutL) * glitchHeadroom;
+            const float limitedGlitchR = std::tanh(glitchOutR) * glitchHeadroom;
+            
+            outL = outL + limitedGlitchL;
+            outR = outR + limitedGlitchR;
+        }
         
         // Final safety: soft clip to catch any summation peaks
         // Can be disabled via debug switch to test for aliasing
@@ -2310,6 +2032,331 @@ void UnravelReverb::process(std::span<float> left,
     // Update metering state from envelope followers
     state.inLevel = inputMeterState;
     state.tailLevel = tailMeterState;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GLITCH LOOPER IMPLEMENTATION
+// Rhythmic stutter effect that captures and repeats audio slices
+// ═══════════════════════════════════════════════════════════════════════════════
+
+float UnravelReverb::readGhostHistoryInterpolated(float position) const noexcept
+{
+    // Read from ghostHistory buffer using Catmull-Rom interpolation
+    // Per project rules in .cursorrules: use CatmullRom for warping/pitch effects
+    
+    const int historySize = static_cast<int>(ghostHistory.size());
+    if (historySize < 4) return 0.0f;
+    
+    const float histSizeF = static_cast<float>(historySize);
+    
+    // Wrap position using subtraction (avoids fmod per-sample cost)
+    while (position < 0.0f) position += histSizeF;
+    while (position >= histSizeF) position -= histSizeF;
+    
+    // Get integer and fractional parts
+    const int idx = static_cast<int>(position);
+    const float frac = position - static_cast<float>(idx);
+    
+    // Get 4 samples for Catmull-Rom (wrap indices)
+    const int i0 = (idx - 1 + historySize) % historySize;
+    const int i1 = idx % historySize;
+    const int i2 = (idx + 1) % historySize;
+    const int i3 = (idx + 2) % historySize;
+    
+    const float y0 = ghostHistory[static_cast<size_t>(i0)];
+    const float y1 = ghostHistory[static_cast<size_t>(i1)];
+    const float y2 = ghostHistory[static_cast<size_t>(i2)];
+    const float y3 = ghostHistory[static_cast<size_t>(i3)];
+    
+    // Catmull-Rom interpolation coefficients
+    const float c0 = y1;
+    const float c1 = 0.5f * (y2 - y0);
+    const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+    const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+    
+    return ((c3 * frac + c2) * frac + c1) * frac + c0;
+}
+
+void UnravelReverb::processGlitchLooper(
+    float& outL, float& outR,
+    float glitchAmount, float safeTempo) noexcept
+{
+    using namespace threadbare::tuning;
+    
+    const int historySize = static_cast<int>(ghostHistory.size());
+    if (historySize < 1024) {
+        outL = 0.0f;
+        outR = 0.0f;
+        return;
+    }
+    
+    const float histSizeF = static_cast<float>(historySize);
+    const float srFloat = static_cast<float>(sampleRate);
+    constexpr float kTwoPi = 6.28318530718f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // 1. TRANSIENT DETECTION (for reactive triggering)
+    // ═══════════════════════════════════════════════════════════════════════
+    const float recentSample = ghostHistory[static_cast<std::size_t>(
+        (ghostWriteHead - 1 + historySize) % historySize)];
+    const float inputLevel = std::abs(recentSample);
+    
+    if (inputLevel > transientPeak) {
+        transientPeak = inputLevel;
+    } else {
+        transientPeak *= transientReleaseCoeff;
+    }
+    
+    const float envCoeff = (inputLevel > transientEnvelope) ? transientAttackCoeff : transientReleaseCoeff;
+    transientEnvelope = inputLevel + envCoeff * (transientEnvelope - inputLevel);
+    
+    const float thresholdLin = juce::Decibels::decibelsToGain(GlitchLooper::kTransientThresholdDb);
+    const bool isTransient = (inputLevel > thresholdLin) && 
+        (transientEnvelope > 0.0001f) && 
+        (transientPeak > transientEnvelope * GlitchLooper::kTransientRatio);
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // 2. VOICE TRIGGERING
+    // ═══════════════════════════════════════════════════════════════════════
+    --sparkleTriggerSamples;
+    
+    // Count active voices
+    int activeVoices = 0;
+    for (const auto& voice : sparkleVoices) {
+        if (voice.active) ++activeVoices;
+    }
+    
+    // Determine max voices based on glitch amount
+    const int maxActiveVoices = static_cast<int>(juce::jmap(glitchAmount,
+        static_cast<float>(GlitchLooper::kVoicesAtLow),
+        static_cast<float>(GlitchLooper::kVoicesAtHigh)));
+    
+    // Try to trigger new voice
+    if (glitchAmount > 0.01f && activeVoices < maxActiveVoices && sparkleTriggerSamples <= 0) {
+        // Find inactive voice
+        SparkleVoice* freeVoice = nullptr;
+        for (auto& voice : sparkleVoices) {
+            if (!voice.active) {
+                freeVoice = &voice;
+                break;
+            }
+        }
+        
+        if (freeVoice != nullptr) {
+            // Trigger probability: higher with transient, always some chance
+            const float triggerProb = isTransient ? 0.9f : (0.3f + 0.5f * glitchAmount);
+            
+            if (sparkleRng.nextFloat() < triggerProb) {
+                // ═══════════════════════════════════════════════════════════
+                // SPAWN NEW SPARKLE VOICE
+                // ═══════════════════════════════════════════════════════════
+                
+                // Fragment length: shorter at high glitch (more granular)
+                const float lengthMs = juce::jmap(glitchAmount,
+                    GlitchLooper::kMaxFragmentMs, GlitchLooper::kMinFragmentMs);
+                const float lengthVariation = 0.5f + sparkleRng.nextFloat(); // 0.5-1.5x
+                const float actualLengthMs = lengthMs * lengthVariation;
+                freeVoice->lengthSamples = std::max(64, 
+                    static_cast<int>(actualLengthMs * 0.001f * srFloat));
+                
+                // Memory scrubbing: random position in history buffer
+                const float scrubDepth = juce::jmap(glitchAmount,
+                    GlitchLooper::kMinScrubDepth, GlitchLooper::kMaxScrubDepth);
+                const float randomDepth = sparkleRng.nextFloat() * scrubDepth;
+                const int safetyMargin = freeVoice->lengthSamples + 512;
+                float startPos = static_cast<float>(ghostWriteHead) - 
+                    static_cast<float>(safetyMargin) - 
+                    randomDepth * static_cast<float>(historySize - safetyMargin);
+                while (startPos < 0.0f) startPos += histSizeF;
+                
+                // Pitch selection (harmonic palette for sparkle)
+                const float pitchRoll = sparkleRng.nextFloat();
+                float speed = 1.0f;
+                float cumProb = GlitchLooper::kRootProb;
+                
+                if (pitchRoll < cumProb) {
+                    speed = 1.0f;  // Root
+                } else if ((cumProb += GlitchLooper::kOctaveUpProb), pitchRoll < cumProb) {
+                    speed = 2.0f;  // Octave up (sparkle)
+                } else if ((cumProb += GlitchLooper::kDoubleOctaveProb), pitchRoll < cumProb) {
+                    // PITCH GATING: Don't use 4x on tiny grains (sounds like clicks)
+                    if (actualLengthMs >= GlitchLooper::kMinFragmentFor4xMs) {
+                        speed = 4.0f;  // 2 octaves up (twinkle)
+                    } else {
+                        speed = 2.0f;  // Fall back to octave up
+                    }
+                } else if ((cumProb += GlitchLooper::kFifthProb), pitchRoll < cumProb) {
+                    speed = 1.4983f;  // Fifth (ethereal)
+                } else if ((cumProb += GlitchLooper::kOctaveDownProb), pitchRoll < cumProb) {
+                    speed = 0.5f;  // Octave down (warmth)
+                } else {
+                    // Micro-shimmer (chorus-like)
+                    speed = juce::jmap(sparkleRng.nextFloat(),
+                        GlitchLooper::kMicroShimmerMin, GlitchLooper::kMicroShimmerMax);
+                }
+                
+                // Occasional reverse
+                if (sparkleRng.nextFloat() < GlitchLooper::kReverseProb) {
+                    speed = -speed;
+                }
+                
+                // === MICRO-DETUNE (per-voice, adds organic richness) ===
+                // Random ±cents converted to speed multiplier
+                const float detuneRand = sparkleRng.nextFloat() * 2.0f - 1.0f; // -1 to +1
+                const float detuneCents = detuneRand * GlitchLooper::kMicroDetuneCents;
+                freeVoice->microDetune = std::pow(2.0f, detuneCents / 1200.0f);
+                
+                // === STEREO MICRO-DELAY (Haas effect for width) ===
+                // Random offset for L/R, opposite directions
+                const float delayMs = GlitchLooper::kMicroDelayMinMs + 
+                    sparkleRng.nextFloat() * (GlitchLooper::kMicroDelayMaxMs - GlitchLooper::kMicroDelayMinMs);
+                const float delaySamples = delayMs * 0.001f * srFloat;
+                // One channel gets positive offset, other gets near-zero
+                if (sparkleRng.nextFloat() < 0.5f) {
+                    freeVoice->microDelayL = delaySamples;
+                    freeVoice->microDelayR = 0.0f;
+                } else {
+                    freeVoice->microDelayL = 0.0f;
+                    freeVoice->microDelayR = delaySamples;
+                }
+                
+                // Repeat count
+                freeVoice->repeatsRemaining = GlitchLooper::kMinRepeats + 
+                    static_cast<int>(sparkleRng.nextFloat() * 
+                        static_cast<float>(GlitchLooper::kMaxRepeats - GlitchLooper::kMinRepeats));
+                
+                // Stereo position (random scatter)
+                freeVoice->pan = sparkleRng.nextFloat();
+                freeVoice->panDir = (sparkleRng.nextFloat() < 0.5f) ? -1.0f : 1.0f;
+                freeVoice->panPhase = sparkleRng.nextFloat() * kTwoPi; // Random LFO phase
+                
+                // Set positions
+                freeVoice->startPos = startPos;
+                freeVoice->readPos = (speed < 0.0f) 
+                    ? (startPos + static_cast<float>(freeVoice->lengthSamples))
+                    : startPos;
+                freeVoice->speedRatio = speed;
+                freeVoice->sampleInSlice = 0;
+                freeVoice->active = true;
+                
+                // Reset transient peak to prevent re-triggering
+                if (isTransient) {
+                    transientPeak = transientEnvelope;
+                }
+            }
+        }
+        
+        // Schedule next trigger
+        const float triggerMs = juce::jmap(glitchAmount,
+            GlitchLooper::kMaxTriggerMs, GlitchLooper::kMinTriggerMs);
+        const float jitter = 1.0f + (sparkleRng.nextFloat() * 2.0f - 1.0f) * GlitchLooper::kTriggerJitter;
+        sparkleTriggerSamples = std::max(1, static_cast<int>(triggerMs * jitter * 0.001f * srFloat));
+    }
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // 3. UPDATE GLOBAL PING-PONG LFO
+    // ═══════════════════════════════════════════════════════════════════════
+    const float pingPongDepth = juce::jmap(glitchAmount,
+        GlitchLooper::kPingPongDepthMin, GlitchLooper::kPingPongDepthMax);
+    const float lfoIncrement = GlitchLooper::kPingPongRateHz * kTwoPi / srFloat;
+    sparklePingPongLfoPhase += lfoIncrement;
+    if (sparklePingPongLfoPhase > kTwoPi) sparklePingPongLfoPhase -= kTwoPi;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // 4. RENDER ALL ACTIVE VOICES
+    // ═══════════════════════════════════════════════════════════════════════
+    float sumL = 0.0f;
+    float sumR = 0.0f;
+    
+    // Per-voice gain (louder at high glitch)
+    const float voiceGainDb = juce::jmap(glitchAmount,
+        GlitchLooper::kVoiceGainLowDb, GlitchLooper::kVoiceGainHighDb);
+    const float voiceGain = juce::Decibels::decibelsToGain(voiceGainDb);
+    
+    for (auto& voice : sparkleVoices) {
+        if (!voice.active) continue;
+        
+        // Read sample (single position, no micro-delay for now)
+        const float sample = readGhostHistoryInterpolated(voice.readPos);
+        
+        // === GRAIN ENVELOPE ===
+        float envelope = 1.0f;
+        if constexpr (GlitchLooper::kUseExponentialEnvelope) {
+            // Exponential envelope: natural analog-style attack/release
+            // Attack: 1 - exp(-k*t) rises quickly then slows
+            // Release: exp(-k*t) decays naturally
+            const float phase = static_cast<float>(voice.sampleInSlice) / 
+                static_cast<float>(voice.lengthSamples);
+            const float attackEnd = GlitchLooper::kExpAttackRatio;
+            const float releaseStart = 1.0f - GlitchLooper::kExpReleaseRatio;
+            const float k = GlitchLooper::kExpCurvature;
+            
+            if (phase < attackEnd) {
+                // Attack phase: exponential rise
+                const float t = phase / attackEnd;  // 0 to 1 within attack
+                envelope = 1.0f - std::exp(-k * t);
+                // Normalize so it reaches ~1.0 at end of attack
+                envelope = envelope / (1.0f - std::exp(-k));
+            } else if (phase > releaseStart) {
+                // Release phase: exponential decay
+                const float t = (phase - releaseStart) / GlitchLooper::kExpReleaseRatio;  // 0 to 1
+                envelope = std::exp(-k * t);
+            }
+            // else envelope stays 1.0 (sustain)
+        } else {
+            // Fallback: S-curve envelope
+            const int fadeLen = std::max(1, static_cast<int>(
+                std::max(GlitchLooper::kMinFadeMs * 0.001f * srFloat,
+                         static_cast<float>(voice.lengthSamples) * GlitchLooper::kFadeRatio)));
+            
+            if (voice.sampleInSlice < fadeLen) {
+                envelope = static_cast<float>(voice.sampleInSlice) / static_cast<float>(fadeLen);
+            } else if (voice.sampleInSlice >= voice.lengthSamples - fadeLen) {
+                const int samplesFromEnd = voice.lengthSamples - voice.sampleInSlice;
+                envelope = juce::jlimit(0.0f, 1.0f, 
+                    static_cast<float>(samplesFromEnd) / static_cast<float>(fadeLen));
+            }
+            // S-curve for smoother fade
+            envelope = envelope * envelope * (3.0f - 2.0f * envelope);
+        }
+        
+        // Calculate stereo position with ping-pong motion
+        float currentPan = voice.pan;
+        if (pingPongDepth > 0.01f) {
+            const float lfoValue = std::sin(voice.panPhase + sparklePingPongLfoPhase);
+            currentPan = juce::jlimit(0.0f, 1.0f, 
+                voice.pan + voice.panDir * pingPongDepth * lfoValue * 0.5f);
+        }
+        
+        // Apply gain, envelope, and pan (same sample for L/R, panned)
+        const float voiceSample = sample * envelope * voiceGain;
+        sumL += voiceSample * (1.0f - currentPan);
+        sumR += voiceSample * currentPan;
+        
+        // Advance read position (no micro-detune for now)
+        voice.readPos += voice.speedRatio;
+        while (voice.readPos >= histSizeF) voice.readPos -= histSizeF;
+        while (voice.readPos < 0.0f) voice.readPos += histSizeF;
+        
+        // Advance sample counter
+        ++voice.sampleInSlice;
+        if (voice.sampleInSlice >= voice.lengthSamples) {
+            --voice.repeatsRemaining;
+            if (voice.repeatsRemaining <= 0) {
+                voice.active = false;
+            } else {
+                // Reset for next repeat
+                voice.sampleInSlice = 0;
+                voice.readPos = (voice.speedRatio < 0.0f)
+                    ? (voice.startPos + static_cast<float>(voice.lengthSamples))
+                    : voice.startPos;
+            }
+        }
+    }
+    
+    // Filters disabled for now - direct output
+    outL = sumL;
+    outR = sumR;
 }
 
 } // namespace threadbare::dsp

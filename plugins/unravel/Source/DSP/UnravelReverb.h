@@ -29,6 +29,7 @@ struct UnravelState
     float puckX = 0.0f;
     float puckY = 0.0f;
     float ghost = 0.0f;
+    float glitch = 0.0f;     // Glitch Looper amount (0-1)
     float duck = 0.0f;
     float erPreDelay = 0.0f; // Early Reflections pre-delay (0-100ms)
     float inLevel = 0.0f;
@@ -114,6 +115,45 @@ private:
     juce::Random ghostRng;
     int samplesSinceLastSpawn = 0;
     int grainSpawnInterval = 0; // Cached spawn interval in samples (calculated in prepare())
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // GLITCH SPARKLE STATE
+    // Multi-voice granular sparkle - shimmering, articulate fragments
+    // ═══════════════════════════════════════════════════════════════════════
+    static constexpr std::size_t kSparkleVoices = 4;
+    
+    struct SparkleVoice {
+        float readPos = 0.0f;       // Current read position in ghostHistory (fractional)
+        float startPos = 0.0f;      // Start position for repeat
+        int lengthSamples = 0;      // Fragment duration in samples
+        float speedRatio = 1.0f;    // Pitch (1.0 = normal, 2.0 = octave up, 4.0 = twinkle)
+        int repeatsRemaining = 0;   // How many more times to play
+        int sampleInSlice = 0;      // Current position within fragment
+        float pan = 0.5f;           // Stereo position (0=L, 1=R)
+        float panDir = 1.0f;        // Pan motion direction (+1 or -1)
+        float panPhase = 0.0f;      // LFO phase for ping-pong motion
+        float microDetune = 0.0f;   // Per-voice micro-detune factor (multiplier, e.g. 1.002)
+        float microDelayL = 0.0f;   // Stereo micro-delay offset for L channel (samples)
+        float microDelayR = 0.0f;   // Stereo micro-delay offset for R channel (samples)
+        bool active = false;
+    };
+    
+    std::array<SparkleVoice, kSparkleVoices> sparkleVoices;
+    int sparkleTriggerSamples = 0;                // Countdown to next voice trigger
+    float sparklePingPongLfoPhase = 0.0f;         // Global LFO phase for pan motion
+    juce::Random sparkleRng;                      // Dedicated RNG
+    
+    // Sparkle-only filter state (1-pole HPF + LPF for beauty)
+    float sparkleHpfStateL = 0.0f;
+    float sparkleHpfStateR = 0.0f;
+    float sparkleLpfStateL = 0.0f;
+    float sparkleLpfStateR = 0.0f;
+    
+    // Transient detection state (for reactive triggering)
+    float transientEnvelope = 0.0f;
+    float transientPeak = 0.0f;
+    float transientAttackCoeff = 0.0f;
+    float transientReleaseCoeff = 0.0f;
     
     // ═══════════════════════════════════════════════════════════════════════
     // DISINTEGRATION LOOPER STATE
@@ -410,16 +450,13 @@ private:
     // Helper functions
     float readDelayInterpolated(std::size_t lineIndex, float readPosition) const noexcept;
     float readGhostHistory(float readPosition) const noexcept;
-    void trySpawnGrain(float ghostAmount, float puckX, float glitchBlend, float howlBlend) noexcept;
+    void trySpawnGrain(float ghostAmount, float puckX) noexcept;
     void processGhostEngine(float ghostAmount, float& outL, float& outR) noexcept;
     
-    // Zone-based grain spawn helpers - separated to preserve RNG sequence for A/B null testing
-    // spawnCloudGrain: verbatim original behavior (mid zone baseline)
-    // spawnGlitchGrain: tempo-synced rhythmic fragments (left zone)
-    // spawnHowlGrain: sustained ghostly texture (right zone)
-    void spawnCloudGrain(Grain* grain, float ghostAmount, float puckX) noexcept;
-    void spawnGlitchGrain(Grain* grain, float ghostAmount, float puckX, float glitchBlend) noexcept;
-    void spawnHowlGrain(Grain* grain, float ghostAmount, float puckX, float howlBlend) noexcept;
+    // Glitch Looper functions
+    void processGlitchLooper(float& outL, float& outR, float glitchAmount, float safeTempo) noexcept;
+    void triggerGlitchSlice(float tempo, float glitchAmount) noexcept;
+    float readGhostHistoryInterpolated(float position) const noexcept;
 };
 
 } // namespace threadbare::dsp

@@ -225,6 +225,7 @@ void UnravelEditor::handleUpdate()
     obj->setProperty("tone", state.tone);
     obj->setProperty("drift", state.drift);
     obj->setProperty("ghost", state.ghost);
+    obj->setProperty("glitch", state.glitch);
     obj->setProperty("duck", state.duck);
     obj->setProperty("freeze", state.freeze);
     

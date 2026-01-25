@@ -224,6 +224,7 @@ export class Controls {
       tone: this.formatTone.bind(this),
       drift: this.formatPercent.bind(this),
       ghost: this.formatPercent.bind(this),
+      glitch: this.formatPercent.bind(this),
       duck: this.formatPercent.bind(this),
       mix: this.formatPercent.bind(this),
       output: this.formatDb.bind(this)
@@ -881,6 +882,7 @@ export class Controls {
       'tone': 'tone',
       'drift': 'drift',
       'ghost': 'ghost',
+      'glitch': 'glitch',
       'duck': 'duck',
       'mix': 'mix',
       'output': 'output'

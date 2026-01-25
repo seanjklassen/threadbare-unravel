@@ -70,6 +70,7 @@ private:
     juce::AudioParameterFloat* toneParam = nullptr;
     juce::AudioParameterFloat* driftParam = nullptr;
     juce::AudioParameterFloat* ghostParam = nullptr;
+    juce::AudioParameterFloat* glitchParam = nullptr;
     juce::AudioParameterFloat* duckParam = nullptr;
     juce::AudioParameterFloat* erPreDelayParam = nullptr;
     juce::AudioParameterBool* freezeParam = nullptr;

@@ -62,8 +62,9 @@ struct EarlyReflections {
     };
     
     // Tap gains (decreasing over time for natural decay)
+    // Reduced to prevent stacking: sum = 0.35+0.3+0.25+0.2+0.15+0.1 = 1.35 (safe)
     static constexpr float kTapGains[kNumTaps] = {
-        0.7f, 0.6f, 0.5f, 0.4f, 0.3f, 0.2f
+        0.35f, 0.30f, 0.25f, 0.20f, 0.15f, 0.10f
     };
     
     // PuckX Proximity mapping:
@@ -85,9 +86,9 @@ struct Modulation {
 
 struct Ghost {
     // How long the ghost remembers (seconds).
-    // Extended to 1.2s for deeper memory recall while keeping lookback at 750ms.
-    // This provides 450ms safety margin for extreme grain speeds/positions.
-    static constexpr float kHistorySeconds = 1.2f;
+    // Extended to 2.0s to support Glitch Looper slices at slow tempos.
+    // At 60 BPM with 1/2 note division, slices can be 500ms + repeats + margin.
+    static constexpr float kHistorySeconds = 2.0f;
 
     // Grain durations (seconds). Wider range for more texture variety.
     static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
@@ -101,8 +102,9 @@ struct Ghost {
     static constexpr float kShimmerProbability = 0.25f; // 25% for obvious sparkle
 
     // Ghost gain bounds relative to FDN input (dB).
-    static constexpr float kMinGainDb = -24.0f; // Louder minimum
-    static constexpr float kMaxGainDb = -6.0f;  // Reduced from -3dB to prevent clipping with many grains
+    // With 8 grains, max sum at -12dB each = 8 * 0.25 = 2.0 linear (safe)
+    static constexpr float kMinGainDb = -24.0f;
+    static constexpr float kMaxGainDb = -12.0f;  // Reduced to prevent 8-grain stacking distortion
     
     // === REVERSE MEMORY PLAYBACK ===
     // Probability of reverse grains at ghost=1.0 (squared scaling).
@@ -134,96 +136,6 @@ struct Ghost {
     // These match the current hardcoded values in process() - centralizing for consistency
     static constexpr float kCloudSpawnIntervalMs = 15.0f;  // Current grainSpawnInterval (15ms)
     static constexpr float kCloudSpawnProbability = 0.9f;  // Current spawn probability factor
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ZONE THRESHOLDS
-// Left = Glitch (rhythmic fragments), Mid = Cloud (baseline), Right = Howl (ghostly)
-// ═══════════════════════════════════════════════════════════════════════════
-struct Zones {
-    static constexpr float kLeftThreshold = -0.7f;    // Below this = full glitch
-    static constexpr float kRightThreshold = 0.7f;    // Above this = full howl
-    // Linear blend between thresholds; mid-zone uses cloud baseline
-    
-    // Ghost activation (same for both zones)
-    static constexpr float kGhostMin = 0.2f;          // Start blending at 20% ghost
-    static constexpr float kGhostMax = 0.6f;          // Full effect at 60% ghost
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// GLITCH MODE (Left puckX)
-// Tempo-synced rhythmic fragments with pitch-shifting
-// Evokes "fragmented playback" - recent, punchy, transient-preserving
-// ═══════════════════════════════════════════════════════════════════════════
-struct Glitch {
-    // === GRAIN CHARACTERISTICS ===
-    // Short-medium for transient preservation without clicks
-    static constexpr float kGrainMinSec = 0.025f;     // 25ms
-    static constexpr float kGrainMaxSec = 0.070f;     // 70ms
-    
-    // === TEMPO SYNC ===
-    static constexpr float kDefaultDivision = 0.125f; // 1/8 note base
-    static constexpr float kJitterMs = 8.0f;          // ±8ms organic variation
-    static constexpr float kMinTempo = 40.0f;         // Clamp slow tempos
-    static constexpr float kMaxTempo = 240.0f;        // Clamp fast tempos
-    static constexpr float kSpawnProbability = 0.9f;  // High probability on grid
-    
-    // === PITCH (Harmonic streams + humanize) ===
-    static constexpr float kRootSpeed = 1.0f;
-    static constexpr float kFifthSpeed = 1.4983f;     // 2^(7/12)
-    static constexpr float kOctaveSpeed = 2.0f;
-    static constexpr float kRootWeight = 0.55f;       // Favor root for clarity
-    static constexpr float kFifthWeight = 0.28f;
-    static constexpr float kOctaveWeight = 0.17f;
-    static constexpr float kDetuneMaxCents = 8.0f;    // Subtle humanize (±8 cents)
-    
-    // === REVERSE ===
-    static constexpr float kReverseProbability = 0.12f; // Some reverse for interest
-    static constexpr float kReverseGainReduction = 0.8f;
-    
-    // === POSITION: Recent material for punch ===
-    static constexpr float kMaxLookbackMs = 120.0f;   // Very recent
-    static constexpr float kSafetyMarginMs = 40.0f;   // Buffer from write head
-    
-    // === AMPLITUDE ===
-    static constexpr float kMinGainDb = -18.0f;
-    static constexpr float kMaxGainDb = -6.0f;
-    static constexpr float kAmpVariationDb = 4.0f;    // Moderate variation
-    
-    // === STEREO ===
-    static constexpr float kPanWidth = 0.5f;          // Narrower for punch
-};
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HOWL MODE (Right puckX)
-// Sustained ghostly texture with shimmer bias
-// Evokes "distant memories" - long, shimmering, ethereal
-// ═══════════════════════════════════════════════════════════════════════════
-struct Howl {
-    // === GRAIN CHARACTERISTICS ===
-    // Long grains for sustained howl/pad texture
-    static constexpr float kGrainMinSec = 0.120f;     // 120ms
-    static constexpr float kGrainMaxSec = 0.400f;     // 400ms
-    
-    // === SPAWN TIMING ===
-    static constexpr float kSpawnIntervalMs = 35.0f;  // Moderate density
-    static constexpr float kSpawnProbability = 0.85f;
-    
-    // === LOOKBACK: Distant memories ===
-    static constexpr float kMinLookbackMs = 300.0f;   // Not too recent
-    static constexpr float kMaxLookbackMs = 900.0f;   // Deep into history
-    static constexpr float kSafetyMarginMs = 100.0f;  // Extra margin for 2x grains + long lookback
-    
-    // === SHIMMER BIAS ===
-    static constexpr float kShimmerProbability = 0.40f;  // High shimmer for ghostly feel
-    static constexpr float kDetuneSemi = 0.15f;          // Slightly more detune
-    
-    // === AMPLITUDE ===
-    static constexpr float kMinGainDb = -21.0f;       // Quieter base
-    static constexpr float kMaxGainDb = -9.0f;
-    
-    // === STEREO ===
-    static constexpr float kPanWidth = 0.9f;          // Wide for immersion
 };
 
 struct Freeze {
@@ -261,6 +173,104 @@ struct Freeze {
     static constexpr float kFreezeMinDriftSamples = 25.0f;
     static constexpr float kFreezeGhostLevel = 0.25f;
     static constexpr float kFreezeLpfCoef = 0.75f;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLITCH SPARKLE
+// Multi-voice granular sparkle effect - shimmering, articulate fragments
+// Inspired by Phantom Limb, tuned for beauty and clarity
+// ═══════════════════════════════════════════════════════════════════════════
+struct GlitchLooper {
+    // === VOICE ARCHITECTURE ===
+    static constexpr int kMaxVoices = 4;              // 4 simultaneous micro-loopers
+    static constexpr int kVoicesAtLow = 1;            // Active voices at low glitch
+    static constexpr int kVoicesAtMid = 3;            // Active voices at mid glitch  
+    static constexpr int kVoicesAtHigh = 4;           // Active voices at high glitch
+    
+    // === FRAGMENT SIZES (ms) - shorter for granular sparkle ===
+    static constexpr float kMinFragmentMs = 20.0f;    // Shortest grain (articulate, not timbral)
+    static constexpr float kMaxFragmentMs = 150.0f;   // Longest grain at low glitch
+    
+    // === MEMORY SCRUBBING (random buffer access) ===
+    static constexpr float kMinScrubDepth = 0.1f;     // 10% of buffer = recent
+    static constexpr float kMaxScrubDepth = 0.8f;     // 80% of buffer = deep memory
+    
+    // === TRIGGER TIMING (ms between new voices) ===
+    static constexpr float kMinTriggerMs = 15.0f;     // Fastest trigger at high glitch
+    static constexpr float kMaxTriggerMs = 400.0f;    // Slowest trigger at low glitch
+    static constexpr float kTriggerJitter = 0.3f;     // +/- random variation
+    
+    // === PITCH PALETTE (harmonic, sparkly) ===
+    static constexpr float kRootProb = 0.30f;         // Normal pitch (grounding)
+    static constexpr float kOctaveUpProb = 0.25f;     // 2x speed (sparkle)
+    static constexpr float kDoubleOctaveProb = 0.15f; // 4x speed (twinkle)
+    static constexpr float kFifthProb = 0.15f;        // 1.5x speed (ethereal)
+    static constexpr float kOctaveDownProb = 0.10f;   // 0.5x speed (warmth)
+    static constexpr float kMicroShimmerProb = 0.05f; // 1.02-1.08x (chorus)
+    static constexpr float kMicroShimmerMin = 1.02f;
+    static constexpr float kMicroShimmerMax = 1.08f;
+    
+    // === ENVELOPE (articulate, not smeared) ===
+    static constexpr float kFadeRatio = 0.12f;        // 12% of slice is fade (short, articulate)
+    static constexpr float kMinFadeMs = 3.0f;         // Minimum fade to prevent clicks
+    
+    // === STEREO SCATTERING + PING-PONG ===
+    static constexpr float kPingPongDepthMin = 0.0f;  // Low glitch: static pan
+    static constexpr float kPingPongDepthMax = 0.7f;  // High glitch: voices sweep 70% across
+    static constexpr float kPingPongRateHz = 2.5f;    // LFO rate for pan motion
+    
+    // === GAIN STAGING (per voice) ===
+    // Reduced to prevent clipping when multiple voices stack
+    // 4 voices at -15dB = ~-9dB total (safe headroom)
+    static constexpr float kVoiceGainLowDb = -18.0f;  // Per-voice gain at low glitch
+    static constexpr float kVoiceGainHighDb = -12.0f; // Per-voice gain at high glitch
+    
+    // === REPEAT COUNT ===
+    static constexpr int kMinRepeats = 1;             // Single sparkle
+    static constexpr int kMaxRepeats = 3;             // Short stutter
+    
+    // === TRANSIENT DETECTION (still used for reactive triggering) ===
+    static constexpr float kTransientThresholdDb = -36.0f;
+    static constexpr float kTransientRatio = 1.5f;
+    static constexpr float kEnvelopeAttackMs = 0.5f;
+    static constexpr float kEnvelopeReleaseMs = 50.0f;
+    
+    // === REVERSE (occasional) ===
+    static constexpr float kReverseProb = 0.08f;      // 8% chance of reverse grain
+    
+    // === TEMPO/SAFETY ===
+    static constexpr float kFallbackTempo = 120.0f;
+    static constexpr float kMinTempo = 20.0f;
+    static constexpr float kMaxTempo = 300.0f;
+    
+    // ═══════════════════════════════════════════════════════════════════════
+    // SPARKLE QUALITY ENHANCEMENTS
+    // ═══════════════════════════════════════════════════════════════════════
+    
+    // === GRAIN ENVELOPE ===
+    // Exponential: natural analog-style attack/release (musical, organic)
+    // S-curve: polynomial smoothstep (mathematical, precise)
+    static constexpr bool kUseExponentialEnvelope = true;
+    static constexpr float kExpAttackRatio = 0.15f;   // 15% of grain is attack
+    static constexpr float kExpReleaseRatio = 0.25f;  // 25% of grain is release
+    static constexpr float kExpCurvature = 4.0f;      // Higher = snappier attack/release
+    
+    // === SPARKLE-ONLY FILTERING (HPF + LPF) ===
+    // Gentle filtering - just remove extreme mud and harsh aliasing
+    static constexpr float kSparkleHpfHz = 80.0f;          // Very gentle - only subsonic mud
+    static constexpr float kSparkleLpfHzLow = 18000.0f;    // Nearly transparent at low glitch
+    static constexpr float kSparkleLpfHzHigh = 14000.0f;   // Still bright at high glitch
+    
+    // === MICRO-DETUNE (per voice, adds organic richness) ===
+    static constexpr float kMicroDetuneCents = 4.0f;       // Max detune ±4 cents (subtle)
+    
+    // === STEREO MICRO-DELAY (Haas effect for width) ===
+    static constexpr float kMicroDelayMinMs = 1.0f;        // Minimum offset
+    static constexpr float kMicroDelayMaxMs = 6.0f;        // Maximum offset (< 8ms to avoid echo)
+    
+    // === PITCH GATING FOR TINY GRAINS ===
+    // Don't play 4x pitch on very short grains (sounds like clicks)
+    static constexpr float kMinFragmentFor4xMs = 40.0f;    // Minimum 40ms for 4x pitch
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -459,9 +469,6 @@ struct Debug {
     // (11) Internal headroom boost (scales down before nonlinearities, up after)
     // Higher values = more headroom, less saturation/aliasing
     static constexpr float kInternalHeadroomDb = 6.0f; // 6dB extra headroom
-    
-    // (12) Scatter mode enable (for A/B testing during tuning)
-    static constexpr bool kEnableScatter = true;
 };
 
 } // namespace threadbare::tuning

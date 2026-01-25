@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2026-01-18T19:31:13.840Z
+// Generated at: 2026-01-24T18:56:39.866Z
 // =============================================================================
 
 /**
@@ -76,6 +76,14 @@ export const PARAMS = {
     max: 1,
     default: 0.15
   },
+  glitch: {
+    id: 'glitch',
+    name: 'Glitch',
+    type: 'float',
+    min: 0,
+    max: 1,
+    default: 0
+  },
   duck: {
     id: 'duck',
     name: 'Duck',
@@ -120,6 +128,7 @@ export const PARAM_IDS = [
   'tone',
   'drift',
   'ghost',
+  'glitch',
   'duck',
   'erPreDelay',
   'freeze',
