@@ -236,7 +236,7 @@ struct GlitchLooper {
     static constexpr float kEnvelopeReleaseMs = 50.0f;
     
     // === REVERSE (more frequent for dreamy effect) ===
-    static constexpr float kReverseProb = 0.20f;      // 20% chance of reverse grain
+    static constexpr float kReverseProb = 0.30f;      // 30% chance of reverse grain
     
     // === TEMPO/SAFETY ===
     static constexpr float kFallbackTempo = 120.0f;

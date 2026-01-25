@@ -2144,16 +2144,19 @@ void UnravelReverb::processGlitchLooper(
         
         if (freeVoice != nullptr) {
             // Trigger probability: higher with transient, always some chance
-            const float triggerProb = isTransient ? 0.9f : (0.3f + 0.5f * glitchAmount);
+            const float triggerProb = isTransient ? 0.95f : (0.3f + 0.5f * glitchAmount);
             
             if (sparkleRng.nextFloat() < triggerProb) {
                 // ═══════════════════════════════════════════════════════════
                 // SPAWN NEW SPARKLE VOICE
                 // ═══════════════════════════════════════════════════════════
                 
-                // Fragment length: shorter at high glitch (more granular)
-                const float lengthMs = juce::jmap(glitchAmount,
+                // Fragment length: shorter at high glitch, even shorter on transients
+                float lengthMs = juce::jmap(glitchAmount,
                     GlitchLooper::kMaxFragmentMs, GlitchLooper::kMinFragmentMs);
+                if (isTransient) {
+                    lengthMs *= 0.6f;  // 40% shorter on transients (snappier)
+                }
                 const float lengthVariation = 0.5f + sparkleRng.nextFloat(); // 0.5-1.5x
                 const float actualLengthMs = lengthMs * lengthVariation;
                 freeVoice->lengthSamples = std::max(64, 
@@ -2170,33 +2173,51 @@ void UnravelReverb::processGlitchLooper(
                 while (startPos < 0.0f) startPos += histSizeF;
                 
                 // Pitch selection (harmonic palette for sparkle)
+                // On transients: bias toward higher pitches (more sparkle/attack)
                 const float pitchRoll = sparkleRng.nextFloat();
                 float speed = 1.0f;
-                float cumProb = GlitchLooper::kRootProb;
                 
-                if (pitchRoll < cumProb) {
-                    speed = 1.0f;  // Root
-                } else if ((cumProb += GlitchLooper::kOctaveUpProb), pitchRoll < cumProb) {
-                    speed = 2.0f;  // Octave up (sparkle)
-                } else if ((cumProb += GlitchLooper::kDoubleOctaveProb), pitchRoll < cumProb) {
-                    // PITCH GATING: Don't use 4x on tiny grains (sounds like clicks)
-                    if (actualLengthMs >= GlitchLooper::kMinFragmentFor4xMs) {
-                        speed = 4.0f;  // 2 octaves up (twinkle)
+                if (isTransient) {
+                    // Transient palette: more octave up and fifth, less root/down
+                    if (pitchRoll < 0.15f) {
+                        speed = 1.0f;  // Root (reduced)
+                    } else if (pitchRoll < 0.50f) {
+                        speed = 2.0f;  // Octave up (boosted for attack)
+                    } else if (pitchRoll < 0.65f) {
+                        speed = 1.4983f;  // Fifth (boosted)
+                    } else if (pitchRoll < 0.80f && actualLengthMs >= GlitchLooper::kMinFragmentFor4xMs) {
+                        speed = 4.0f;  // 2 octaves (twinkle)
                     } else {
-                        speed = 2.0f;  // Fall back to octave up
+                        speed = 2.0f;  // Fallback to octave up
                     }
-                } else if ((cumProb += GlitchLooper::kFifthProb), pitchRoll < cumProb) {
-                    speed = 1.4983f;  // Fifth (ethereal)
-                } else if ((cumProb += GlitchLooper::kOctaveDownProb), pitchRoll < cumProb) {
-                    speed = 0.5f;  // Octave down (warmth)
                 } else {
-                    // Micro-shimmer (chorus-like)
-                    speed = juce::jmap(sparkleRng.nextFloat(),
-                        GlitchLooper::kMicroShimmerMin, GlitchLooper::kMicroShimmerMax);
+                    // Normal palette from tuning
+                    float cumProb = GlitchLooper::kRootProb;
+                    if (pitchRoll < cumProb) {
+                        speed = 1.0f;  // Root
+                    } else if ((cumProb += GlitchLooper::kOctaveUpProb), pitchRoll < cumProb) {
+                        speed = 2.0f;  // Octave up (sparkle)
+                    } else if ((cumProb += GlitchLooper::kDoubleOctaveProb), pitchRoll < cumProb) {
+                        if (actualLengthMs >= GlitchLooper::kMinFragmentFor4xMs) {
+                            speed = 4.0f;  // 2 octaves up (twinkle)
+                        } else {
+                            speed = 2.0f;  // Fall back to octave up
+                        }
+                    } else if ((cumProb += GlitchLooper::kFifthProb), pitchRoll < cumProb) {
+                        speed = 1.4983f;  // Fifth (ethereal)
+                    } else if ((cumProb += GlitchLooper::kOctaveDownProb), pitchRoll < cumProb) {
+                        speed = 0.5f;  // Octave down (warmth)
+                    } else {
+                        // Micro-shimmer (chorus-like)
+                        speed = juce::jmap(sparkleRng.nextFloat(),
+                            GlitchLooper::kMicroShimmerMin, GlitchLooper::kMicroShimmerMax);
+                    }
                 }
                 
-                // Occasional reverse
-                if (sparkleRng.nextFloat() < GlitchLooper::kReverseProb) {
+                // Occasional reverse (slightly less likely on transients)
+                const float reverseProb = isTransient ? 
+                    GlitchLooper::kReverseProb * 0.5f : GlitchLooper::kReverseProb;
+                if (sparkleRng.nextFloat() < reverseProb) {
                     speed = -speed;
                 }
                 
@@ -2254,9 +2275,12 @@ void UnravelReverb::processGlitchLooper(
             }
         }
         
-        // Schedule next trigger
-        const float triggerMs = juce::jmap(glitchAmount,
+        // Schedule next trigger (faster after transients for burst effect)
+        float triggerMs = juce::jmap(glitchAmount,
             GlitchLooper::kMaxTriggerMs, GlitchLooper::kMinTriggerMs);
+        if (isTransient) {
+            triggerMs *= 0.4f;  // 60% faster retrigger after transient (burst of voices)
+        }
         const float jitter = 1.0f + (sparkleRng.nextFloat() * 2.0f - 1.0f) * GlitchLooper::kTriggerJitter;
         sparkleTriggerSamples = std::max(1, static_cast<int>(triggerMs * jitter * 0.001f * srFloat));
     }
