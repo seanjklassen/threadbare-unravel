@@ -11,6 +11,10 @@
   --text: #C8C7B8;
   --accent: #E0E993;
   --accent-hover: #E8B8A8;
+  --focus-ring-color: var(--accent);
+  --focus-ring-inset: inset 0 0 0 1px var(--focus-ring-color);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring-color);
+  --focus-ring-strong: 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-ring-color);
   /* Subtle by default; pressed uses a tighter, "closer to surface" shadow */
   --puck-shadow:
     0 10px 16px -10px rgba(0, 0, 0, 0.20),
@@ -49,26 +53,28 @@ body {
 .btn-settings:focus-visible,
 .pupil-toggle:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: var(--focus-ring-inset);
 }
 
 /* Focus state for settings button when in close mode */
 .tb-app.settings-open .btn-settings:focus-visible {
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+  box-shadow: var(--focus-ring);
 }
 
 /* Elastic slider focus state */
 .elastic-slider:focus-visible {
   outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 999px;
 }
 
 .elastic-slider:focus-visible .slider-path {
-  stroke: var(--accent);
+  stroke: var(--focus-ring-color);
 }
 
 .elastic-slider:focus-visible .slider-thumb {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent);
+  background: var(--focus-ring-color);
+  box-shadow: var(--focus-ring-strong);
 }
 
 /* ===== APP LOAD ANIMATION ===== */
@@ -631,9 +637,10 @@ body {
 }
 
 /* Focus styling (keyboard nav) - soft radial glow, no sibling defocus */
-.tb-app.presets-open .preset-option:focus {
+.tb-app.presets-open .preset-option:focus-visible {
   background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
   outline: none;
+  box-shadow: var(--focus-ring-inset);
 }
 
 /* Sibling defocus: only on hover (not focus) to prevent blur on initial open */

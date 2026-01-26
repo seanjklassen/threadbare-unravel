@@ -152,13 +152,15 @@ export class ElasticSlider {
     this.element.setPointerCapture?.(event.pointerId)
     
     const rect = this.track.getBoundingClientRect()
-    const currentRenderValue = Math.max(
-      -RENDER_OVERSHOOT,
-      Math.min(1 + RENDER_OVERSHOOT, this.lastVisualValue ?? this.displayValue ?? this.value)
-    )
-    const thumbCenterX = rect.left + rect.width * currentRenderValue
+    const thumbRect = this.thumbEl?.getBoundingClientRect()
+    const thumbCenterX = thumbRect
+      ? (thumbRect.left + thumbRect.width * 0.5)
+      : rect.left + rect.width * (this.displayValue ?? this.value)
     const isOnThumb = event.target === this.thumbEl
-      || Math.abs(event.clientX - thumbCenterX) <= (THUMB_RADIUS_PX + HIT_SLOP_PX)
+      || (thumbRect
+        ? (event.clientX >= thumbRect.left - HIT_SLOP_PX
+          && event.clientX <= thumbRect.right + HIT_SLOP_PX)
+        : Math.abs(event.clientX - thumbCenterX) <= (THUMB_RADIUS_PX + HIT_SLOP_PX))
     
     let rawValue
     let clampedValue
@@ -167,6 +169,10 @@ export class ElasticSlider {
       this.isThumbDrag = true
       this.allowSpringDuringDrag = false
       this.dragStartX = event.clientX
+      const currentRenderValue = Math.max(
+        -RENDER_OVERSHOOT,
+        Math.min(1 + RENDER_OVERSHOOT, this.displayValue ?? this.value)
+      )
       this.dragStartRaw = rubberBandInverse(currentRenderValue)
       rawValue = this.dragStartRaw
       clampedValue = clamp(rawValue)
@@ -342,6 +348,7 @@ export class ElasticSlider {
       
       if (isSettled) {
         this.displayValue = this.targetValue
+        this.lastVisualValue = this.displayValue
         this.velocity = 0
         this.animationFrame = null
         this.updateDisplay(this.displayValue)
@@ -391,6 +398,8 @@ export class ElasticSlider {
       this.thumbEl.style.left = `${renderValue * 100}%`
       this.thumbEl.style.transform = 'translate(-50%, -50%)'
     }
+    
+    this.lastVisualValue = value
     
     // Update ARIA (always use clamped value)
     this.element.setAttribute('aria-valuenow', clampedValue.toFixed(3))

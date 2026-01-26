@@ -185,6 +185,9 @@ UnravelEditor::UnravelEditor(UnravelProcessor& proc)
     setSize(kEditorWidth, kEditorHeight);
 
     addAndMakeVisible(webView);
+    setWantsKeyboardFocus(false);
+    webView.setWantsKeyboardFocus(true);
+    webView.setMouseClickGrabsKeyboardFocus(true);
     loadInitialURL();
 
     // Drive UI updates via VBlank (screen refresh rate)

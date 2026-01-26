@@ -160,7 +160,6 @@ export class Controls {
 
     this.onSettingsBtnPointerUp = this.onSettingsBtnPointerUp.bind(this)
     this.onDocPointerDownCaptureForSettings = this.onDocPointerDownCaptureForSettings.bind(this)
-    this.onDocKeyDownCaptureForSettings = this.onDocKeyDownCaptureForSettings.bind(this)
     this.onCloseSettingsEvent = this.onCloseSettingsEvent.bind(this)
 
     this.initDrawerControls()
@@ -367,8 +366,6 @@ export class Controls {
     } else {
       document.addEventListener('mousedown', this.onDocPointerDownCaptureForSettings, { capture: true })
     }
-    document.addEventListener('keydown', this.onDocKeyDownCaptureForSettings, { capture: true })
-
     // Allow other modules (e.g. presets) to close settings deterministically
     document.addEventListener('tb:close-settings', this.onCloseSettingsEvent)
   }
@@ -404,15 +401,6 @@ export class Controls {
       this.settingsIgnoreClickUntil = performance.now() + 400
       this.toggleSettingsView(false, { reason: 'backdrop', deferFocusToBtn: true, suppressToggleMs: 250 })
     }
-  }
-
-  onDocKeyDownCaptureForSettings(e) {
-    if (this.settingsState !== 'open') return
-    if (e.key !== 'Escape') return
-    e.preventDefault()
-    e.stopPropagation()
-    this.settingsIgnoreClickUntil = performance.now() + 400
-    this.toggleSettingsView(false, { reason: 'escape', deferFocusToBtn: true, suppressToggleMs: 250 })
   }
 
   refreshBounds() {

@@ -18,7 +18,7 @@ export class Presets {
     // Manual regression checklist:
     // - Mouse: click pill toggles open/close; click option selects and closes; click outside closes; no flash on release.
     // - Mouse: press option, drag off, release => should NOT select.
-    // - Keyboard: Enter/Space toggles; Esc closes; Arrow keys navigate while open; focus stays sensible.
+    // - Keyboard: Enter/Space toggles; Arrow keys navigate while open; focus stays sensible.
     // - Rapid: repeated quick clicks on pill/option/outside => no reopen/flash.
     // - Other UI: puck/orb dragging and other controls behave unchanged.
 
@@ -171,12 +171,6 @@ export class Presets {
         if (this.state === 'closed') {
           this.openDropdown()
         } else {
-          this.closeDropdown()
-        }
-        break
-      case 'Escape':
-        if (this.state === 'open') {
-          e.preventDefault()
           this.closeDropdown()
         }
         break
@@ -392,6 +386,18 @@ export class Presets {
           e.preventDefault()
           // Use effect-based selection (handles its own close)
           this.selectWithEffect(index)
+          return
+        }
+
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          this.focusNextOption(1)
+          return
+        }
+
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          this.focusNextOption(-1)
         }
       })
       

@@ -25,6 +25,7 @@ UnravelProcessor::UnravelProcessor()
 //==============================================================================
 void UnravelProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
+    setLatencySamples(0);
     juce::dsp::ProcessSpec spec{
         sampleRate,
         static_cast<juce::uint32>(samplesPerBlock),
