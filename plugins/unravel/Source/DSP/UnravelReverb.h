@@ -41,7 +41,6 @@ struct UnravelState
     LooperState looperState = LooperState::Idle;  // Current state for UI feedback
     float loopProgress = 0.0f;      // 0-1 during recording (progress indicator)
     float entropy = 0.0f;           // Current disintegration amount (0-1)
-    float loopLengthBars = 4.0f;    // Actual recorded length in bars
     bool looperStateAdvance = false; // Signal from processor to advance state
     
     // === TRANSPORT STATE (from DAW) ===
@@ -161,7 +160,7 @@ private:
     LooperState currentLooperState = LooperState::Idle;
     int loopRecordHead = 0;
     int loopPlayHead = 0;
-    int targetLoopLength = 0;           // In samples (calculated from tempo)
+    int targetLoopLength = 0;           // In samples (time-based)
     int actualLoopLength = 0;           // May differ if truncated early
     float entropyAmount = 0.0f;         // Current disintegration level (0-1)
     int crossfadeSamples = 0;           // Calculated from kCrossfadeMs in prepare()

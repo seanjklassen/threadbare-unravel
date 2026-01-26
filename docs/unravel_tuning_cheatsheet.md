@@ -48,8 +48,8 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 *Main looper feature with "Ascension" filter model. Loop evaporates upward with warm saturation.*
 
 ### Buffer & Recording
-- `kLoopBufferSeconds = 20.0`: supports 4 bars at 60 BPM with headroom.
-- `kDefaultBars = 4`: default recording length.
+- `kLoopBufferSeconds = 60.0`: max loop buffer length.
+- `kLoopRecordSeconds = 60.0`: fixed time-based recording length.
 - `kCrossfadeMs = 50.0`: seamless loop boundary crossfade.
 
 ### Ascension Filter (converging HPF + LPF)

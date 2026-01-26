@@ -282,12 +282,11 @@ struct GlitchLooper {
 // ═══════════════════════════════════════════════════════════════════════════
 struct Disintegration {
     // === BUFFER ===
-    // 20 seconds supports 4 bars at 60 BPM with headroom
-    static constexpr float kLoopBufferSeconds = 20.0f;
+    // Max loop buffer length (seconds)
+    static constexpr float kLoopBufferSeconds = 60.0f;
     
     // === RECORDING ===
-    static constexpr int kDefaultBars = 4;
-    static constexpr float kFallbackTempo = 120.0f;
+    static constexpr float kLoopRecordSeconds = 60.0f; // Time-based capture window
     static constexpr float kMinCaptureWetMix = 0.3f;      // Ensure some reverb character
     static constexpr float kInputGateThresholdDb = -60.0f; // Wait for signal before recording
     static constexpr float kRecordingTimeoutSeconds = 5.0f; // Cancel if no input detected

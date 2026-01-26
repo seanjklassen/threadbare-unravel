@@ -974,13 +974,10 @@ void UnravelReverb::process(std::span<float> left,
         {
             case LooperState::Idle:
                 // Idle → Recording: Start capturing
-                // Calculate target loop length from tempo (4 bars in 4/4 time)
+                // Fixed time-based capture window (DAW-agnostic)
                 {
-                    constexpr int kBeatsPerBar = 4;  // 4/4 time signature
-                    const float tempo = state.tempo > 0.0f ? state.tempo : Disintegration::kFallbackTempo;
-                    const float beatsPerSecond = tempo / 60.0f;
-                    const float barsInSeconds = static_cast<float>(kBeatsPerBar * Disintegration::kDefaultBars) / beatsPerSecond;
-                    targetLoopLength = static_cast<int>(barsInSeconds * sampleRate);
+                    targetLoopLength = static_cast<int>(
+                        Disintegration::kLoopRecordSeconds * static_cast<float>(sampleRate));
                     targetLoopLength = std::min(targetLoopLength, static_cast<int>(disintLoopL.size()));
                     
                     // Safety: abort if we can't allocate a valid loop
