@@ -5,6 +5,56 @@
 
 const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max)
 
+// SVG curve constants (viewBox is 0-1000 for precision, height 100)
+const VB_WIDTH = 1000
+const VB_HEIGHT = 100
+const LINE_Y = 50             // Line is vertically centered
+const THUMB_RADIUS_VB = 20    // 16px thumb in viewBox units
+const CURVE_LIFT = 30         // Vertical lift above the line (gentle bump)
+const CURVE_PEAK = LINE_Y - CURVE_LIFT
+const CURVE_SPREAD = 90      // How wide the curve spreads horizontally (each side)
+const CURVE_EXTEND = 180     // Extra straight line beyond edges for clipping
+const RENDER_OVERSHOOT = 0.35 // Max render overshoot beyond bounds
+const HIT_SLOP_PX = 8         // Extra horizontal hit area for thumb
+const THUMB_RADIUS_PX = 8     // Matches 16px thumb size
+
+const rubberBandDistance = (offset, dimension, constant) => {
+  return (dimension * constant * offset) / (dimension + constant * offset)
+}
+
+const rubberBand = (value, min = 0, max = 1, constant = 0.35) => {
+  if (value < min) {
+    return min - rubberBandDistance(min - value, max - min, constant)
+  }
+  if (value > max) {
+    return max + rubberBandDistance(value - max, max - min, constant)
+  }
+  return value
+}
+
+const rubberBandInverse = (value, min = 0, max = 1, constant = 0.35) => {
+  if (value >= min && value <= max) return value
+
+  const lower = value < min ? min - 2 : max
+  const upper = value > max ? max + 2 : min
+  let lo = lower
+  let hi = upper
+
+  for (let i = 0; i < 12; i += 1) {
+    const mid = (lo + hi) * 0.5
+    const mapped = rubberBand(mid, min, max, constant)
+    if (value < min) {
+      if (mapped < value) hi = mid
+      else lo = mid
+    } else {
+      if (mapped > value) hi = mid
+      else lo = mid
+    }
+  }
+
+  return (lo + hi) * 0.5
+}
+
 export class ElasticSlider {
   constructor(element, options = {}) {
     this.element = element
@@ -12,7 +62,8 @@ export class ElasticSlider {
     
     // DOM elements
     this.track = element.querySelector('.elastic-slider__track')
-    this.fill = element.querySelector('.elastic-slider__fill')
+    this.path = element.querySelector('.slider-path')
+    this.thumbEl = element.querySelector('.slider-thumb')
     
     // State
     this.value = parseFloat(element.dataset.value) || 0
@@ -21,6 +72,10 @@ export class ElasticSlider {
     this.velocity = 0
     this.isDragging = false
     this.pointerId = null
+    this.lastVisualValue = this.value
+    this.isThumbDrag = false
+    this.dragStartRaw = this.value
+    this.allowSpringDuringDrag = false
     
     // Fine control (Shift key modifier)
     this.fineControlSensitivity = 0.1  // 10% of normal sensitivity when Shift held
@@ -28,8 +83,8 @@ export class ElasticSlider {
     this.dragStartValue = 0
     
     // Spring physics parameters (refined for smoother feel)
-    this.springStiffness = 120   // Slightly softer
-    this.springDamping = 14      // More damping for elegance
+    this.springStiffness = 150   // Snappier rebound
+    this.springDamping = 16      // Keeps motion controlled
     this.mass = 1
     
     // Animation state
@@ -78,12 +133,6 @@ export class ElasticSlider {
     // Reset to default value with animation
     this.setValue(this.defaultValue, true)
     
-    // Trigger bounce animation
-    this.fill.classList.add('bounce')
-    setTimeout(() => {
-      this.fill.classList.remove('bounce')
-    }, 500)
-    
     // Notify listener
     this.onChange(this.defaultValue)
   }
@@ -99,29 +148,57 @@ export class ElasticSlider {
     this.pointerId = event.pointerId
     this.element.classList.add('active')
     
-    // Remove any ongoing bounce animations
-    this.fill.classList.remove('bounce')
-    
     // Set pointer capture
     this.element.setPointerCapture?.(event.pointerId)
     
-    // Store drag start position for fine control mode
-    this.dragStartX = event.clientX
-    this.dragStartValue = this.value
-    
-    // Get initial position (normal click positioning)
     const rect = this.track.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const newValue = clamp(x / rect.width)
+    const currentRenderValue = Math.max(
+      -RENDER_OVERSHOOT,
+      Math.min(1 + RENDER_OVERSHOOT, this.lastVisualValue ?? this.displayValue ?? this.value)
+    )
+    const thumbCenterX = rect.left + rect.width * currentRenderValue
+    const isOnThumb = event.target === this.thumbEl
+      || Math.abs(event.clientX - thumbCenterX) <= (THUMB_RADIUS_PX + HIT_SLOP_PX)
+    
+    let rawValue
+    let clampedValue
+    
+    if (isOnThumb) {
+      this.isThumbDrag = true
+      this.allowSpringDuringDrag = false
+      this.dragStartX = event.clientX
+      this.dragStartRaw = rubberBandInverse(currentRenderValue)
+      rawValue = this.dragStartRaw
+      clampedValue = clamp(rawValue)
+      this.lastVisualValue = currentRenderValue
+    } else {
+      this.isThumbDrag = false
+      this.allowSpringDuringDrag = true
+      const x = event.clientX - rect.left
+      rawValue = x / Math.max(1, rect.width)
+      clampedValue = clamp(rawValue)
+      this.lastVisualValue = null
+      this.dragStartX = event.clientX
+      this.dragStartRaw = rawValue
+    }
+    
+    // Store drag start position for fine control mode
+    this.dragStartValue = clampedValue
     
     // Set target immediately (spring will animate)
-    this.targetValue = newValue
-    this.value = newValue
+    this.targetValue = clampedValue
+    this.value = clampedValue
+    this.displayValue = this.lastVisualValue ?? this.displayValue
     
     // Start animation if not already running
     if (!this.animationFrame) {
       this.lastTime = performance.now()
       this.animationFrame = requestAnimationFrame(this.animate)
+    }
+    
+    // Immediate visual update (only when dragging the thumb)
+    if (this.isThumbDrag) {
+      this.updateDisplay(this.lastVisualValue)
     }
     
     // Attach move listener
@@ -135,8 +212,9 @@ export class ElasticSlider {
     if (!this.isDragging) return
     if (this.pointerId !== null && event.pointerId !== this.pointerId) return
     
-    const rect = this.track.getBoundingClientRect()
+    this.allowSpringDuringDrag = false
     let newValue
+    let rawValue  // Unclamped for elastic effect
     
     // Fine control mode: Shift key reduces sensitivity for precision
     if (event.shiftKey) {
@@ -144,29 +222,44 @@ export class ElasticSlider {
       
       // Calculate delta from drag start, apply reduced sensitivity
       const deltaX = event.clientX - this.dragStartX
-      const normalizedDelta = deltaX / rect.width
+      const rect = this.track.getBoundingClientRect()
+      const normalizedDelta = deltaX / Math.max(1, rect.width)
       const fineDelta = normalizedDelta * this.fineControlSensitivity
-      newValue = clamp(this.dragStartValue + fineDelta)
+      rawValue = this.dragStartValue + fineDelta
+      newValue = clamp(rawValue)
     } else {
       this.element.classList.remove('fine-control')
       
-      // Normal mode: direct positioning
-      const x = event.clientX - rect.left
-      newValue = clamp(x / rect.width)
+      const rect = this.track.getBoundingClientRect()
       
-      // Update drag start for smooth transition if Shift is pressed mid-drag
-      this.dragStartX = event.clientX
-      this.dragStartValue = newValue
+      if (this.isThumbDrag) {
+        const deltaX = event.clientX - this.dragStartX
+        rawValue = this.dragStartRaw + (deltaX / Math.max(1, rect.width))
+        newValue = clamp(rawValue)
+      } else {
+        // Normal mode: direct positioning (allow overshoot for stretch)
+        const x = event.clientX - rect.left
+        rawValue = x / Math.max(1, rect.width)
+        newValue = clamp(rawValue)
+        
+        // Update drag start for smooth transition if Shift is pressed mid-drag
+        this.dragStartX = event.clientX
+        this.dragStartValue = newValue
+      }
+      
     }
     
     // Update target value - spring physics will smooth it
     this.targetValue = newValue
     this.value = newValue
     
-    // For immediate feedback, directly update display during drag
-    this.updateDisplay(newValue)
+    // Elastic visual response (rubber-band past edges)
+    const visualValue = rubberBand(rawValue)
+    this.lastVisualValue = visualValue
+    this.displayValue = visualValue
+    this.updateDisplay(visualValue)
     
-    // Trigger callback
+    // Trigger callback (always with clamped value)
     this.onChange(this.value)
   }
   
@@ -179,21 +272,22 @@ export class ElasticSlider {
     this.element.classList.remove('active')
     this.element.classList.remove('fine-control')
     this.element.releasePointerCapture?.(event.pointerId)
+    this.isThumbDrag = false
     
     // Remove move listener
     window.removeEventListener('pointermove', this.handlePointerMove)
     
-    // Trigger elastic settle animation on fill
-    this.fill.classList.add('bounce')
+    // Spring back from the last elastic position
+    this.displayValue = this.lastVisualValue ?? this.displayValue
+    this.targetValue = this.value
     
-    // Remove bounce class after animation completes
-    setTimeout(() => {
-      this.fill.classList.remove('bounce')
-    }, 500)
+    // Start animation to settle any overshoot
+    if (!this.animationFrame) {
+      this.lastTime = performance.now()
+      this.animationFrame = requestAnimationFrame(this.animate)
+    }
     
-    // Give the spring some initial velocity for subtle bounce effect
-    const delta = this.targetValue - this.displayValue
-    this.velocity = delta * 3  // Gentler impulse
+    // Keep current display; animation will settle back
   }
   
   handleKeyDown(event) {
@@ -233,7 +327,7 @@ export class ElasticSlider {
     const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1)  // Cap delta to prevent instability
     this.lastTime = currentTime
     
-    if (!this.isDragging) {
+    if (!this.isDragging || this.allowSpringDuringDrag) {
       // Spring physics: F = -kx - cv
       const displacement = this.displayValue - this.targetValue
       const springForce = -this.springStiffness * displacement
@@ -254,8 +348,8 @@ export class ElasticSlider {
         return
       }
     } else {
-      // During drag, display follows target closely
-      this.displayValue = this.targetValue
+      // During drag, display follows elastic value if present
+      this.displayValue = this.lastVisualValue ?? this.targetValue
     }
     
     this.updateDisplay(this.displayValue)
@@ -263,13 +357,46 @@ export class ElasticSlider {
   }
   
   updateDisplay(value) {
-    const percent = clamp(value) * 100
-    this.fill.style.width = `${percent}%`
+    const clampedValue = clamp(value)
+    const renderValue = Math.max(-RENDER_OVERSHOOT, Math.min(1 + RENDER_OVERSHOOT, value))
+    const thumbX = renderValue * VB_WIDTH
     
-    // Update ARIA
-    this.element.setAttribute('aria-valuenow', value.toFixed(3))
-    this.element.dataset.value = value.toFixed(3)
+    // Keep a constant curve shape and let the SVG clip at edges.
+    const startX = thumbX - CURVE_SPREAD
+    const endX = thumbX + CURVE_SPREAD
+    const peakY = CURVE_PEAK
+    
+    // Control points tuned for a softer, rounded crest (less pointy)
+    const leftCp1x = startX + CURVE_SPREAD * 0.45
+    const leftCp2x = thumbX - CURVE_SPREAD * 0.25
+    const rightCp1x = thumbX + CURVE_SPREAD * 0.25
+    const rightCp2x = endX - CURVE_SPREAD * 0.45
+    
+    const lineStartX = -CURVE_EXTEND
+    const lineEndX = VB_WIDTH + CURVE_EXTEND
+    
+    let d = `M ${lineStartX},${LINE_Y} `
+    d += `L ${startX},${LINE_Y} `
+    d += `C ${leftCp1x},${LINE_Y} ${leftCp2x},${peakY} ${thumbX},${peakY} `
+    d += `C ${rightCp1x},${peakY} ${rightCp2x},${LINE_Y} ${endX},${LINE_Y} `
+    d += `L ${lineEndX},${LINE_Y}`
+    
+    // Update SVG path
+    if (this.path) {
+      this.path.setAttribute('d', d)
+    }
+    
+    // Update thumb position - calculate overshoot for stretch effect
+    if (this.thumbEl) {
+      this.thumbEl.style.left = `${renderValue * 100}%`
+      this.thumbEl.style.transform = 'translate(-50%, -50%)'
+    }
+    
+    // Update ARIA (always use clamped value)
+    this.element.setAttribute('aria-valuenow', clampedValue.toFixed(3))
+    this.element.dataset.value = clampedValue.toFixed(3)
   }
+
   
   setValue(newValue, animate = true) {
     newValue = clamp(newValue)
