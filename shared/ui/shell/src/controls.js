@@ -70,6 +70,7 @@ const normalizeCoord = (value, invert = false) => {
  * @param {string[]} [options.paramOrder] - Order of parameters for drawer display
  * @param {Function} [options.onPuckChange] - Callback when puck position changes
  * @param {Function} [options.onFreezeChange] - Callback when freeze state changes
+ * @param {Function} [options.sendLooperTrigger] - Fire looper start/stop actions
  * @param {Function} [options.sendParam] - Function to send parameter to backend: sendParam(id, value)
  */
 export class Controls {
@@ -81,6 +82,7 @@ export class Controls {
     // Callbacks
     this.onPuckChange = options.onPuckChange || (() => {})
     this.onFreezeChange = options.onFreezeChange || (() => {})
+    this.sendLooperTrigger = options.sendLooperTrigger || null
     this.sendParam = options.sendParam || (() => {})
 
     this.puck = document.getElementById('puck')
@@ -97,6 +99,8 @@ export class Controls {
     this.dimensions = null
     this.state = { puckX: 0.5, puckY: 0.5, freeze: false }
     this.looperState = 'idle'  // 'idle' | 'recording' | 'looping'
+    this.isPlaying = true
+    this.isLooperArmed = false
     
     // Axis labels (visible when dragging puck)
     this.axisLabels = {
@@ -321,19 +325,20 @@ export class Controls {
     if (this.freezeBtn) {
       this.freezeBtn.addEventListener('click', () => {
         if (this.looperState === 'idle') {
-          // Start recording - send rising edge
-          this.sendParam('freeze', 1)
-          this.state.freeze = true
-          this.onFreezeChange(true)
+          if (this.isLooperArmed) {
+            this.setLooperArmed(false)
+            return
+          }
+
+          if (this.isPlaying === false) {
+            this.setLooperArmed(true)
+            return
+          }
+
+          this.triggerLooperStart()
         } else {
-          // Exit recording or looping - need FALLING edge (1→0)
-          // First pulse high, then low to guarantee edge detection
-          this.sendParam('freeze', 1)
-          requestAnimationFrame(() => {
-            this.sendParam('freeze', 0)
-            this.state.freeze = false
-            this.onFreezeChange(false)
-          })
+          this.setLooperArmed(false)
+          this.triggerLooperStop()
         }
       })
     }
@@ -665,6 +670,49 @@ export class Controls {
     this.state.freeze = !!isActive
   }
 
+  triggerLooperStart() {
+    if (this.sendLooperTrigger) {
+      this.sendLooperTrigger('start')
+      return
+    }
+
+    // Start recording - send rising edge
+    this.sendParam('freeze', 1)
+    this.state.freeze = true
+    this.onFreezeChange(true)
+  }
+
+  triggerLooperStop() {
+    if (this.sendLooperTrigger) {
+      this.sendLooperTrigger('stop')
+      return
+    }
+
+    // Exit recording or looping - need FALLING edge (1→0)
+    // First pulse high, then low to guarantee edge detection
+    this.sendParam('freeze', 1)
+    requestAnimationFrame(() => {
+      this.sendParam('freeze', 0)
+      this.state.freeze = false
+      this.onFreezeChange(false)
+    })
+  }
+
+  setLooperArmed(isArmed) {
+    if (!this.freezeBtn) return
+    this.isLooperArmed = isArmed
+    this.freezeBtn.classList.toggle('armed-waiting', isArmed)
+    this.updateLooperAria()
+  }
+
+  updateLooperAria() {
+    if (!this.freezeBtn) return
+    this.freezeBtn.setAttribute(
+      'aria-pressed',
+      String(this.looperState !== 'idle' || this.isLooperArmed)
+    )
+  }
+
   /**
    * Update freeze button and puck visual for disintegration looper states
    * States: 'idle' | 'recording' | 'looping'
@@ -678,8 +726,12 @@ export class Controls {
     // Add current state class to button
     this.freezeBtn.classList.add(this.looperState)
     
+    if (this.looperState !== 'idle' && this.isLooperArmed) {
+      this.setLooperArmed(false)
+    }
+
     // Update aria for accessibility
-    this.freezeBtn.setAttribute('aria-pressed', String(this.looperState !== 'idle'))
+    this.updateLooperAria()
     
     // === PUCK VISUAL STATE ===
     // Update puck classes for pupil color + breathing animation
@@ -854,6 +906,15 @@ export class Controls {
       }
     }
     
+    if (typeof state.isPlaying !== 'undefined') {
+      this.isPlaying = Boolean(state.isPlaying)
+    }
+
+    if (this.isLooperArmed && this.isPlaying && this.looperState === 'idle') {
+      this.setLooperArmed(false)
+      this.triggerLooperStart()
+    }
+
     // Only update freeze visual when in Idle state
     // When Recording or Looping, the looperState controls the visual
     if (typeof state.freeze !== 'undefined') {

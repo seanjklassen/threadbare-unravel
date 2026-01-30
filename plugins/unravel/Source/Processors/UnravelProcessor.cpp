@@ -108,6 +108,26 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                                    0.0f, 
                                    threadbare::tuning::EarlyReflections::kMaxPreDelayMs);
     currentState.freeze = freezeParam != nullptr ? freezeParam->get() : false;
+    currentState.looperTriggerAction = 0;
+
+    {
+        int start1 = 0;
+        int size1 = 0;
+        int start2 = 0;
+        int size2 = 0;
+        looperTriggerQueue.prepareToRead(looperTriggerQueue.getNumReady(), start1, size1, start2, size2);
+
+        for (int i = 0; i < size1; ++i)
+        {
+            currentState.looperTriggerAction = looperTriggerBuffer[static_cast<std::size_t>(start1 + i)];
+        }
+        for (int i = 0; i < size2; ++i)
+        {
+            currentState.looperTriggerAction = looperTriggerBuffer[static_cast<std::size_t>(start2 + i)];
+        }
+
+        looperTriggerQueue.finishedRead(size1 + size2);
+    }
 
     // Get tempo and transport state from DAW host
     if (auto* playhead = getPlayHead())
@@ -124,11 +144,32 @@ void UnravelProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     reverbEngine.process(leftSpan, rightSpan, currentState);
+    currentState.looperTriggerAction = 0;
 
     const float outputGain = juce::Decibels::decibelsToGain(readParam(outputParam, 0.0f));
     buffer.applyGain(outputGain);
 
     stateQueue.push(currentState);
+}
+
+void UnravelProcessor::enqueueLooperTrigger(int action) noexcept
+{
+    int start1 = 0;
+    int size1 = 0;
+    int start2 = 0;
+    int size2 = 0;
+    looperTriggerQueue.prepareToWrite(1, start1, size1, start2, size2);
+
+    if (size1 > 0)
+    {
+        looperTriggerBuffer[static_cast<std::size_t>(start1)] = action;
+    }
+    else if (size2 > 0)
+    {
+        looperTriggerBuffer[static_cast<std::size_t>(start2)] = action;
+    }
+
+    looperTriggerQueue.finishedWrite((size1 > 0 || size2 > 0) ? 1 : 0);
 }
 
 //==============================================================================

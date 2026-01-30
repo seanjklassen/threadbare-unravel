@@ -53,28 +53,40 @@ body {
 .btn-settings:focus-visible,
 .pupil-toggle:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring-inset);
+  box-shadow: none;
 }
 
-/* Focus state for settings button when in close mode */
-.tb-app.settings-open .btn-settings:focus-visible {
-  box-shadow: var(--focus-ring);
+/* Focus uses hover styling (no ring) */
+.preset-pill:focus-visible::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.02);
+}
+
+.btn-freeze:focus-visible::before,
+.btn-settings:focus-visible::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.tb-app.settings-open .btn-settings:focus-visible::before {
+  transform: scale(0.96);
+  animation: none;
+  background: var(--accent);
 }
 
 /* Elastic slider focus state */
 .elastic-slider:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
-  border-radius: 999px;
+  box-shadow: none;
 }
 
 .elastic-slider:focus-visible .slider-path {
-  stroke: var(--focus-ring-color);
+  stroke: var(--accent);
 }
 
 .elastic-slider:focus-visible .slider-thumb {
-  background: var(--focus-ring-color);
-  box-shadow: var(--focus-ring-strong);
+  background: var(--accent);
+  box-shadow: none;
 }
 
 /* ===== APP LOAD ANIMATION ===== */
@@ -620,8 +632,9 @@ body {
  * Note: Only hover triggers defocus (not focus) to avoid blur on initial open
  */
 
-/* Hovered item: drifts right, soft radial glow background */
-.tb-app.presets-open .preset-option:hover {
+/* Hovered/focused item: drifts right, soft radial glow background */
+.tb-app.presets-open .preset-option:hover,
+.tb-app.presets-open .preset-option:focus-visible {
   transform: translateX(3px) translateY(0);
   background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.07) 0%, transparent 70%);
   filter: blur(0px);
@@ -634,13 +647,6 @@ body {
     transform 200ms cubic-bezier(0.16, 0.84, 0.44, 1),
     filter 180ms cubic-bezier(0.16, 0.84, 0.44, 1),
     background 150ms ease;
-}
-
-/* Focus styling (keyboard nav) - soft radial glow, no sibling defocus */
-.tb-app.presets-open .preset-option:focus-visible {
-  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
-  outline: none;
-  box-shadow: var(--focus-ring-inset);
 }
 
 /* Sibling defocus: only on hover (not focus) to prevent blur on initial open */
@@ -832,6 +838,13 @@ body {
   0% { transform: scale(0.95); }
   35% { transform: scale(1.02); }
   100% { transform: scale(1); }
+}
+
+/* Armed state: waiting for transport */
+.btn-freeze.armed-waiting::before {
+  background: var(--accent);
+  opacity: 0.18;
+  transform: scale(1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

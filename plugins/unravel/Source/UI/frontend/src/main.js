@@ -71,6 +71,7 @@ window.__getNativeFunction = getNativeFunction
 
 // Cache native setParameter function
 let nativeSetParameter = null
+let nativeLooperTrigger = null
 
 const sendParam = (id, val) => {
   // Lazily get the native function using our polyfill
@@ -82,6 +83,13 @@ const sendParam = (id, val) => {
     nativeSetParameter(id, val)
   }
   // Silently skip if not available - reduces console spam
+}
+
+const getLooperTrigger = () => {
+  if (!nativeLooperTrigger && window.__getNativeFunction) {
+    nativeLooperTrigger = window.__getNativeFunction('triggerDisintegration')
+  }
+  return typeof nativeLooperTrigger === 'function' ? nativeLooperTrigger : null
 }
 
 
@@ -123,6 +131,7 @@ const initApp = () => {
     themeTokens: UNRAVEL_THEME,
     getNativeFn: getNativeFunction,
     sendParam: sendParam,
+    sendLooperTrigger: getLooperTrigger(),
   })
 
   if (!shell) {

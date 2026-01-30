@@ -39,6 +39,7 @@ public:
     const threadbare::dsp::UnravelState& getCurrentState() const noexcept { return currentState; }
     bool popVisualState(threadbare::dsp::UnravelState& state) noexcept;
     void pushCurrentState() noexcept;  // Force immediate state update (for preset changes)
+    void enqueueLooperTrigger(int action) noexcept;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -50,6 +51,8 @@ protected:
     void onStateRestored() override;
 
 private:
+    static constexpr int kLooperTriggerCapacity = 16;
+
     struct Preset
     {
         juce::String name;
@@ -58,6 +61,8 @@ private:
 
     threadbare::dsp::UnravelReverb reverbEngine;
     threadbare::dsp::UnravelState currentState;
+    std::array<int, kLooperTriggerCapacity> looperTriggerBuffer {};
+    juce::AbstractFifo looperTriggerQueue { kLooperTriggerCapacity };
 
     // Use shared StateQueue template
     threadbare::core::StateQueue<threadbare::dsp::UnravelState> stateQueue;

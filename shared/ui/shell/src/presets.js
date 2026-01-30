@@ -18,7 +18,7 @@ export class Presets {
     // Manual regression checklist:
     // - Mouse: click pill toggles open/close; click option selects and closes; click outside closes; no flash on release.
     // - Mouse: press option, drag off, release => should NOT select.
-    // - Keyboard: Enter/Space toggles; Arrow keys navigate while open; focus stays sensible.
+    // - Keyboard: Enter toggles; Arrow keys navigate while open; focus stays sensible.
     // - Rapid: repeated quick clicks on pill/option/outside => no reopen/flash.
     // - Other UI: puck/orb dragging and other controls behave unchanged.
 
@@ -166,7 +166,6 @@ export class Presets {
   handleKeyDown(e) {
     switch (e.key) {
       case 'Enter':
-      case ' ':
         e.preventDefault()
         if (this.state === 'closed') {
           this.openDropdown()
@@ -382,7 +381,7 @@ export class Presets {
       }
       
       option.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
           e.preventDefault()
           // Use effect-based selection (handles its own close)
           this.selectWithEffect(index)

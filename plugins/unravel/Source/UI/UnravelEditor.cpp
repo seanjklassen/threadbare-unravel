@@ -127,6 +127,28 @@ namespace
               }
             },
             
+            // triggerDisintegration: Start/stop disintegration looper without param jitter
+            { "triggerDisintegration",
+              [processorPtr](const juce::Array<juce::var>& args,
+                            juce::WebBrowserComponent::NativeFunctionCompletion completion)
+              {
+                  int action = 0;
+                  if (args.size() >= 1)
+                  {
+                      const auto actionStr = args[0].toString().toLowerCase();
+                      if (actionStr == "start")
+                          action = 1;
+                      else if (actionStr == "stop")
+                          action = 2;
+                  }
+
+                  if (action != 0)
+                      processorPtr->enqueueLooperTrigger(action);
+
+                  completion({});
+              }
+            },
+            
             // getPresetList: Get list of factory presets
             { "getPresetList",
               [processorPtr](const juce::Array<juce::var>&,

@@ -924,11 +924,14 @@ void UnravelReverb::process(std::span<float> left,
     // ═══════════════════════════════════════════════════════════════════════
     using namespace threadbare::tuning;
     const bool buttonOn = state.freeze;
+    const int triggerAction = state.looperTriggerAction;
     
     // Detect edges
     const bool risingEdge = buttonOn && !lastButtonState;
     const bool fallingEdge = !buttonOn && lastButtonState;
-    const bool anyEdge = risingEdge || fallingEdge;
+    const bool uiRisingEdge = triggerAction == 1;
+    const bool uiFallingEdge = triggerAction == 2;
+    const bool anyEdge = risingEdge || fallingEdge || uiRisingEdge || uiFallingEdge;
     
     // Handle toggle button edges
     if (anyEdge && currentLooperState == LooperState::Looping)
@@ -941,7 +944,7 @@ void UnravelReverb::process(std::span<float> left,
         entropyAmount = 0.0f;
         exitFadeAmount = 1.0f;
     }
-    else if (fallingEdge && currentLooperState == LooperState::Recording)
+    else if ((fallingEdge || uiFallingEdge) && currentLooperState == LooperState::Recording)
     {
         // Click during Recording → COMMIT what we have and start looping
         // This allows custom/truncated loop lengths (manual "punch out")
@@ -967,7 +970,7 @@ void UnravelReverb::process(std::span<float> left,
             exitFadeAmount = 1.0f;
         }
     }
-    else if (risingEdge)
+    else if (risingEdge || uiRisingEdge)
     {
         // Advance state machine based on current state
         switch (currentLooperState)

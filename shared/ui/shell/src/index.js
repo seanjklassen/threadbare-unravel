@@ -40,6 +40,7 @@ function applyThemeTokens(themeTokens) {
  * @param {Object} [options.themeTokens] - CSS variables to apply { bg: '#31312b', accent: '#E0E993', ... }
  * @param {Function} [options.getNativeFn] - Function to get native backend functions
  * @param {Function} [options.sendParam] - Function to send parameter to backend
+ * @param {Function} [options.sendLooperTrigger] - Function to trigger looper actions
  * @param {Function} [options.onStateUpdate] - Callback when state updates from backend
  * @returns {Object} Shell instance with viz, controls, presets, and lifecycle methods
  */
@@ -51,6 +52,7 @@ export function initShell(options = {}) {
     themeTokens,
     getNativeFn = () => null,
     sendParam = () => {},
+    sendLooperTrigger = null,
     onStateUpdate,
   } = options
 
@@ -86,6 +88,7 @@ export function initShell(options = {}) {
     params,
     paramOrder,
     sendParam,
+    sendLooperTrigger,
     onPuckChange: ({ puckX, puckY }) => {
       currentState = { ...currentState, puckX, puckY }
       viz?.update(currentState)
@@ -141,6 +144,16 @@ export function initShell(options = {}) {
   resizeCanvas()
   controls?.update(currentState)
   animate()
+
+  // Keep spacebar from triggering UI actions (let DAW transport handle it)
+  document.addEventListener('keydown', (event) => {
+    const isSpace = event.code === 'Space' || event.key === ' '
+    if (!isSpace) return
+    const active = document.activeElement
+    if (active && active !== document.body) {
+      active.blur?.()
+    }
+  }, true)
 
   // Handler for state updates from C++ backend
   const updateState = (payload) => {

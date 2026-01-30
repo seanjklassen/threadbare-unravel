@@ -7,9 +7,9 @@
 * **Core DSP:**
     * 8×8 FDN (Feedback Delay Network) with damping + modulation.
     * Ghost engine: tiny granular smear feeding the FDN.
-    * Early reflections, Disintegration Looper, Ducking.
+    * Early reflections, Glitch Sparkle, Disintegration Looper, Ducking.
 * **Control Model:**
-    * Single puck in a 2D macro space (Body ↔ Air, Near ↔ Distant).
+    * Single puck in a 2D macro space (Vivid ↔ Hazy, Recent ↔ Distant).
     * Simple advanced controls in a drawer.
 * **Tech Stack:**
     * DSP: C++ with JUCE 8.
@@ -69,8 +69,8 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
     * Puck 48x48.
 3.  **Bottom strip**
     * Left: x,y compact readouts with a range of 0.00-11.00.
+    * Right: looper button (∞) → activates 2.3.3 Disintegration Looper.
     * Right: settings icon → opens advanced drawer.
-    * Right: looper icon to the left of the sliders icon → activates 2.3.3 Disintegration Looper.
 
 ### 2.2 Look & Feel
 * **Background:** `#31312b` (warm gray)
@@ -86,29 +86,32 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
     * `puckX` ∈ [-1, 1]
     * `puckY` ∈ [-1, 1]
 * **Semantics:**
-    * `puckX`: **Body ↔ Air**
-        * Left = more body (stronger ER, more presence).
-        * Right = more air (less body, more diffuse).
-    * `puckY`: **Near ↔ Distant**
-        * Down = nearer / shorter / subtler.
-        * Up = distant / longer / ghostier / more drift.
+    * `puckX`: **Vivid ↔ Hazy**
+        * Left = vivid/physical (stronger ER, tighter focus).
+        * Right = hazy/ethereal (more diffusion and modulation).
+    * `puckY`: **Recent ↔ Distant**
+        * Down = recent/near (shorter, subtler).
+        * Up = distant/far (longer, ghostier).
 * **Interaction:**
     * Click-drag to move.
     * Constrain to square region.
     * Double-click → reset to center (0,0).
+    * When the looper is active, axis labels shift to **Spectral ↔ Diffuse** (X) and **Fleeting ↔ Lingering** (Y).
 
 #### 2.3.2 Blend & Output
 * **Blend/Mix:** 0–100% wet.
 * **Output Gain:** e.g. −24 dB to +12 dB.
 
 #### 2.3.3 Disintegration Looper
-* Small button near sliders icon (∞).
+* Small button in bottom strip (∞).
 * **Three-state operation:**
     1. **Idle:** Normal reverb operation. Button shows infinity symbol.
-    2. **Recording:** Click to start. Captures dry+wet signal for N bars (default 4). Button pulses during recording.
+    2. **Recording:** Click to start. Captures dry+wet signal for a fixed time window (DAW-agnostic), input-gated. Button pulses during recording.
     3. **Looping:** After recording completes, loop plays back with gradual degradation. Click again to stop and return to Idle.
 * **Behavior:**
     * Loop plays back with entropy-based degradation (William Basinski-inspired tape decay).
+    * If transport is stopped, clicking arms the looper; it starts recording when playback resumes.
+    * Recording can auto-cancel if no input is detected in time.
     * Puck Y controls decay rate: top = fast disintegration (~2 loops), bottom = slow (~endless).
     * Puck X controls character: left (Ghost) = spectral thinning, right (Fog) = diffuse smearing.
     * As entropy increases: filters converge, saturation increases, dropouts occur, pitch wobbles.
@@ -122,9 +125,10 @@ The sound is soft and vaporous. There is no "icepick" high-end or metallic zing;
 4.  Tone (Dark ↔ Bright, −1..1).
 5.  Drift (0–1).
 6.  Ghost Mix (0–1).
-7.  Duck (0–1).
-8.  Blend
-9.  Output
+7.  Scatter (Glitch) (0–1).
+8.  Duck (0–1).
+9.  Blend
+10. Output
 
 **Defaults:** “great ambient guitar pad” right out of the box.
 
@@ -143,23 +147,26 @@ Orb is visual only. It reflects state.
 * `puckX`, `puckY`.
 * `decay`, `size`, `ghost`, `drift`.
 * `looperState` (0=Idle, 1=Recording, 2=Looping).
-* `loopProgress` (0–1, recording progress indicator).
 * `entropy` (0–1, disintegration amount).
-* `time` (monotonic).
+* `tempo` (BPM).
+* `isPlaying` (DAW transport state).
 
 **Mapping:**
-* Orb radius grows with `puckY` and `tailLevel`.
+* Orb radius grows with `puckY`, `tailLevel`, and `inLevel`.
 * Tangle / wobble grows with `drift` & `ghost`.
 * Stroke thickness & opacity follow `tailLevel`.
+* Color reflects looper state and shifts by `entropy`.
+* When transport is stopped, motion slows but never fully stops.
 
 **Implementation:**
-* ~40 points around a center, drawn as a polyline on canvas.
+* ~60 points around a center, drawn as a polyline on canvas.
 * Optionally use PixiJS/WebGL if raw 2D canvas stutters on Retina.
+* Current UI uses 2D canvas with lightweight 3D rotation and reduced-motion fallbacks.
 
 ---
 
 ## 3. DSP: Structure & Behavior
-*This section is the logic; the actual numbers live in `UnravelTuning.h`.*
+*This section is the logic; the actual numbers live in `plugins/unravel/Source/UnravelTuning.h`.*
 
 ### 3.1 Signal Flow (True Stereo)
 **Per block:**
@@ -173,12 +180,14 @@ Orb is visual only. It reflects state.
 6.  FDN tail:
     * 8 delay lines + feedback matrix.
     * Per-line damping & modulation.
-7.  Disintegration Looper:
+7.  Glitch Sparkle:
+    * Granular sparkle fragments layered on top of the tail.
+8.  Disintegration Looper:
     * When active, captures and loops processed signal with degradation effects.
-8.  Ducking:
+9.  Ducking:
     * Envelope follower on dry; modulates wet gain.
-9.  Mix Dry/Wet.
-10. Output gain.
+10. Mix Dry/Wet.
+11. Output gain.
 
 ### 3.2 FDN Core
 * 8 delay lines.
@@ -190,13 +199,12 @@ Orb is visual only. It reflects state.
 
 ### 3.3 Decay & Damping
 * Decay slider (with puck Y offset) defines a target RT60.
-* **Per delay line:**
-    * Compute feedback gains from RT60 formula: `g = exp(-6.9 * delayTime / T60)`
-    * Each delay line gets its own feedback gain based on its individual delay time for accurate, even decay across all lines.
-    * Run through damping filters:
-        * LPF (Tone mapped to cutoff).
-        * HPF to prevent LF bloat.
-        * Additional gentle tilt EQ on the wet output for extra Tone shaping.
+* **Feedback gain:**
+    * Use a single average feedback gain based on average delay time: `g = exp(-6.9 * avgDelay / T60)`
+    * Feedback is clamped for stability.
+* Damping filters:
+    * LPF (Tone mapped to cutoff).
+    * HPF to prevent LF bloat.
 
 ### 3.4 Early Reflections
 * Small ER multi-tap block before FDN.
@@ -204,7 +212,7 @@ Orb is visual only. It reflects state.
 * Per-tap gains decreasing.
 * Slight stereo asymmetry.
 * **Pre-delay:** Adjustable parameter (0–100 ms) that shifts the entire ER cluster later in time. This is a user-facing control separate from the main pre-delay.
-* **Body/Air macro (puck X) controls:**
+* **Vivid/Hazy macro (puck X) controls:**
     * ER gain.
     * FDN input contribution (slightly counter-scaled).
 
@@ -216,11 +224,11 @@ Orb is visual only. It reflects state.
 * This breaks up static modes → smoother tails.
 
 ### 3.6 Ghost Engine
-* Maintain a history buffer (~750 ms) after pre-delay.
+* Maintain a history buffer (~2.0 s) after pre-delay.
 * At any time, up to 8 grains active (configurable via `kMaxGrains`):
     * Length ~50–300 ms (tunable range).
     * Hann window.
-    * Start positions influenced by puck X (see 3.6.3).
+* Start positions influenced by puck X (see 3.6.2).
     * Detuned ± small amount (cents), plus occasional octave-up shimmer grains at low level.
 * Sum grains and feed into FDN input.
 * Ghost slider + puck Y control overall ghost gain (within safe dB bounds).
@@ -248,7 +256,7 @@ Orb is visual only. It reflects state.
     * Use existing Catmull-Rom/cubic interpolator.
     * Works identically in reverse; just negate the position increment.
 
-**Tuning Constants (add to `UnravelTuning.h::Ghost`):**
+**Tuning Constants (add to `threadbare::tuning::Ghost`):**
 ```cpp
 // Probability of reverse grains at ghost=1.0
 // At ghost=0.5, probability = 0.25 × 0.25 = 6.25%
@@ -260,71 +268,16 @@ static constexpr float kReverseProbability = 0.25f;
 static constexpr float kReverseGainReduction = 0.75f;
 ```
 
-#### 3.6.2 Grain Position Locking (During Looper)
-**Concept:** When the Disintegration Looper is active (Looping state), the ghost engine "locks" onto specific moments in the history buffer and replays them with variation. This creates the "fixation" aspect of the memory metaphor—the same moments replaying with subtle differences.
-
-**Implementation:**
-1. **Looper Transition (Recording → Looping):**
-    * When looper enters Looping state:
-        * **Snapshot current history buffer** positions for all active grains.
-        * Mark these positions as "locked spawn points" (store in fixed array, max 8 positions).
-        * If fewer than 4 grains active, add random positions from recent 500ms of buffer.
-
-2. **Grain Spawning While Looping:**
-    * New grains spawn **only from the locked spawn points** (not random positions).
-    * Each new grain:
-        * Picks one of the locked positions (weighted random selection).
-        * Applies **varied** detune/speed (still use existing randomization).
-        * Applies **varied** grain length (still use existing randomization).
-        * Applies **varied** stereo pan position.
-    * Result: same source material, but constantly re-examined with different "lenses."
-
-3. **Looper Transition (Looping → Idle):**
-    * Resume normal random position spawning.
-    * Clear locked spawn points array.
-
-**Data Structure (in `UnravelReverb` class):**
-```cpp
-// Grain position locking state (used during looper)
-bool ghostFreezeActive = false;  // true when looper is in Looping state
-std::array<float, 8> frozenSpawnPositions;
-std::size_t numFrozenPositions = 0;
-```
-
-**Selection Strategy (Weighted Random):**
-* Use **weighted random selection** instead of round-robin to avoid audible patterns.
-* Each locked position has equal probability (uniform distribution).
-* This creates more organic, less predictable repetition.
-
-**Shimmer Enhancement During Loop:**
-* When looping, increase shimmer probability to create more variation:
-    ```cpp
-    float shimmerProb = ghostFreezeActive ? kFreezeShimmerProbability : kShimmerProbability;
-    // 40% vs 25% - helps source material stay interesting during degradation
-    ```
-
-**Integration with Disintegration Looper:**
-* Looper button controls **both**:
-    * Loop capture, playback, and degradation (Disintegration system).
-    * Ghost engine spawn positions → locked mode (grain position locking).
-* Both systems work together for the complete "fading memory" experience.
-
-**Tuning Constants (in `UnravelTuning.h::Ghost`):**
-```cpp
-// Shimmer probability when looper active (higher for more variation)
-static constexpr float kFreezeShimmerProbability = 0.40f; // vs 0.25f normally
-```
-
-#### 3.6.3 Memory Proximity Modulation (Puck X Mapping)
-**Concept:** The puck's X-axis not only controls Body vs Air in the reverb, but also controls the **temporal depth** of ghost memories—whether grains replay recent or distant moments.
+#### 3.6.2 Memory Proximity Modulation (Puck X Mapping)
+**Concept:** The puck's X-axis not only controls Vivid vs Hazy in the reverb, but also controls the **temporal depth** of ghost memories—whether grains replay recent or distant moments.
 
 **Implementation (Revised - Continuous Range):**
 1. **Spawn Position Calculation:**
     * Use a **continuous range** from recent to distant (no discrete zones).
     * Map `puckX ∈ [-1, 1]` to maximum lookback time:
-        * `puckX = -1` (Body): Max lookback = 150ms (very recent).
+        * `puckX = -1` (Vivid): Max lookback = 150ms (very recent).
         * `puckX = 0` (Center): Max lookback = 400ms (medium).
-        * `puckX = +1` (Air): Max lookback = 750ms (distant).
+        * `puckX = +1` (Hazy): Max lookback = 750ms (distant).
 
 2. **Spawning Logic:**
     * When spawning a grain (in non-frozen mode):
@@ -358,19 +311,19 @@ static constexpr float kFreezeShimmerProbability = 0.40f; // vs 0.25f normally
     * **Maintain existing** ER gain / FDN input scaling.
     * **Add** ghost memory proximity on top.
     * Both behaviors run in parallel—they're complementary:
-        * Body (left): Strong presence (high ER) + recent memories.
-        * Air (right): Diffuse wash (low ER) + distant memories.
+        * Vivid (left): Strong presence (high ER) + recent memories.
+        * Hazy (right): Diffuse wash (low ER) + distant memories.
 
-**Tuning Constants (add to `UnravelTuning.h::Ghost`):**
+**Tuning Constants (add to `threadbare::tuning::Ghost`):**
 ```cpp
 // Memory proximity continuous range (ms relative to write head)
-// Minimum lookback at puckX=-1 (body/recent)
+// Minimum lookback at puckX=-1 (vivid/recent)
 static constexpr float kMinLookbackMs = 150.0f;
-// Maximum lookback at puckX=+1 (air/distant)
+// Maximum lookback at puckX=+1 (hazy/distant)
 static constexpr float kMaxLookbackMs = 750.0f;
 ```
 
-#### 3.6.4 Enhanced Stereo Positioning
+#### 3.6.3 Enhanced Stereo Positioning
 **Current State:** Grains already have a `pan` field (0.0 = hard L, 0.5 = center, 1.0 = hard R).
 
 **Enhancements:**
@@ -381,7 +334,7 @@ static constexpr float kMaxLookbackMs = 750.0f;
         ```
     * At higher ghost amounts, widen the pan range:
         ```cpp
-        float panWidth = 0.3f + (ghostAmount * 0.7f); // 0.3–1.0 range
+        float panWidth = 0.3f + (ghostAmount * 0.55f); // 0.3–0.85 range
         grain.pan = 0.5f + (random.nextFloat() - 0.5f) * panWidth;
         grain.pan = std::clamp(grain.pan, 0.0f, 1.0f);
         ```
@@ -414,26 +367,34 @@ static constexpr float kMaxLookbackMs = 750.0f;
         outR += gainR;
         ```
 
-**Tuning Constants (add to `UnravelTuning.h::Ghost`):**
+**Tuning Constants (add to `threadbare::tuning::Ghost`):**
 ```cpp
 // Stereo pan width at ghost=0 (narrower = more focused)
 static constexpr float kMinPanWidth = 0.3f;
-// Stereo pan width at ghost=1 (wider = more spacious)
-static constexpr float kMaxPanWidth = 1.0f;
+// Stereo pan width at ghost=1 (capped for mono compatibility)
+static constexpr float kMaxPanWidth = 0.85f;
 
 // Whether to mirror reverse grains in stereo field
 static constexpr bool kMirrorReverseGrains = true;
 ```
 
-### 3.7 Disintegration Looper
+### 3.7 Glitch Sparkle (Scatter)
+Multi-voice granular sparkle fragments layered on top of the reverb.
+
+* Uses up to 4 short “sparkle” voices that grab slices from ghost history.
+* Triggering is reactive to transients with randomized timing and pitch palette.
+* Includes reverse grains and micro-detune/micro-delay for width.
+* Amount is driven by the **Scatter (Glitch)** parameter.
+
+### 3.8 Disintegration Looper
 William Basinski-inspired loop degradation with "Ascension" filter model. The loop evaporates upward (HPF+LPF converge) with warm saturation.
 
-#### 3.7.1 State Machine
-* **Idle → Recording:** Button press starts capturing dry+wet mix into loop buffer. Records for N bars (synced to DAW tempo, default 4 bars).
+#### 3.8.1 State Machine
+* **Idle → Recording:** Button press starts capturing dry+wet mix into loop buffer. Recording is time-based (DAW-agnostic) with an input gate.
 * **Recording → Looping:** Recording completes, playback begins with crossfade. Entropy starts at 0.
 * **Looping → Idle:** Button press fades loop out and returns to normal reverb.
 
-#### 3.7.2 Degradation Effects (scaled by entropy 0→1)
+#### 3.8.2 Degradation Effects (scaled by entropy 0→1)
 * **Ascension Filter:** HPF sweeps 20→800Hz, LPF sweeps 20kHz→2kHz. Frequencies converge as entropy increases.
 * **Saturation:** Warm tape saturation increases with entropy (0→0.6).
 * **Oxide Shedding:** Stochastic dropouts (probability scales with entropy).
@@ -442,23 +403,23 @@ William Basinski-inspired loop degradation with "Ascension" filter model. The lo
 * **Wow & Flutter:** Authentic tape transport wobble.
 * **Noise Floor:** Pink noise fades in as loop degrades.
 
-#### 3.7.3 Puck Mapping During Loop
+#### 3.8.3 Puck Mapping During Loop
 * **Puck Y:** Controls entropy rate. Top = fast (~2 loops to full decay), Bottom = slow (~endless).
 * **Puck X:** Controls degradation character:
     * Left (Ghost): Spectral thinning, emphasize highs (HPF boost ×4).
     * Right (Fog): Diffuse smearing, preserve mids (LPF reduction ×0.25).
 
-#### 3.7.4 Tuning Constants
-See `UnravelTuning.h::Disintegration` for all degradation parameters.
+#### 3.8.4 Tuning Constants
+See `threadbare::tuning::Disintegration` for all degradation parameters.
 
-### 3.8 Ducking
+### 3.9 Ducking
 * Envelope follower on mono-summed dry input.
 * Fastish attack, slower release.
 * Wet gain = `baseWet` × (1 − `duckAmount` × `env`).
 * Optionally never go below a minimum wet factor so it doesn’t fully vanish.
 
-### 3.9 Puck → Parameter Mapping (Conceptual)
-* **Y (Near/Distant):**
+### 3.10 Puck → Parameter Mapping (Conceptual)
+* **Y (Recent/Distant):**
     * Multiplies Decay (roughly /3 at bottom, ×3 at top).
     * Adds to Drift.
     * Adds to Ghost.
@@ -466,20 +427,19 @@ See `UnravelTuning.h::Disintegration` for all degradation parameters.
         * PuckY Down (-1.0): Size = 0.92x → subtle pitch up
         * PuckY Up (+1.0): Size = 1.08x → subtle pitch down
         * Adds "life" and movement without overwhelming the sound
-* **X (Body/Air):**
-    * Scales ER gain & FDN input ratio (body vs wash).
+* **X (Vivid/Hazy):**
+    * Scales ER gain & FDN input ratio (presence vs wash).
     * **Drift Depth Override:** PuckX macro overrides standard `kMaxDepthSamples` with a dynamic range:
         * Left (Physical/Stable): 20 samples depth
         * Right (Ethereal/Chaotic): 80 samples depth
         * This creates the "Stable → Seasick" macro behavior, with smoothed transitions to prevent clicks
-* *In code, the exact multipliers are constants in `UnravelTuning::PuckMapping`.*
+* *In code, the exact multipliers are constants in `threadbare::tuning::PuckMapping`.*
 
-### 3.10 Smoothing & Denormals
+### 3.11 Smoothing & Denormals
 * **Per-Sample Parameter Updates:** The `Size` and `Delay` parameters must be processed using **Audio-Rate Smoothing**. Do NOT update delay times once per block. Iterate through the buffer sample-by-sample and update the delay line read pointers for every sample. This ensures "tape-style" smooth warping without zipper noise.
 * **Interpolation:** Use **Cubic (Hermite) Interpolation** for all FDN delay lines. Linear interpolation is forbidden for the delay lines as it causes volume drops and dulling during modulation.
 * **Anti-denormal strategy:**
     * `ScopedNoDenormals`.
-    * Tiny noise added to samples to keep CPU stable in long tails.
 
 ---
 
@@ -489,7 +449,7 @@ This is the designer-facing “control panel” for all the underlying numbers.
 
 ### 4.1 Purpose
 * All “magic numbers” live in one place.
-* DSP code pulls from `UnravelTuning`, never hardcodes.
+* DSP code pulls from `threadbare::tuning`, never hardcodes.
 * Each constant has:
     * A safe range.
     * A short comment describing:
@@ -498,130 +458,14 @@ This is the designer-facing “control panel” for all the underlying numbers.
 * You get to tweak this file without understanding the math.
 
 ### 4.2 Structure
-**File:** `UnravelTuning.h`
+**File:** `plugins/unravel/Source/UnravelTuning.h`
 
-```cpp
-#pragma once
-
-namespace UnravelTuning {
-
-struct Fdn {
-    // Number of delay lines in the FDN.
-    // Evidence: 8–16 lines is common in high-quality algorithmic reverbs;
-    // 8 is a sweet spot for musical use vs CPU.
-    static constexpr int kNumLines = 8;
-
-    // Base delay times in ms for Size = 1.0.
-    // Incommensurate / prime-ish delays help avoid obvious metallic ringing.
-    static constexpr float kBaseDelaysMs[kNumLines] = {
-        31.0f, 37.0f, 41.0f, 53.0f, 61.0f, 71.0f, 83.0f, 97.0f
-    };
-
-    // Allowed range for Size scalar (tight ↔ huge).
-    static constexpr float kSizeMin = 0.5f;
-    static constexpr float kSizeMax = 2.0f;
-};
-
-struct Decay {
-    // Global T60 bounds (seconds).
-    // 0.4s keeps short settings usable; 50s is near-infinite reverb.
-    static constexpr float kT60Min = 0.4f;
-    static constexpr float kT60Max = 50.0f;
-
-    // Puck Y decay multiplier (~ /3 to *3).
-    static constexpr float kPuckYMultiplierMin = 1.0f / 3.0f;
-    static constexpr float kPuckYMultiplierMax = 3.0f;
-};
-
-struct Damping {
-    // Tone control → low-pass cutoff (Hz).
-    // Lower cutoff for more aggressive darkening (underwater effect).
-    static constexpr float kLowCutoffHz  = 400.0f;
-    static constexpr float kMidCutoffHz  = 8000.0f;
-    static constexpr float kHighCutoffHz = 16000.0f;
-
-    // High-pass in loop to avoid boomy reverb.
-    static constexpr float kLoopHighPassHz = 100.0f;
-};
-
-struct Modulation {
-    // LFO frequency range for delay modulation (Hz).
-    // Wider range from slow to fast creates more obvious modulation.
-    static constexpr float kMinRateHz = 0.1f;
-    static constexpr float kMaxRateHz = 3.0f;
-
-    // Max modulation depth in samples at drift=1, puckY=1.
-    // 100 samples at 48kHz creates extreme tape warble/detune.
-    static constexpr float kMaxDepthSamples = 100.0f;
-};
-
-struct Ghost {
-    // How long the ghost remembers (seconds).
-    // Extended to 1.2s for deeper memory recall while keeping lookback at 750ms.
-    static constexpr float kHistorySeconds = 1.2f;
-
-    // Grain durations (seconds). Wider range for more texture variety.
-    static constexpr float kGrainMinSec = 0.05f;  // Shorter for more density
-    static constexpr float kGrainMaxSec = 0.30f;  // Long for smooth texture
-
-    // Subtle detune range (in semitones) for most grains.
-    static constexpr float kDetuneSemi = 0.2f; // ~20 cents
-
-    // Shimmer grains at +12 semitones (octave up).
-    static constexpr float kShimmerSemi = 12.0f;
-    static constexpr float kShimmerProbability = 0.25f; // 25% for obvious sparkle
-
-    // Ghost gain bounds relative to FDN input (dB).
-    static constexpr float kMinGainDb = -24.0f; // Louder minimum
-    static constexpr float kMaxGainDb = -6.0f;  // Reduced from -3dB to prevent clipping
-};
-
-struct Freeze {
-    // Multi-head loop buffer for smooth frozen pads
-    static constexpr float kLoopBufferSeconds = 5.0f;
-    static constexpr int kNumReadHeads = 6;
-    static constexpr float kTransitionSeconds = 0.3f;
-    
-    // Per-head pitch modulation for subtle variation
-    static constexpr float kHeadDetuneCents = 6.0f;
-    static constexpr float kHeadModRateMin = 0.03f;
-    static constexpr float kHeadModRateMax = 0.12f;
-    
-    // Feedback gain while frozen.
-    static constexpr float kFrozenFeedback = 1.0f;
-
-    // Ramp time when entering/exiting freeze (seconds).
-    static constexpr float kRampTimeSec = 0.05f;
-};
-
-struct Ducking {
-    // Envelope times (seconds).
-    static constexpr float kAttackSec  = 0.01f; // 10 ms: snappy enough
-    static constexpr float kReleaseSec = 0.25f; // 250 ms: natural decay
-
-    // Minimum wet proportion at full duck (0..1).
-    // Keeps some ambience even when duck knob is maxed.
-    static constexpr float kMinWetFactor = 0.15f;
-};
-
-struct PuckMapping {
-    // Y influence on decay multiplier. 3.0 means ~ /3 to *3 across pad.
-    static constexpr float kDecayYFactor = 3.0f;
-
-    // Extra ghost added at top of pad (0..1).
-    static constexpr float kGhostYBonus  = 0.3f;
-
-    // Extra drift added at top of pad (0..1).
-    static constexpr float kDriftYBonus  = 0.25f;
-};
-
-struct Safety {
-    // Tiny noise to avoid denormal CPU spikes in FDN feedback.
-    static constexpr float kAntiDenormal = 1.0e-18f;
-};
-
-} // namespace UnravelTuning
-```
+Use this file as the single source of truth. Current sections include:
+* `Fdn`, `Decay`, `Damping`, `EarlyReflections`, `Modulation`
+* `Ghost` (history length, grain ranges, reverse probability, stereo width)
+* `GlitchLooper` (sparkle voice behavior, timing, pitch palette)
+* `Disintegration` (loop buffer, degradation effects, entropy timing)
+* `Ducking`, `PuckMapping`, `Metering`, `Safety`, `Debug`
 
 ---
 
@@ -640,6 +484,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Tone:** -0.2 (slightly warm)
 - **Drift:** 0.35
 - **Ghost:** 0.4
+- **Scatter (Glitch):** 0%
 - **Duck:** 0.0
 - **Blend:** 45%
 - **Output:** 0dB
@@ -649,31 +494,33 @@ Each preset is designed to showcase specific features while hitting the emotiona
 
 #### 2. **close**
 *Intimate, close-mic'd feel with minimal space.*
-- **Puck:** X=-0.9, Y=-0.4
-- **Decay:** 1.1s
-- **Pre-delay:** 8ms
-- **Size:** 0.75
-- **Tone:** -0.45 (dark, warm)
-- **Drift:** 0.10
-- **Ghost:** 0.05
-- **Duck:** 0.15
-- **Blend:** 28%
+- **Puck:** X=-0.8, Y=-0.6
+- **Decay:** 0.8s
+- **Pre-delay:** 5ms
+- **Size:** 0.6
+- **Tone:** -0.30 (dark, warm)
+- **Drift:** 0.05
+- **Ghost:** 0.15
+- **Scatter (Glitch):** 100%
+- **Duck:** 0.0
+- **Blend:** 35%
 - **Output:** 0dB
 - **Use case:** Tight, controlled ambience for vocals or acoustic instruments. Minimal ghost, stays very close.
 
 ---
 
 #### 3. **tether**
-*Body-heavy with ducking—reverb follows the playing.*
-- **Puck:** X=-0.7, Y=0.0
+*Vivid-heavy with ducking—reverb follows the playing.*
+- **Puck:** X=-0.5, Y=0.1
 - **Decay:** 2.4s
 - **Pre-delay:** 18ms
 - **Size:** 0.95
-- **Tone:** -0.35 (warm)
+- **Tone:** -0.25 (warm)
 - **Drift:** 0.20
-- **Ghost:** 0.15
-- **Duck:** 0.45 (moderate ducking)
-- **Blend:** 35%
+- **Ghost:** 0.20
+- **Scatter (Glitch):** 15%
+- **Duck:** 0.30 (moderate ducking)
+- **Blend:** 38%
 - **Output:** 0dB
 - **Use case:** Fingerpicked guitar, intimate vocals. Strong body, ducking keeps it articulate and responsive.
 
@@ -688,6 +535,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Tone:** -0.15
 - **Drift:** 0.35
 - **Ghost:** 0.25
+- **Scatter (Glitch):** 0%
 - **Duck:** 0.85 (heavy ducking)
 - **Blend:** 55%
 - **Output:** -1dB
@@ -704,6 +552,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Tone:** +0.05 (neutral-bright)
 - **Drift:** 0.50
 - **Ghost:** 0.55
+- **Scatter (Glitch):** 20%
 - **Duck:** 0.0
 - **Blend:** 60%
 - **Output:** -2dB
@@ -712,7 +561,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 ---
 
 #### 6. **mist**
-*Maximum Air—distant, diffuse, ethereal.*
+*Maximum Haze—distant, diffuse, ethereal.*
 - **Puck:** X=0.90, Y=0.60
 - **Decay:** 14.0s
 - **Pre-delay:** 70ms
@@ -720,6 +569,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Tone:** -0.60 (dark, foggy)
 - **Drift:** 0.60
 - **Ghost:** 0.70 (distant memories)
+- **Scatter (Glitch):** 0%
 - **Duck:** 0.0
 - **Blend:** 65%
 - **Output:** -3dB
@@ -729,13 +579,14 @@ Each preset is designed to showcase specific features while hitting the emotiona
 
 #### 7. **rewind**
 *Heavy Ghost with reverse grain character.*
-- **Puck:** X=0.10, Y=0.75
+- **Puck:** X=0.30, Y=0.50
 - **Decay:** 6.0s
 - **Pre-delay:** 20ms
 - **Size:** 1.25
-- **Tone:** -0.35 (warm, lo-fi)
+- **Tone:** -0.20 (warm, lo-fi)
 - **Drift:** 0.55
-- **Ghost:** 0.95 (max ghost = high reverse probability)
+- **Ghost:** 0.85 (high reverse probability)
+- **Scatter (Glitch):** 45%
 - **Duck:** 0.0
 - **Blend:** 50%
 - **Output:** -1dB
@@ -745,13 +596,14 @@ Each preset is designed to showcase specific features while hitting the emotiona
 
 #### 8. **halation**
 *Bright, shimmery, lens-flare character.*
-- **Puck:** X=1.0, Y=0.90
+- **Puck:** X=0.85, Y=0.70
 - **Decay:** 9.0s
 - **Pre-delay:** 45ms
 - **Size:** 1.9
-- **Tone:** +0.60 (bright, shimmery)
+- **Tone:** +0.50 (bright, shimmery)
 - **Drift:** 0.45
-- **Ghost:** 0.65
+- **Ghost:** 0.60
+- **Scatter (Glitch):** 30%
 - **Duck:** 0.0
 - **Blend:** 55%
 - **Output:** -2dB
@@ -768,6 +620,7 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - **Tone:** -0.40 (warm)
 - **Drift:** 0.60
 - **Ghost:** 1.0 (max ghost)
+- **Scatter (Glitch):** 0%
 - **Duck:** 0.0
 - **Blend:** 75%
 - **Output:** -3dB
@@ -778,15 +631,16 @@ Each preset is designed to showcase specific features while hitting the emotiona
 #### 10. **shiver**
 *Extreme settings—maximum everything for otherworldly textures.*
 - **Puck:** X=1.0, Y=1.0
-- **Decay:** 30.0s
-- **Pre-delay:** 0ms
+- **Decay:** 25.0s
+- **Pre-delay:** 15ms
 - **Size:** 2.0 (max)
-- **Tone:** +0.45 (bright)
+- **Tone:** +0.35 (bright)
 - **Drift:** 0.80 (high modulation)
 - **Ghost:** 1.0 (max ghost)
+- **Scatter (Glitch):** 60%
 - **Duck:** 0.0
-- **Blend:** 80%
-- **Output:** -4dB
+- **Blend:** 75%
+- **Output:** -3dB
 - **Use case:** Extreme ambient textures. Full distant, full ghost, max size. For when you want to dissolve completely.
 
 ---
@@ -799,9 +653,10 @@ Each preset is designed to showcase specific features while hitting the emotiona
 - Avoid gear references or technical jargon.
 
 **Coverage Goals:**
-- ✅ Body vs Air extremes (#2 close, #6 mist)
-- ✅ Near vs Distant extremes (#2 close, #10 shiver)
+- ✅ Vivid vs Hazy extremes (#2 close, #6 mist)
+- ✅ Recent vs Distant extremes (#2 close, #10 shiver)
 - ✅ Ghost engine showcase (#7 rewind, #9 stasis)
+- ✅ Scatter/Glitch showcase (#2 close, #7 rewind, #10 shiver)
 - ✅ Looper-ready (#9 stasis)
 - ✅ Ducking showcase (#3 tether, #4 pulse)
 - ✅ Drift/modulation showcase (#8 halation, #10 shiver)

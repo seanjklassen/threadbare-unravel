@@ -42,6 +42,7 @@ struct UnravelState
     float loopProgress = 0.0f;      // 0-1 during recording (progress indicator)
     float entropy = 0.0f;           // Current disintegration amount (0-1)
     bool looperStateAdvance = false; // Signal from processor to advance state
+    int looperTriggerAction = 0;    // 0 = none, 1 = start, 2 = stop (UI-triggered)
     
     // === TRANSPORT STATE (from DAW) ===
     bool isPlaying = true;          // DAW transport state (for auto-stop)
