@@ -1311,8 +1311,8 @@ void UnravelReverb::process(std::span<float> left,
         //    At Right: Full dry signal + ghost to FDN, no ERs
         // Scale down ghost sum based on expected density to prevent input clipping
         // Multiple overlapping grains can create massive peaks before hitting the FDN
-        // With 8 grains at -12dB each, max sum = 2.0; headroom 0.35 brings to ~0.7
-        constexpr float kGhostHeadroom = 0.35f;
+        // With 8 grains at -9dB each, max sum ~2.83; headroom 0.55 brings to ~1.56
+        constexpr float kGhostHeadroom = threadbare::tuning::Ghost::kFdnInjectionHeadroom;
         
         // Apply debug ghost injection gain (0dB normal, -6 or -12 for testing)
         const float ghostDebugGain = juce::Decibels::decibelsToGain(
@@ -1976,6 +1976,23 @@ void UnravelReverb::process(std::span<float> left,
         const float dry = 1.0f - currentMix;
         float outL = inputL * dry + wetL * currentMix + limitedErL;
         float outR = inputR * dry + wetR * currentMix + limitedErR;
+        
+        // ═══════════════════════════════════════════════════════════════════════
+        // GHOST DIRECT INJECTION (post-FDN - preserves granular character)
+        // Stereo ghost output mixed directly into final output so the granular
+        // texture is audible without being diffused away by the FDN.
+        // Quadratic curve: subtle at low ghost, clearly present at max.
+        // ═══════════════════════════════════════════════════════════════════════
+        if (currentGhost > 0.01f)
+        {
+            const float ghostDirect =
+                std::pow(currentGhost, threadbare::tuning::Ghost::kDirectMixCurve) *
+                threadbare::tuning::Ghost::kDirectMixMax;
+            const float limitedGhostL = std::tanh(ghostOutputL) * ghostDirect;
+            const float limitedGhostR = std::tanh(ghostOutputR) * ghostDirect;
+            outL += limitedGhostL;
+            outR += limitedGhostR;
+        }
         
         // ═══════════════════════════════════════════════════════════════════════
         // GLITCH SPARKLE INJECTION (at output stage - bypasses reverb entirely)
