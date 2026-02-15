@@ -26,9 +26,12 @@ if (-not $DryRun) {
     if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
     if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
     if (Test-Path $OutputDir) { Remove-Item -Recurse -Force $OutputDir }
+    New-Item -Path "$StagingDir\VST3" -ItemType Directory -Force | Out-Null
+    New-Item -Path "$OutputDir" -ItemType Directory -Force | Out-Null
+} else {
+    Write-Host "+ mkdir $StagingDir\VST3"
+    Write-Host "+ mkdir $OutputDir"
 }
-Run "New-Item" @("-Path", "$StagingDir\VST3", "-ItemType", "Directory", "-Force") 
-Run "New-Item" @("-Path", "$OutputDir", "-ItemType", "Directory", "-Force")
 
 Run "cmake" @("-B", $BuildDir, "-DCMAKE_BUILD_TYPE=Release", "-DTHREADBARE_COPY_PLUGIN_AFTER_BUILD=OFF")
 Run "cmake" @("--build", $BuildDir, "--config", "Release")

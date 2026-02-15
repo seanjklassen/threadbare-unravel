@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+rm -rf "/Library/Audio/Plug-Ins/VST3/unravel.vst3" || true
+rm -rf "/Library/Audio/Plug-Ins/Components/unravel.component" || true
+exit 0
+#!/bin/bash
+set -euo pipefail
+
+echo "Removing old Unravel plugin bundles..."
+
+if [ -d "/Library/Audio/Plug-Ins/VST3/unravel.vst3" ]; then
+    rm -rf "/Library/Audio/Plug-Ins/VST3/unravel.vst3"
+    echo "  Removed old VST3"
+fi
+
+if [ -d "/Library/Audio/Plug-Ins/Components/unravel.component" ]; then
+    rm -rf "/Library/Audio/Plug-Ins/Components/unravel.component"
+    echo "  Removed old AU"
+fi
+
+exit 0
