@@ -15,32 +15,43 @@ if (-not $Python) { $Python = "python" }
 $InnoSetup = $env:INNO_SETUP_PATH
 if (-not $InnoSetup) { $InnoSetup = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" }
 
-function Run($Cmd, $Args) {
-    Write-Host "+ $Cmd $Args"
+function Run([string]$Cmd, [string[]]$ArgList) {
+    Write-Host "+ $Cmd $($ArgList -join ' ')"
     if (-not $DryRun) {
-        & $Cmd @Args
+        & $Cmd @ArgList
+        if ($LASTEXITCODE -ne 0) {
+            throw "Command failed ($LASTEXITCODE): $Cmd $($ArgList -join ' ')"
+        }
     }
 }
 
-Run "cmd.exe" "/c rmdir /s /q `"$BuildDir`" `"$StagingDir`" `"$OutputDir`" 2>nul"
-Run "cmd.exe" "/c mkdir `"$StagingDir\VST3`" `"$OutputDir`""
+if (-not $DryRun) {
+    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
+    if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
+    if (Test-Path $OutputDir) { Remove-Item -Recurse -Force $OutputDir }
+    New-Item -Path "$StagingDir\VST3" -ItemType Directory -Force | Out-Null
+    New-Item -Path "$OutputDir" -ItemType Directory -Force | Out-Null
+} else {
+    Write-Host "+ mkdir $StagingDir\VST3"
+    Write-Host "+ mkdir $OutputDir"
+}
 
-Run "cmake" "-B `"$BuildDir`" -DCMAKE_BUILD_TYPE=Release -DTHREADBARE_COPY_PLUGIN_AFTER_BUILD=OFF"
-Run "cmake" "--build `"$BuildDir`" --config Release"
+Run "cmake" @("-B", $BuildDir, "-DCMAKE_BUILD_TYPE=Release", "-DTHREADBARE_COPY_PLUGIN_AFTER_BUILD=OFF")
+Run "cmake" @("--build", $BuildDir, "--config", "Release")
 
-Run "cmake" "-P `"$RepoRoot\scripts\resolve-artefacts.cmake`" -DOUT_FILE=`"$StagingDir\artefacts.json`" -DBUILD_DIR=`"$BuildDir`""
-Run $Python "`"$RepoRoot\scripts\copy-artefacts.py`" `"$StagingDir\artefacts.json`" `"$StagingDir`""
+Run "cmake" @("-DOUT_FILE=$StagingDir\artefacts.json", "-DBUILD_DIR=$BuildDir", "-P", "$RepoRoot\scripts\resolve-artefacts.cmake")
+Run $Python @("$RepoRoot\scripts\copy-artefacts.py", "$StagingDir\artefacts.json", "$StagingDir", "$BuildDir")
 
 if (-not (Test-Path $InnoSetup)) {
     throw "Inno Setup not found at $InnoSetup. Set INNO_SETUP_PATH."
 }
-Run $InnoSetup "`"$RepoRoot\installer\windows\Installer.iss`""
+Run $InnoSetup @("$RepoRoot\installer\windows\Installer.iss")
 
 if ($Sign) {
     if (-not $env:AZURE_SIGNING_DLIB -or -not $env:AZURE_METADATA_JSON) {
         throw "AZURE_SIGNING_DLIB and AZURE_METADATA_JSON must be set to sign."
     }
     $InstallerExe = Join-Path $OutputDir "Unravel-Installer.exe"
-    Run "`"$RepoRoot\installer\windows\sign.bat`"" "`"$InstallerExe`""
-    Run "signtool" "verify /pa /v `"$InstallerExe`""
+    Run "$RepoRoot\installer\windows\sign.bat" @("$InstallerExe")
+    Run "signtool" @("verify", "/pa", "/v", $InstallerExe)
 }

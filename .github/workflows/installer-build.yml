@@ -24,9 +24,22 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Import code signing certificates
-        if: env.APPLE_CERTIFICATE_P12 != ''
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend assets
+        working-directory: plugins/unravel/Source/UI/frontend
         run: |
+          npm ci
+          npm run build
+
+      - name: Import code signing certificates
+        id: import_certs
+        if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
+        run: |
+          set +e
           KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
           echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
@@ -35,13 +48,22 @@ jobs:
           security default-keychain -s "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          IMPORT_STATUS=$?
+          if [[ $IMPORT_STATUS -eq 0 ]]; then
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            echo "imported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Certificate import failed; continuing with unsigned macOS installer build. Check that APPLE_CERTIFICATE_P12 is base64 of a valid .p12 containing Developer ID Application + Developer ID Installer private keys, and APPLE_CERTIFICATE_PASSWORD matches the export password."
+            echo "imported=false" >> "$GITHUB_OUTPUT"
+          fi
           rm -f "$RUNNER_TEMP/cert.p12"
 
       - name: Build installer (macOS)
+        env:
+          IMPORTED_CERTS: ${{ steps.import_certs.outputs.imported }}
         run: |
           SIGN_ARGS=""
-          if [[ -n "${APPLE_CERTIFICATE_P12:-}" && -n "${APPLE_DEVELOPER_ID_APP:-}" && -n "${APPLE_DEVELOPER_ID_INSTALLER:-}" ]]; then
+          if [[ "${IMPORTED_CERTS:-false}" == "true" && -n "${APPLE_DEVELOPER_ID_APP:-}" && -n "${APPLE_DEVELOPER_ID_INSTALLER:-}" ]]; then
             SIGN_ARGS="--sign"
           fi
           if [[ -n "${SIGN_ARGS}" && -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
@@ -56,11 +78,13 @@ jobs:
           path: dist/*.pkg
 
   windows:
+    if: ${{ vars.ENABLE_WINDOWS_INSTALLER_CI == 'true' }}
     runs-on: windows-latest
     env:
-      AZURE_SIGNING_DLIB: ${{ secrets.AZURE_SIGNING_DLIB }}
-      AZURE_METADATA_JSON: ${{ secrets.AZURE_METADATA_JSON }}
       INNO_SETUP_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -70,18 +94,49 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend assets
+        shell: pwsh
+        run: |
+          Set-Location "plugins/unravel/Source/UI/frontend"
+          npm ci
+          npm run build
+
       - name: Install Inno Setup
         run: choco install innosetup -y
 
       - name: Build installer (Windows)
         shell: pwsh
-        run: |
-          $sign = $env:AZURE_SIGNING_DLIB -and $env:AZURE_METADATA_JSON
-          if ($sign) {
-            powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1 -Sign
-          } else {
-            powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
-          }
+        run: ./scripts/build-installer.ps1
+
+      - name: Sign Windows installer (Azure Artifact Signing)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/artifact-signing-action@v1
+        with:
+          endpoint: https://eus.codesigning.azure.net/
+          signing-account-name: threadbare-design
+          certificate-profile-name: unravel-code-signing
+          files: ${{ github.workspace }}\Output\Unravel-Installer.exe
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: true
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+
+      - name: Verify signed installer
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        shell: pwsh
+        run: signtool verify /pa /v "$env:GITHUB_WORKSPACE\Output\Unravel-Installer.exe"
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4

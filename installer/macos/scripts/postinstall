@@ -2,6 +2,13 @@
 set -euo pipefail
 
 killall -9 AudioComponentRegistrar 2>/dev/null || true
+mkdir -p "/Library/Application Support/Unravel"
+chmod -R 775 "/Library/Application Support/Unravel"
+exit 0
+#!/bin/bash
+set -euo pipefail
+
+killall -9 AudioComponentRegistrar 2>/dev/null || true
 
 SUPPORT_DIR="/Library/Application Support/Unravel"
 mkdir -p "$SUPPORT_DIR"

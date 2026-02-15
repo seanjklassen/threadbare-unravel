@@ -18,6 +18,6 @@
         <pkg-ref id="com.threadbare.unravel.component"/>
     </choice>
 
-    <pkg-ref id="com.threadbare.unravel.vst3" version="0.4.0">unravel-vst3.pkg</pkg-ref>
-    <pkg-ref id="com.threadbare.unravel.component" version="0.4.0">unravel-au.pkg</pkg-ref>
+    <pkg-ref id="com.threadbare.unravel.vst3">unravel-vst3.pkg</pkg-ref>
+    <pkg-ref id="com.threadbare.unravel.component">unravel-au.pkg</pkg-ref>
 </installer-gui-script>

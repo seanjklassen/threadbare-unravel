@@ -9,6 +9,8 @@ set(UNRAVEL_PROCESSORS_DIR ${UNRAVEL_SOURCE_ROOT}/Processors)
 set(UNRAVEL_UI_DIR ${UNRAVEL_SOURCE_ROOT}/UI)
 set(UNRAVEL_CONFIG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/config)
 
+option(THREADBARE_COPY_PLUGIN_AFTER_BUILD "Copy plugin to system folders after build" ON)
+
 # ==============================================================================
 # PARAMETER GENERATION (params.json -> C++ header + JS module)
 # ==============================================================================
@@ -77,7 +79,7 @@ juce_add_plugin(ThreadbareUnravel
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${THREADBARE_COPY_PLUGIN_AFTER_BUILD}
     VST3_CAN_REPLACE_VST2 FALSE
     PLUGIN_MANUFACTURER_CODE TrbR
     PLUGIN_CODE Unrv
@@ -119,3 +121,23 @@ target_compile_definitions(ThreadbareUnravel
     PRIVATE
         JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+if(DEFINED THREADBARE_ARTEFACTS_OUT)
+    string(REPLACE "\"" "" THREADBARE_ARTEFACTS_OUT_CLEAN "${THREADBARE_ARTEFACTS_OUT}")
+    if(TARGET ThreadbareUnravel_VST3)
+        get_target_property(UNRAVEL_VST3_PATH ThreadbareUnravel_VST3 JUCE_PLUGIN_ARTEFACT_FILE)
+    else()
+        set(UNRAVEL_VST3_PATH "")
+    endif()
+    if(TARGET ThreadbareUnravel_AU)
+        get_target_property(UNRAVEL_AU_PATH ThreadbareUnravel_AU JUCE_PLUGIN_ARTEFACT_FILE)
+    else()
+        set(UNRAVEL_AU_PATH "")
+    endif()
+    string(REPLACE "\\" "\\\\" UNRAVEL_VST3_PATH_ESC "${UNRAVEL_VST3_PATH}")
+    string(REPLACE "\\" "\\\\" UNRAVEL_AU_PATH_ESC "${UNRAVEL_AU_PATH}")
+    file(WRITE "${THREADBARE_ARTEFACTS_OUT_CLEAN}" "{\n")
+    file(APPEND "${THREADBARE_ARTEFACTS_OUT_CLEAN}" "  \"vst3\": \"${UNRAVEL_VST3_PATH_ESC}\",\n")
+    file(APPEND "${THREADBARE_ARTEFACTS_OUT_CLEAN}" "  \"au\": \"${UNRAVEL_AU_PATH_ESC}\"\n")
+    file(APPEND "${THREADBARE_ARTEFACTS_OUT_CLEAN}" "}\n")
+endif()

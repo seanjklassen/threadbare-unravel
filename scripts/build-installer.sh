@@ -36,13 +36,13 @@ check_env() {
 }
 
 build_macos() {
-    local version
-    version=$(grep -oE 'VERSION [0-9.]+' "$REPO_ROOT/CMakeLists.txt" | awk '{print $2}' | head -1)
     local product_name="unravel"
     local build_dir="$REPO_ROOT/build-release"
     local staging_dir="$REPO_ROOT/staging"
     local output_dir="$REPO_ROOT/dist"
     local python_bin="${PYTHON_BIN:-python3}"
+    local version
+    version=$("$python_bin" -c "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8'))['version'])" "$REPO_ROOT/installer/product.json")
 
     run rm -rf "$build_dir" "$staging_dir" "$output_dir"
     run mkdir -p "$staging_dir" "$output_dir"
@@ -53,10 +53,11 @@ build_macos() {
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
     run cmake --build "$build_dir" --config Release
 
-    run cmake -P "$REPO_ROOT/scripts/resolve-artefacts.cmake" \
+    run cmake \
         -DOUT_FILE="$staging_dir/artefacts.json" \
-        -DBUILD_DIR="$build_dir"
-    run "$python_bin" "$REPO_ROOT/scripts/copy-artefacts.py" "$staging_dir/artefacts.json" "$staging_dir"
+        -DBUILD_DIR="$build_dir" \
+        -P "$REPO_ROOT/scripts/resolve-artefacts.cmake"
+    run "$python_bin" "$REPO_ROOT/scripts/copy-artefacts.py" "$staging_dir/artefacts.json" "$staging_dir" "$build_dir"
 
     run dot_clean "$staging_dir"
 

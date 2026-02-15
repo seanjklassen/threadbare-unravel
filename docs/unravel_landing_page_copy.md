@@ -4,9 +4,9 @@
 
 ## reverb with a memory problem.
 
-I kept reaching for a reverb that sounded like the way I remember music -- the feeling of it coming back to me later, softer and not quite right. Every plugin I tried was simulating a space. I wanted one that simulated recollection.
+I kept reaching for a reverb that sounded more like the way I remember a song. Like the feeling of it coming back to me later, softer and not quite right. I wanted one that simulated recollection.
 
-So I built it. Unravel holds onto what you played, replays fragments of it detuned and shimmering, sometimes reversed, and feeds them back into the reverb engine. The tail drifts and degrades over time, carrying traces of your recent performance the way memory carries traces of a conversation you had last week -- recognizable but a little unreliable. Warm or cold in places you don't expect.
+So I built it. Unravel holds onto what you played and replays fragments of it. Sometimes detuned and sometimes reversed, and feeds them back into the reverb engine. So, the tail drifts and degrades over time, carrying traces of your recent performance the way memory carries traces of a conversation you had last week. It's recognizable but a little unreliable.
 
 ---
 
@@ -15,20 +15,20 @@ So I built it. Unravel holds onto what you played, replays fragments of it detun
 **vivid to hazy.** 
 Left emphasizes presence and focus. 
 
-Right emphasizes fog and stereo width. 
+Right adds fog and stereo width. 
 
 **recent to distant.** 
 
 Down sounds short and close. 
 
-Up has long tails, heavy ghost activity, pitch warping.
+Up adds long tails, ghostly activity, and pitch warping.
 
-The thing I didn't expect: you can play the puck while the music runs. Drag it slowly from vivid to hazy during a chord and the whole reverb turns inside out -- sounds shifting under your hand like you're reshaping the air around the sound. I've spent entire evenings just moving it, making weird sounds I couldn't have dialed in on purpose.
+The thing I didn't expect: you can play the puck while the music runs. Drag it slowly from vivid to hazy during a chord and the whole reverb turns inside out. It can shift under your hand like you're reshaping the air around the sound. I've spent entire evenings just moving it, making weird sounds I couldn't have dialed in on purpose.
 
 ---
 
 ### disintegration looper
-Record up to 60 seconds of your audio and loop it. Each pass degrades the signal -- filters converge, saturation builds, random dropouts appear where the oxide has shed. Pitch wanders downward. Left and right channels drift apart. Wow and flutter creep in, and a noise floor rises underneath until there's nothing left. The idea came from listening to William Basinski's Disintegration Loops and wanting that process as something you could control in real time.
+Record up to 60 seconds of your audio and loop it. Each pass degrades the signal. Filters converge, saturation builds, random dropouts appear where the oxide has shed. Pitch wanders downward. Left and right channels drift apart. Wow and flutter creep in, and a noise floor rises underneath until there's nothing left. The idea came from listening to William Basinski's Disintegration Loops and wanting that process as something you could control in real time.
 
 **spectral to diffuse.** 
 Left emphasizes spectral thinning, like a photograph fading in the sun. 
@@ -45,7 +45,7 @@ Up reaches broken entropy in as short as two passes.
 
 ## okay, fine
 
-The puck is the instrument. The drawer is the workbench. The puck maps across every parameter simultaneously -- for most people, most of the time, it's the only control you need. But if you want to push the ghost engine harder than the puck allows, or you've decided at midnight that the decay needs to be exactly 7.2 seconds and you can't explain why, you can make that tweak. Open the drawer when you want precision. The puck keeps working either way, scaling relative to whatever you've set manually.
+The puck is the instrument. The drawer is the workbench. The puck maps across every parameter simultaneously and for most people, most of the time, it's the only control you need. But if you want to push the ghost engine harder than the puck allows, or you've decided at midnight that the decay needs to be exactly 7.2 seconds and you can't explain why, you can make that tweak. Open the drawer when you want precision. The puck keeps working either way, scaling relative to whatever you've set manually.
 
 ### ghost engine
 Continuously records your input and spawns up to eight ghostly fragments at any time -- some shimmer, some play backwards, and all of it feeds into the reverb rather than sitting on top. The ghost material doesn't decorate the tail. It is the tail.

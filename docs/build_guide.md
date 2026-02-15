@@ -99,6 +99,100 @@ Build a specific target:
 cmake --build build --target ThreadbareUnravel_VST3 --config Release
 ```
 
+## Installer Builds
+
+Release builds for packaging should disable auto-copy:
+
+```bash
+cmake -B build-release -DCMAKE_BUILD_TYPE=Release \
+  -DTHREADBARE_COPY_PLUGIN_AFTER_BUILD=OFF \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+cmake --build build-release --config Release
+```
+
+### macOS (Packaging Script)
+
+```bash
+./scripts/build-installer.sh macos --sign
+```
+
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -Sign
+```
+
+### CI signing: Apple .p12 and GitHub secrets
+
+For macOS signing and notarization in GitHub Actions, the runner needs your Developer ID certs in a keychain. The workflow imports them from two secrets: a base64-encoded .p12 and its password.
+
+**1. Export a .p12 on your Mac**
+
+- Open **Keychain Access** and select the **login** keychain.
+- Under **My Certificates**, select **Developer ID Application: Your Name (TEAMID)** (expand to show the private key).
+- **File → Export** → save as e.g. `DeveloperID.p12`, format **Personal Information Exchange (.p12)**.
+- Set an export password and remember it.
+- Repeat for **Developer ID Installer** (or export both certs in one .p12: select both, then File → Export; one .p12 with both is fine).
+
+**2. Base64-encode the .p12**
+
+In Terminal:
+
+```bash
+base64 -i DeveloperID.p12 | pbcopy
+```
+
+(Or write to a file: `base64 -i DeveloperID.p12 -o p12-base64.txt`)
+
+**3. Add GitHub repository secrets**
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+
+| Secret name | Value |
+|-------------|--------|
+| `APPLE_CERTIFICATE_P12` | The entire base64 string (paste from clipboard or from `p12-base64.txt`). |
+| `APPLE_CERTIFICATE_PASSWORD` | The password you set when exporting the .p12. |
+
+Also ensure these are set (certificate *names* and notarization): `APPLE_DEVELOPER_ID_APP`, `APPLE_DEVELOPER_ID_INSTALLER`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
+
+The workflow will decode the .p12, import it into a temporary keychain, and use it for `codesign` and `productsign`; signing only runs when `APPLE_CERTIFICATE_P12` is set.
+
+### CI signing: Azure Artifact Signing (Windows)
+
+The Windows job uses [Azure Artifact Signing](https://github.com/Azure/artifact-signing-action). You do **not** need `AZURE_SIGNING_DLIB` or `AZURE_METADATA_JSON`; the workflow uses the official action and the account/profile names from `installer/windows/azure-metadata.json`. You only need an Azure AD app and three GitHub secrets.
+
+**1. Create an App Registration (Azure Portal)**
+
+- Go to [Azure Portal](https://portal.azure.com) → **Microsoft Entra ID** (or Azure Active Directory) → **App registrations** → **New registration**.
+- Name it (e.g. `threadbare-github-signing`), leave supported account type as default, no redirect URI needed → **Register**.
+
+**2. Create a client secret**
+
+- In the app → **Certificates & secrets** → **New client secret** → add description, choose expiry → **Add**. Copy the **Value** immediately (you can’t see it again); this is `AZURE_CLIENT_SECRET`.
+
+**3. Get Tenant ID and Client ID**
+
+- **Overview** of the app: copy **Application (client) ID** → `AZURE_CLIENT_ID`.
+- **Overview**: copy **Directory (tenant) ID** → `AZURE_TENANT_ID`.
+
+**4. Assign the app permission to sign**
+
+- Go to your **Artifact Signing** account (e.g. **threadbare-design**) in the portal.
+- **Access control (IAM)** → **Add** → **Add role assignment**.
+- Role: **Artifact Signing Certificate Profile Signer** (or “Code Signing Certificate User” if that’s what your tenant shows). **Next** → **Members** → **+ Select members** → choose the app you created → **Review + assign**.
+
+**5. Add GitHub repository secrets**
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
+
+| Secret name | Value |
+|-------------|--------|
+| `AZURE_TENANT_ID` | Directory (tenant) ID from step 3. |
+| `AZURE_CLIENT_ID` | Application (client) ID from step 3. |
+| `AZURE_CLIENT_SECRET` | The client secret value from step 2. |
+
+The workflow signs the Windows installer only when `AZURE_CLIENT_ID` is set. Endpoint and signing account/profile are fixed in the workflow to match `installer/windows/azure-metadata.json` (threadbare-design, unravel-code-signing, East US).
+
 ## Troubleshooting
 
 ### Plugin not updating in DAW

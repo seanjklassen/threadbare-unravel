@@ -1,5 +1,5 @@
 {
   "Endpoint": "https://eus.codesigning.azure.net/",
-  "CodeSigningAccountName": "your-account",
-  "CertificateProfileName": "your-profile"
+  "CodeSigningAccountName": "threadbare-design",
+  "CertificateProfileName": "unravel-code-signing"
 }

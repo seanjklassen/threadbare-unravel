@@ -19,10 +19,6 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 WizardResizable=yes
-WizardImageFile=assets\wizard-image.png
-WizardSmallImageFile=assets\wizard-small.png
-SignTool=AzureSign $f
-SignedUninstaller=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -35,16 +31,3 @@ Name: "{commondocs}\Unravel"; Permissions: everyone-modify
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{commoncf}\VST3\{#Vst3Bundle}"
-
-[SignTools]
-Name: "AzureSign"; Command: "sign.bat $f"
-
-[Code]
-function InitializeSetup(): Boolean;
-begin
-  if DirExists(ExpandConstant('{commoncf}\VST3\{#Vst3Bundle}')) then
-  begin
-    MsgBox('Please close any DAWs using Unravel before continuing.', mbInformation, MB_OK);
-  end;
-  Result := True;
-end;
