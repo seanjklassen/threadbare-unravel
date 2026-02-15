@@ -102,9 +102,10 @@ struct Ghost {
     static constexpr float kShimmerProbability = 0.25f; // 25% for obvious sparkle
 
     // Ghost gain bounds relative to FDN input (dB).
-    // With 8 grains, max sum at -12dB each = 8 * 0.25 = 2.0 linear (safe)
+    // With 8 grains at -9dB each, max sum = 8 * 0.35 = 2.83 linear
+    // FDN input tanh limiter catches stacking peaks safely
     static constexpr float kMinGainDb = -24.0f;
-    static constexpr float kMaxGainDb = -12.0f;  // Reduced to prevent 8-grain stacking distortion
+    static constexpr float kMaxGainDb = -9.0f;
     
     // === REVERSE MEMORY PLAYBACK ===
     // Probability of reverse grains at ghost=1.0 (squared scaling).
@@ -136,6 +137,17 @@ struct Ghost {
     // These match the current hardcoded values in process() - centralizing for consistency
     static constexpr float kCloudSpawnIntervalMs = 15.0f;  // Current grainSpawnInterval (15ms)
     static constexpr float kCloudSpawnProbability = 0.9f;  // Current spawn probability factor
+    
+    // === FDN INJECTION HEADROOM ===
+    // Scales ghost mono sum before feeding into FDN input.
+    // With 8 grains at -9dB, max sum ~2.83; 0.55 brings to ~1.56 (tanh catches peaks)
+    static constexpr float kFdnInjectionHeadroom = 0.55f;
+    
+    // === DIRECT MIX (post-FDN ghost presence) ===
+    // Stereo ghost output mixed directly into final output, bypassing FDN.
+    // Preserves granular character that the reverb otherwise diffuses away.
+    static constexpr float kDirectMixMax = 0.3f;   // Max direct level at ghostAmount=1.0
+    static constexpr float kDirectMixCurve = 2.0f;  // Quadratic: subtle at low, present at max
 };
 
 struct Freeze {
