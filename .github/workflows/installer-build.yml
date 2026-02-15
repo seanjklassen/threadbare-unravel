@@ -53,7 +53,7 @@ jobs:
             security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
             echo "imported=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::Certificate import failed; continuing with unsigned macOS installer build."
+            echo "::warning::Certificate import failed; continuing with unsigned macOS installer build. Check that APPLE_CERTIFICATE_P12 is base64 of a valid .p12 containing Developer ID Application + Developer ID Installer private keys, and APPLE_CERTIFICATE_PASSWORD matches the export password."
             echo "imported=false" >> "$GITHUB_OUTPUT"
           fi
           rm -f "$RUNNER_TEMP/cert.p12"
