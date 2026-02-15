@@ -19,6 +19,9 @@ function Run([string]$Cmd, [string[]]$ArgList) {
     Write-Host "+ $Cmd $($ArgList -join ' ')"
     if (-not $DryRun) {
         & $Cmd @ArgList
+        if ($LASTEXITCODE -ne 0) {
+            throw "Command failed ($LASTEXITCODE): $Cmd $($ArgList -join ' ')"
+        }
     }
 }
 
@@ -37,7 +40,7 @@ Run "cmake" @("-B", $BuildDir, "-DCMAKE_BUILD_TYPE=Release", "-DTHREADBARE_COPY_
 Run "cmake" @("--build", $BuildDir, "--config", "Release")
 
 Run "cmake" @("-DOUT_FILE=$StagingDir\artefacts.json", "-DBUILD_DIR=$BuildDir", "-P", "$RepoRoot\scripts\resolve-artefacts.cmake")
-Run $Python @("$RepoRoot\scripts\copy-artefacts.py", "$StagingDir\artefacts.json", "$StagingDir")
+Run $Python @("$RepoRoot\scripts\copy-artefacts.py", "$StagingDir\artefacts.json", "$StagingDir", "$BuildDir")
 
 if (-not (Test-Path $InnoSetup)) {
     throw "Inno Setup not found at $InnoSetup. Set INNO_SETUP_PATH."

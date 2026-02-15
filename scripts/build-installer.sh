@@ -57,7 +57,7 @@ build_macos() {
         -DOUT_FILE="$staging_dir/artefacts.json" \
         -DBUILD_DIR="$build_dir" \
         -P "$REPO_ROOT/scripts/resolve-artefacts.cmake"
-    run "$python_bin" "$REPO_ROOT/scripts/copy-artefacts.py" "$staging_dir/artefacts.json" "$staging_dir"
+    run "$python_bin" "$REPO_ROOT/scripts/copy-artefacts.py" "$staging_dir/artefacts.json" "$staging_dir" "$build_dir"
 
     run dot_clean "$staging_dir"
 
