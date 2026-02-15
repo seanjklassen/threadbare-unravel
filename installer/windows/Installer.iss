@@ -1,5 +1,5 @@
 #define AppName "Unravel"
-#define AppVersion "0.4.0"
+#define AppVersion "0.5.0"
 #define AppPublisher "threadbare"
 #define AppId "threadbare.unravel"
 #define Vst3Bundle "unravel.vst3"

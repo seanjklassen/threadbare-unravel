@@ -5,5 +5,6 @@ Place branding assets and copy here.
 - `background.png` (recommended): 1x or 2x scale, wide aspect ratio
 - `welcome.html`: installer welcome screen copy
 - `license.html`: license agreement text
+- `conclusion.html`: installer completion and next-steps copy
 
 This folder is referenced by `installer/macos/Distribution.xml`.

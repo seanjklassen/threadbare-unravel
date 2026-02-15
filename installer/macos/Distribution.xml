@@ -4,6 +4,7 @@
     <options customize="always" require-scripts="true"/>
     <welcome file="welcome.html"/>
     <license file="license.html"/>
+    <conclusion file="conclusion.html"/>
 
     <choices-outline>
         <line choice="choice_vst3"/>
