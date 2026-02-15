@@ -78,6 +78,7 @@ jobs:
           path: dist/*.pkg
 
   windows:
+    if: ${{ vars.ENABLE_WINDOWS_INSTALLER_CI == 'true' }}
     runs-on: windows-latest
     env:
       INNO_SETUP_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
