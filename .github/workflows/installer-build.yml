@@ -24,6 +24,17 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend assets
+        working-directory: plugins/unravel/Source/UI/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Import code signing certificates
         id: import_certs
         if: ${{ env.APPLE_CERTIFICATE_P12 != '' }}
@@ -81,6 +92,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend assets
+        shell: pwsh
+        run: |
+          Set-Location "plugins/unravel/Source/UI/frontend"
+          npm ci
+          npm run build
 
       - name: Install Inno Setup
         run: choco install innosetup -y

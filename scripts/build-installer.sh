@@ -53,9 +53,10 @@ build_macos() {
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
     run cmake --build "$build_dir" --config Release
 
-    run cmake -P "$REPO_ROOT/scripts/resolve-artefacts.cmake" \
+    run cmake \
         -DOUT_FILE="$staging_dir/artefacts.json" \
-        -DBUILD_DIR="$build_dir"
+        -DBUILD_DIR="$build_dir" \
+        -P "$REPO_ROOT/scripts/resolve-artefacts.cmake"
     run "$python_bin" "$REPO_ROOT/scripts/copy-artefacts.py" "$staging_dir/artefacts.json" "$staging_dir"
 
     run dot_clean "$staging_dir"

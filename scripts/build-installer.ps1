@@ -36,7 +36,7 @@ if (-not $DryRun) {
 Run "cmake" @("-B", $BuildDir, "-DCMAKE_BUILD_TYPE=Release", "-DTHREADBARE_COPY_PLUGIN_AFTER_BUILD=OFF")
 Run "cmake" @("--build", $BuildDir, "--config", "Release")
 
-Run "cmake" @("-P", "$RepoRoot\scripts\resolve-artefacts.cmake", "-DOUT_FILE=$StagingDir\artefacts.json", "-DBUILD_DIR=$BuildDir")
+Run "cmake" @("-DOUT_FILE=$StagingDir\artefacts.json", "-DBUILD_DIR=$BuildDir", "-P", "$RepoRoot\scripts\resolve-artefacts.cmake")
 Run $Python @("$RepoRoot\scripts\copy-artefacts.py", "$StagingDir\artefacts.json", "$StagingDir")
 
 if (-not (Test-Path $InnoSetup)) {
