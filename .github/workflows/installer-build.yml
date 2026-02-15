@@ -59,6 +59,9 @@ jobs:
     runs-on: windows-latest
     env:
       INNO_SETUP_PATH: "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,7 +79,7 @@ jobs:
         run: ./scripts/build-installer.ps1
 
       - name: Sign Windows installer (Azure Artifact Signing)
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
         uses: azure/artifact-signing-action@v1
         with:
           endpoint: https://eus.codesigning.azure.net/
@@ -96,7 +99,7 @@ jobs:
           exclude-azure-developer-cli-credential: true
 
       - name: Verify signed installer
-        if: ${{ secrets.AZURE_CLIENT_ID != '' }}
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
         shell: pwsh
         run: signtool verify /pa /v "$env:GITHUB_WORKSPACE\Output\Unravel-Installer.exe"
 
