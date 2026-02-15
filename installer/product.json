@@ -1,0 +1,23 @@
+{
+  "productName": "Unravel",
+  "productId": "unravel",
+  "companyName": "threadbare",
+  "version": "0.4.0",
+  "formats": [
+    "VST3",
+    "AU"
+  ],
+  "bundleIds": {
+    "vst3": "com.threadbare.unravel.vst3",
+    "au": "com.threadbare.unravel.component"
+  },
+  "supportData": {
+    "macos": "/Library/Application Support/Unravel",
+    "windows": "%PUBLIC%\\Documents\\Unravel"
+  },
+  "branding": {
+    "windowsWizardImage": "installer/windows/assets/wizard-image.png",
+    "windowsWizardSmallImage": "installer/windows/assets/wizard-small.png",
+    "macosBackground": "installer/macos/resources/background.png"
+  }
+}
