@@ -15,10 +15,10 @@ if (-not $Python) { $Python = "python" }
 $InnoSetup = $env:INNO_SETUP_PATH
 if (-not $InnoSetup) { $InnoSetup = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" }
 
-function Run([string]$Cmd, [string[]]$Args) {
-    Write-Host "+ $Cmd $($Args -join ' ')"
+function Run([string]$Cmd, [string[]]$ArgList) {
+    Write-Host "+ $Cmd $($ArgList -join ' ')"
     if (-not $DryRun) {
-        & $Cmd @Args
+        & $Cmd @ArgList
     }
 }
 
