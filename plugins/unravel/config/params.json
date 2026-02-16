@@ -1,5 +1,5 @@
 {
-  "$schema": "https://threadbare.audio/schemas/params.json",
+  "$schema": "https://threadbare.design/schemas/params.json",
   "version": "0.6.0",
   "plugin": "unravel",
   "parameters": [
