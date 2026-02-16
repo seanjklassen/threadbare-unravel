@@ -332,7 +332,14 @@ export class Orb {
     const useBreathing = BR.enabled && !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableBreathing)
     if (!useBreathing) return 1.0
 
-    const isIdle = isPlaying === false || rawInLevel < BR.idleThreshold
+    // No breathing when transport is stopped — orb should feel fully paused
+    if (isPlaying === false) {
+      this.breathIntensity = Math.max(0, this.breathIntensity - BR.fadeOutSpeed)
+      this.breathPhase += deltaMs * BR.rate
+      return 1 + Math.sin(this.breathPhase) * BR.scaleRange * this.breathIntensity
+    }
+
+    const isIdle = rawInLevel < BR.idleThreshold
     const targetIntensity = isIdle ? 1.0 : 0.3
 
     if (targetIntensity > this.breathIntensity) {
