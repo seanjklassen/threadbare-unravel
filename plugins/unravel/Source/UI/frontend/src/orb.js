@@ -335,7 +335,7 @@ export class Orb {
     // === BREATHING IDLE ANIMATION ===
     const { breathing: BR } = CONFIG
     let breathScale = 1.0
-    const useBreathing = BR.enabled && !prefersReducedMotion && !CONFIG.accessibility.reducedMotion.disableBreathing
+    const useBreathing = BR.enabled && !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableBreathing)
 
     if (useBreathing) {
       // Use raw target values for more responsive detection
@@ -446,7 +446,7 @@ export class Orb {
 
     // === 3D ROTATION ===
     const { rotation3d: R3 } = CONFIG
-    const useRotation = !prefersReducedMotion && !CONFIG.accessibility.reducedMotion.disableRotation
+    const useRotation = !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableRotation)
 
     if (useRotation) {
       const rotationIncrement = basePhaseIncrement * this.rotationSpeed
