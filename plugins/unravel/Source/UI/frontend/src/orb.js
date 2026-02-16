@@ -206,6 +206,8 @@ export class Orb {
     
     // Transport-aware playback speed (separate from state for smoother control)
     this.playbackSpeed = 1.0
+    this.rotationSpeed = 1.0
+    this.rotationPhase = 0
 
     this.resize()
   }
@@ -280,6 +282,9 @@ export class Orb {
     const targetSpeed = isPlaying ? 1.0 : TR.idleSpeed
     const speedRate = targetSpeed > this.playbackSpeed ? TR.accelerationRate : TR.decelerationRate
     this.playbackSpeed = lerp(this.playbackSpeed, targetSpeed, speedRate)
+    const rotationTargetSpeed = isPlaying ? 1.0 : 0.0
+    const rotationRate = rotationTargetSpeed > this.rotationSpeed ? TR.accelerationRate : TR.decelerationRate
+    this.rotationSpeed = lerp(this.rotationSpeed, rotationTargetSpeed, rotationRate)
 
     // === STATE-AWARE COLOR CALCULATION ===
     const { colors: C, recordingPulse: RP } = CONFIG
@@ -438,10 +443,12 @@ export class Orb {
     const useRotation = !prefersReducedMotion && !CONFIG.accessibility.reducedMotion.disableRotation
 
     if (useRotation) {
+      const rotationIncrement = basePhaseIncrement * this.rotationSpeed
+      this.rotationPhase += rotationIncrement
       // X and Y oscillate (tilt back and forth), Z rotates continuously
-      this.rotationX = Math.sin(this.phase * R3.xSpeed * 1000) * R3.xAmplitude
-      this.rotationY = Math.sin(this.phase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
-      this.rotationZ += basePhaseIncrement * R3.zSpeed
+      this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
+      this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
+      this.rotationZ += rotationIncrement * R3.zSpeed
     }
 
     // Precompute trig for 3D rotation
