@@ -210,6 +210,12 @@ export class Orb {
     this.rotationSpeed = 1.0
     this.rotationPhase = 0
 
+    // Rotation trig cache (written by _updateRotation, read by _generatePoints)
+    this._useRotation = false
+    this._cosX = 1; this._sinX = 0
+    this._cosY = 1; this._sinY = 0
+    this._cosZ = 1; this._sinZ = 0
+
     this.resize()
   }
 
@@ -240,6 +246,202 @@ export class Orb {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Private methods — extracted from draw() for readability
+  // ---------------------------------------------------------------------------
+
+  _lerpState() {
+    const lerpSpeed = CONFIG.smoothing.lerpSpeed
+    const keys = Object.keys(this.state)
+    for (let i = 0; i < keys.length; i += 1) {
+      const key = keys[i]
+      if (key === 'tempo' || key === 'looperState' || key === 'isPlaying') {
+        this.state[key] = this.targetState[key]
+      } else {
+        this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
+      }
+    }
+  }
+
+  _updateTransportSpeed(isPlaying) {
+    const { transport: TR } = CONFIG
+    const targetSpeed = isPlaying ? 1.0 : TR.idleSpeed
+    const speedRate = targetSpeed > this.playbackSpeed ? TR.accelerationRate : TR.decelerationRate
+    this.playbackSpeed = lerp(this.playbackSpeed, targetSpeed, speedRate)
+    const rotationTargetSpeed = isPlaying ? 1.0 : 0.0
+    const rotationRate = rotationTargetSpeed > this.rotationSpeed ? TR.accelerationRate : TR.decelerationRate
+    this.rotationSpeed = lerp(this.rotationSpeed, rotationTargetSpeed, rotationRate)
+    if (!isPlaying && Math.abs(this.playbackSpeed) < SPEED_EPSILON) this.playbackSpeed = 0.0
+    if (!isPlaying && Math.abs(this.rotationSpeed) < SPEED_EPSILON) this.rotationSpeed = 0.0
+  }
+
+  _computeColor(looperState, entropy, now) {
+    const { colors: C, recordingPulse: RP } = CONFIG
+    let targetColor
+    let pulseAlpha = 1.0
+
+    if (looperState === 1) {
+      targetColor = C.recording
+      const pulsePhase = (now % RP.duration) / RP.duration
+      pulseAlpha = RP.minAlpha + (RP.maxAlpha - RP.minAlpha) * (0.5 + 0.5 * Math.sin(pulsePhase * TWO_PI))
+    } else if (looperState === 2) {
+      targetColor = {
+        r: lerp(C.loopingStart.r, C.loopingEnd.r, entropy),
+        g: lerp(C.loopingStart.g, C.loopingEnd.g, entropy),
+        b: lerp(C.loopingStart.b, C.loopingEnd.b, entropy),
+      }
+    } else {
+      targetColor = C.idle
+    }
+
+    const colorLerp = CONFIG.smoothing.colorLerpSpeed
+    this.currentColor.r = lerp(this.currentColor.r, targetColor.r, colorLerp)
+    this.currentColor.g = lerp(this.currentColor.g, targetColor.g, colorLerp)
+    this.currentColor.b = lerp(this.currentColor.b, targetColor.b, colorLerp)
+
+    return pulseAlpha
+  }
+
+  _updateBloom(rawInLevel) {
+    const { inputReactivity: IR } = CONFIG
+    if (rawInLevel > IR.bloomThreshold) {
+      const bloomTarget = (rawInLevel - IR.bloomThreshold) / (1 - IR.bloomThreshold)
+      this.bloomAmount = Math.max(this.bloomAmount, bloomTarget)
+    }
+    this.bloomAmount *= IR.bloomDecay
+  }
+
+  _updateBreathing(deltaMs, rawInLevel, isPlaying) {
+    const { breathing: BR } = CONFIG
+    const useBreathing = BR.enabled && !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableBreathing)
+    if (!useBreathing) return 1.0
+
+    const isIdle = isPlaying === false || rawInLevel < BR.idleThreshold
+    const targetIntensity = isIdle ? 1.0 : 0.3
+
+    if (targetIntensity > this.breathIntensity) {
+      this.breathIntensity = Math.min(targetIntensity, this.breathIntensity + BR.fadeInSpeed)
+    } else {
+      this.breathIntensity = Math.max(targetIntensity, this.breathIntensity - BR.fadeOutSpeed)
+    }
+
+    this.breathPhase += deltaMs * BR.rate
+    return 1 + Math.sin(this.breathPhase) * BR.scaleRange * this.breathIntensity
+  }
+
+  _updatePhase(deltaMs, drift, isDisintegrating, entropy) {
+    const { tempo: TP, entropy: E } = CONFIG
+    const tempo = clamp(this.state.tempo || 120, 40, 240)
+    const rotationsPerMs = (tempo / 60) * TP.division / 1000
+    let basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
+
+    if (isDisintegrating) {
+      basePhaseIncrement *= (1 - entropy * E.maxSpeedReduction)
+    }
+
+    basePhaseIncrement *= this.playbackSpeed
+
+    const phaseIncrement = basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
+    if (Math.abs(phaseIncrement) > SPEED_EPSILON) {
+      this.phase += phaseIncrement
+    }
+
+    return basePhaseIncrement
+  }
+
+  _updateRotation(basePhaseIncrement) {
+    const { rotation3d: R3 } = CONFIG
+    this._useRotation = !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableRotation)
+
+    if (this._useRotation) {
+      const rotationIncrement = basePhaseIncrement * this.rotationSpeed
+      if (Math.abs(rotationIncrement) > SPEED_EPSILON) {
+        this.rotationPhase += rotationIncrement
+        this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
+        this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
+        this.rotationZ += rotationIncrement * R3.zSpeed
+      }
+      this._cosX = Math.cos(this.rotationX)
+      this._sinX = Math.sin(this.rotationX)
+      this._cosY = Math.cos(this.rotationY)
+      this._sinY = Math.sin(this.rotationY)
+      this._cosZ = Math.cos(this.rotationZ)
+      this._sinZ = Math.sin(this.rotationZ)
+    } else {
+      this._cosX = 1; this._sinX = 0
+      this._cosY = 1; this._sinY = 0
+      this._cosZ = 1; this._sinZ = 0
+    }
+  }
+
+  _generatePoints(radiusBase, freqX, freqY, jitterAmp, smoothing) {
+    const { jitter: J, frequency: F, rotation3d: R3 } = CONFIG
+    const useRotation = this._useRotation
+    const cosX = this._cosX, sinX = this._sinX
+    const cosY = this._cosY, sinY = this._sinY
+    const cosZ = this._cosZ, sinZ = this._sinZ
+
+    let prevRadius = radiusBase
+    const totalRadians = TWO_PI * CONFIG.curveWraps
+
+    for (let i = 0; i < CONFIG.pointCount; i += 1) {
+      const t = (i / (CONFIG.pointCount - 1)) * totalRadians
+      const noiseSeed = Math.sin(this.phase * J.noiseSeedRate + i * J.noisePointRate)
+      const noise = (noiseSeed - Math.floor(noiseSeed)) * 2 - 1
+      const targetRadius = radiusBase + noise * jitterAmp
+      const radius = prevRadius + (targetRadius - prevRadius) * smoothing
+      prevRadius = radius
+
+      let px = Math.cos(t * freqX + this.phase) * radius
+      let py = Math.sin(t * freqY + this.phase * F.yPhaseRatio) * radius * F.ySquash
+
+      if (useRotation) {
+        // 3D rotation: Y-X-Z order for natural tilt feel
+        const x1 = px * cosY
+        const z1 = -px * sinY
+        const y1 = py * cosX - z1 * sinX
+        const z2 = py * sinX + z1 * cosX
+        const x2 = x1 * cosZ - y1 * sinZ
+        const y2 = x1 * sinZ + y1 * cosZ
+        const scale = R3.perspective / (R3.perspective + z2)
+        px = x2 * scale
+        py = y2 * scale
+      }
+
+      const point = this.points[i]
+      point.x = this.centerX + px
+      point.y = this.centerY + py
+    }
+  }
+
+  _drawPath(ctx, points, strokeStyle, alpha, lineWidth) {
+    if (!points.length) return
+
+    ctx.beginPath()
+    ctx.lineWidth = lineWidth
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+    ctx.strokeStyle = strokeStyle
+    ctx.globalAlpha = alpha
+    ctx.moveTo(points[0].x, points[0].y)
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const curr = points[i]
+      const next = points[i + 1]
+      const mx = (curr.x + next.x) * 0.5
+      const my = (curr.y + next.y) * 0.5
+      ctx.quadraticCurveTo(curr.x, curr.y, mx, my)
+    }
+
+    const tail = points[points.length - 1]
+    ctx.lineTo(tail.x, tail.y)
+    ctx.stroke()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Main render loop
+  // ---------------------------------------------------------------------------
+
   draw() {
     if (!this.ctx || this.width === 0 || this.height === 0) return
 
@@ -250,18 +452,7 @@ export class Orb {
     const deltaMs = now - this.lastTime
     this.lastTime = now
 
-    // Lerp current state toward target state for smooth transitions
-    const lerpSpeed = CONFIG.smoothing.lerpSpeed
-    const keys = Object.keys(this.state)
-    for (let i = 0; i < keys.length; i += 1) {
-      const key = keys[i]
-      if (key === 'tempo' || key === 'looperState' || key === 'isPlaying') {
-        // These don't need smoothing - snap to target
-        this.state[key] = this.targetState[key]
-      } else {
-        this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
-      }
-    }
+    this._lerpState()
 
     // Extract state values
     const minDim = Math.max(1, Math.min(this.width, this.height))
@@ -274,124 +465,41 @@ export class Orb {
     const ghost = clamp(this.state.ghost, 0, 1)
     const decay = clamp(this.state.decay, 0, 1)
     const size = clamp(this.state.size, 0, 1)
-    const looperState = this.state.looperState || 0  // 0=Idle, 1=Recording, 2=Looping
+    const looperState = this.state.looperState || 0
     const entropy = clamp(this.state.entropy || 0, 0, 1)
     const isPlaying = this.state.isPlaying !== false
     const isDisintegrating = looperState === 2 && entropy > 0
 
-    // === TRANSPORT-AWARE PLAYBACK SPEED ===
-    // On stop, both phase drift and 3D rotation should settle to a true pause.
-    const { transport: TR } = CONFIG
-    const targetSpeed = isPlaying ? 1.0 : TR.idleSpeed
-    const speedRate = targetSpeed > this.playbackSpeed ? TR.accelerationRate : TR.decelerationRate
-    this.playbackSpeed = lerp(this.playbackSpeed, targetSpeed, speedRate)
-    const rotationTargetSpeed = isPlaying ? 1.0 : 0.0
-    const rotationRate = rotationTargetSpeed > this.rotationSpeed ? TR.accelerationRate : TR.decelerationRate
-    this.rotationSpeed = lerp(this.rotationSpeed, rotationTargetSpeed, rotationRate)
-    if (!isPlaying && Math.abs(this.playbackSpeed) < SPEED_EPSILON) this.playbackSpeed = 0.0
-    if (!isPlaying && Math.abs(this.rotationSpeed) < SPEED_EPSILON) this.rotationSpeed = 0.0
+    // Update animation subsystems
+    this._updateTransportSpeed(isPlaying)
+    const pulseAlpha = this._computeColor(looperState, entropy, now)
+    this._updateBloom(rawInLevel)
+    const breathScale = this._updateBreathing(deltaMs, rawInLevel, isPlaying)
 
-    // === STATE-AWARE COLOR CALCULATION ===
-    const { colors: C, recordingPulse: RP } = CONFIG
-    let targetColor
-    let pulseAlpha = 1.0
-
-    if (looperState === 1) {
-      // Recording: darker coral with pulse
-      targetColor = C.recording
-      // Sinusoidal pulse synced with button animation (1.2s)
-      const pulsePhase = (now % RP.duration) / RP.duration
-      pulseAlpha = RP.minAlpha + (RP.maxAlpha - RP.minAlpha) * (0.5 + 0.5 * Math.sin(pulsePhase * TWO_PI))
-    } else if (looperState === 2) {
-      // Looping: amber → dusty blue based on entropy
-      // At entropy 0: warm amber (loopingStart)
-      // At entropy 1: dusty blue (loopingEnd)
-      targetColor = {
-        r: lerp(C.loopingStart.r, C.loopingEnd.r, entropy),
-        g: lerp(C.loopingStart.g, C.loopingEnd.g, entropy),
-        b: lerp(C.loopingStart.b, C.loopingEnd.b, entropy),
-      }
-    } else {
-      // Idle: dusty coral
-      targetColor = C.idle
-    }
-
-    // Smooth color transition
-    const colorLerp = CONFIG.smoothing.colorLerpSpeed
-    this.currentColor.r = lerp(this.currentColor.r, targetColor.r, colorLerp)
-    this.currentColor.g = lerp(this.currentColor.g, targetColor.g, colorLerp)
-    this.currentColor.b = lerp(this.currentColor.b, targetColor.b, colorLerp)
-
-    // === INPUT REACTIVITY: Bloom effect ===
-    const { inputReactivity: IR } = CONFIG
-    if (rawInLevel > IR.bloomThreshold) {
-      // Spike detected - boost bloom toward 1
-      const bloomTarget = (rawInLevel - IR.bloomThreshold) / (1 - IR.bloomThreshold)
-      this.bloomAmount = Math.max(this.bloomAmount, bloomTarget)
-    }
-    // Decay bloom each frame
-    this.bloomAmount *= IR.bloomDecay
-
-    // === BREATHING IDLE ANIMATION ===
-    const { breathing: BR } = CONFIG
-    let breathScale = 1.0
-    const useBreathing = BR.enabled && !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableBreathing)
-
-    if (useBreathing) {
-      // Breathing is always subtly active, but stronger when idle
-      // "Idle" = DAW stopped (isPlaying explicitly false) OR very low input
-      const isIdle = isPlaying === false || rawInLevel < BR.idleThreshold
-      const targetIntensity = isIdle ? 1.0 : 0.3  // Always at least 30% breathing
-      
-      if (targetIntensity > this.breathIntensity) {
-        this.breathIntensity = Math.min(targetIntensity, this.breathIntensity + BR.fadeInSpeed)
-      } else {
-        this.breathIntensity = Math.max(targetIntensity, this.breathIntensity - BR.fadeOutSpeed)
-      }
-      
-      // Always advance breath phase
-      this.breathPhase += deltaMs * BR.rate
-      breathScale = 1 + Math.sin(this.breathPhase) * BR.scaleRange * this.breathIntensity
-    }
-
-    // === RADIUS CALCULATION ===
-    const { radius: R, entropy: E } = CONFIG
+    // Radius
+    const { radius: R, entropy: E, inputReactivity: IR } = CONFIG
     const sizeMultiplier = R.sizeMin + size * R.sizeRange
     let radiusBase = minDim * (
-      R.base + 
-      puckY * R.puckYInfluence + 
-      tailLevel * R.tailLevelInfluence + 
+      R.base +
+      puckY * R.puckYInfluence +
+      tailLevel * R.tailLevelInfluence +
       inLevel * R.inLevelInfluence
     ) * sizeMultiplier
-
-    // Apply bloom effect
     radiusBase *= (1 + this.bloomAmount * (IR.bloomScale - 1))
-
-    // Apply breathing
     radiusBase *= breathScale
-
-    // Apply entropy-based radius reduction (looping only)
     if (isDisintegrating) {
       radiusBase *= (1 - entropy * E.maxRadiusReduction)
     }
 
-    // === STROKE CALCULATION ===
+    // Stroke
     const { stroke: S } = CONFIG
     const strokeScale = minDim / S.referenceSize
     const strokeWidth = Math.max((S.baseWidth + tailLevel * S.widthRange) * strokeScale, 3)
     let strokeAlpha = S.baseAlpha + tailLevel * S.alphaRange
-
-    // Apply bloom alpha boost
     strokeAlpha = Math.min(1, strokeAlpha + this.bloomAmount * IR.bloomAlphaBoost)
-
-    // Apply recording pulse
     strokeAlpha *= pulseAlpha
-
-    // Apply entropy-based alpha reduction (looping only)
     if (isDisintegrating) {
       strokeAlpha *= (1 - entropy * E.maxAlphaReduction)
-      
-      // Add flicker at high entropy
       if (entropy > E.flickerThreshold) {
         const flickerNorm = (entropy - E.flickerThreshold) / (1 - E.flickerThreshold)
         const flicker = (Math.random() - 0.5) * 2 * E.flickerAmount * flickerNorm
@@ -399,11 +507,9 @@ export class Orb {
       }
     }
 
-    // === GHOST TRAIL HISTORY ===
+    // Trail history length
     const { trail: T } = CONFIG
     let trailHistoryMax = T.minHistory + decay * T.historyRange
-    
-    // Reduced motion: use static trail length
     if (prefersReducedMotion) {
       trailHistoryMax = CONFIG.accessibility.reducedMotion.staticTrailLength
     } else if (isDisintegrating) {
@@ -411,101 +517,19 @@ export class Orb {
     }
     this.maxHistory = Math.max(1, Math.floor(trailHistoryMax))
 
-    // === LISSAJOUS FREQUENCIES ===
-    const { frequency: F } = CONFIG
+    // Lissajous frequencies and jitter
+    const { frequency: F, jitter: J } = CONFIG
     const freqX = F.xMin + puckX * F.xRange
     const freqY = F.yMin + puckY * F.yRange
-
-    // === JITTER/WOBBLE ===
-    const { jitter: J } = CONFIG
     const jitterAmp = ghost * minDim * J.coefficient
     const smoothing = J.smoothingBase + J.smoothingRange * (1 - ghost)
 
-    // === TEMPO-SYNCED PHASE ===
-    const { tempo: TP } = CONFIG
-    const tempo = clamp(this.state.tempo || 120, 40, 240)
-    const rotationsPerMs = (tempo / 60) * TP.division / 1000
-    let basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
+    // Phase and rotation
+    const basePhaseIncrement = this._updatePhase(deltaMs, drift, isDisintegrating, entropy)
+    this._updateRotation(basePhaseIncrement)
 
-    // Apply entropy-based speed reduction (looping only)
-    if (isDisintegrating) {
-      basePhaseIncrement *= (1 - entropy * E.maxSpeedReduction)
-    }
-
-    // Apply transport-aware playback speed
-    basePhaseIncrement *= this.playbackSpeed
-
-    const phaseIncrement = basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
-    if (Math.abs(phaseIncrement) > SPEED_EPSILON) {
-      this.phase += phaseIncrement
-    }
-
-    // === 3D ROTATION ===
-    const { rotation3d: R3 } = CONFIG
-    const useRotation = !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableRotation)
-
-    let cosX = 1, sinX = 0, cosY = 1, sinY = 0, cosZ = 1, sinZ = 0
-
-    if (useRotation) {
-      const rotationIncrement = basePhaseIncrement * this.rotationSpeed
-      if (Math.abs(rotationIncrement) > SPEED_EPSILON) {
-        this.rotationPhase += rotationIncrement
-        this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
-        this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
-        this.rotationZ += rotationIncrement * R3.zSpeed
-      }
-      cosX = Math.cos(this.rotationX)
-      sinX = Math.sin(this.rotationX)
-      cosY = Math.cos(this.rotationY)
-      sinY = Math.sin(this.rotationY)
-      cosZ = Math.cos(this.rotationZ)
-      sinZ = Math.sin(this.rotationZ)
-    }
-
-    // === GENERATE CURVE POINTS ===
-    let prevRadius = radiusBase
-    const totalRadians = TWO_PI * CONFIG.curveWraps
-    
-    for (let i = 0; i < CONFIG.pointCount; i += 1) {
-      const t = (i / (CONFIG.pointCount - 1)) * totalRadians
-      const noiseSeed = Math.sin(this.phase * J.noiseSeedRate + i * J.noisePointRate)
-      const noise = (noiseSeed - Math.floor(noiseSeed)) * 2 - 1
-      const targetRadius = radiusBase + noise * jitterAmp
-      const radius = prevRadius + (targetRadius - prevRadius) * smoothing
-      prevRadius = radius
-
-      // Base 2D lissajous position (centered at origin)
-      let px = Math.cos(t * freqX + this.phase) * radius
-      let py = Math.sin(t * freqY + this.phase * F.yPhaseRatio) * radius * F.ySquash
-      let pz = 0
-
-      if (useRotation) {
-        // Apply 3D rotation (Y-X-Z order for natural tilt feel)
-        // Rotate around Y axis (left-right tilt)
-        let x1 = px * cosY + pz * sinY
-        let z1 = -px * sinY + pz * cosY
-
-        // Rotate around X axis (forward-back tilt)
-        let y1 = py * cosX - z1 * sinX
-        let z2 = py * sinX + z1 * cosX
-
-        // Rotate around Z axis (spin)
-        let x2 = x1 * cosZ - y1 * sinZ
-        let y2 = x1 * sinZ + y1 * cosZ
-
-        // Simple perspective projection
-        const perspective = R3.perspective
-        const scale = perspective / (perspective + z2)
-        
-        px = x2 * scale
-        py = y2 * scale
-        pz = z2
-      }
-
-      const point = this.points[i]
-      point.x = this.centerX + px
-      point.y = this.centerY + py
-    }
+    // Generate curve points
+    this._generatePoints(radiusBase, freqX, freqY, jitterAmp, smoothing)
 
     // Store history snapshot
     const snapshot = this.points.map((p) => ({ x: p.x, y: p.y }))
@@ -514,54 +538,24 @@ export class Orb {
       this.history.shift()
     }
 
-    // === PATH DRAWING HELPER ===
-    const drawPath = (points, strokeStyle, alpha = 1, lineWidth = strokeWidth) => {
-      if (!points.length) return
+    // Render
+    const drawR = Math.round(this.currentColor.r)
+    const drawG = Math.round(this.currentColor.g)
+    const drawB = Math.round(this.currentColor.b)
+    const trailWidth = strokeWidth * T.widthRatio
 
-      ctx.beginPath()
-      ctx.lineWidth = lineWidth
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
-      ctx.strokeStyle = strokeStyle
-      ctx.globalAlpha = alpha
-      ctx.moveTo(points[0].x, points[0].y)
-
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const curr = points[i]
-        const next = points[i + 1]
-        const mx = (curr.x + next.x) * 0.5
-        const my = (curr.y + next.y) * 0.5
-        ctx.quadraticCurveTo(curr.x, curr.y, mx, my)
-      }
-
-      const tail = points[points.length - 1]
-      ctx.lineTo(tail.x, tail.y)
-      ctx.stroke()
-    }
-
-    // Get current draw color (rounded for rgba)
-    const drawColor = {
-      r: Math.round(this.currentColor.r),
-      g: Math.round(this.currentColor.g),
-      b: Math.round(this.currentColor.b),
-    }
-
-    // Draw ghost trail history
     for (let i = 0; i < this.history.length; i += 1) {
       const historyAlpha = (i + 1) / (this.maxHistory + 1)
-      const trailWidth = strokeWidth * T.widthRatio
-      drawPath(
+      this._drawPath(
+        ctx,
         this.history[i],
-        `rgba(${drawColor.r}, ${drawColor.g}, ${drawColor.b}, ${historyAlpha * T.alphaMultiplier})`,
+        `rgba(${drawR}, ${drawG}, ${drawB}, ${historyAlpha * T.alphaMultiplier})`,
         1,
         trailWidth
       )
     }
 
-    // Draw main orb line
-    const mainColor = `rgb(${drawColor.r}, ${drawColor.g}, ${drawColor.b})`
-    drawPath(this.points, mainColor, strokeAlpha, strokeWidth)
-
+    this._drawPath(ctx, this.points, `rgb(${drawR}, ${drawG}, ${drawB})`, strokeAlpha, strokeWidth)
     ctx.globalAlpha = 1
   }
 }
