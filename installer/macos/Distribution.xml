@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Unravel Installer</title>
+    <title>unravel</title>
     <options customize="always" require-scripts="true"/>
     <welcome file="welcome.html"/>
     <license file="license.html"/>
