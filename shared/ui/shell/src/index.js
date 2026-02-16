@@ -134,26 +134,28 @@ export function initShell(options = {}) {
   window.addEventListener('resize', resizeCanvas)
 
   // Animation loop - always runs (disintegration looper uses entropy effects, not freeze)
+  let rafId = null
   const animate = () => {
-      viz?.update(currentState)
-      viz?.draw()
-    requestAnimationFrame(animate)
+    viz?.update(currentState)
+    viz?.draw()
+    rafId = requestAnimationFrame(animate)
   }
 
   // Initialize
   resizeCanvas()
   controls?.update(currentState)
-  animate()
+  rafId = requestAnimationFrame(animate)
 
   // Keep spacebar from triggering UI actions (let DAW transport handle it)
-  document.addEventListener('keydown', (event) => {
+  const onKeydown = (event) => {
     const isSpace = event.code === 'Space' || event.key === ' '
     if (!isSpace) return
     const active = document.activeElement
     if (active && active !== document.body) {
       active.blur?.()
     }
-  }, true)
+  }
+  document.addEventListener('keydown', onKeydown, true)
 
   // Handler for state updates from C++ backend
   const updateState = (payload) => {
@@ -197,6 +199,18 @@ export function initShell(options = {}) {
     getCurrentState: () => ({ ...currentState }),
     setUiState: (updates) => {
       uiState = { ...uiState, ...updates }
+    },
+    destroy() {
+      if (rafId != null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
+      window.removeEventListener('resize', resizeCanvas)
+      document.removeEventListener('keydown', onKeydown, true)
+      viz?.dispose?.()
+      viz = null
+      controls = null
+      presets = null
     },
   }
 }

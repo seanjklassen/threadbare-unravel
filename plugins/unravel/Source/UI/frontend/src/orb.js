@@ -153,6 +153,10 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 // Linear interpolation helper
 const lerp = (current, target, t) => current + (target - current) * t
 
+// Explicit param schemas (4a: prevents silent bugs if new params are added)
+const DISCRETE_KEYS = ['tempo', 'looperState', 'isPlaying']
+const SMOOTHED_KEYS = ['inLevel', 'tailLevel', 'puckX', 'puckY', 'drift', 'ghost', 'decay', 'size', 'entropy']
+
 export class Orb {
   constructor(canvas) {
     this.canvas = canvas
@@ -170,8 +174,21 @@ export class Orb {
     this.height = 0
     this.centerX = 0
     this.centerY = 0
-    this.history = []
     this.maxHistory = CONFIG.trail.minHistory
+
+    // Pre-allocated ring buffer for trail history (zero per-frame allocation)
+    const capacity = Math.floor(CONFIG.trail.minHistory + CONFIG.trail.historyRange)
+    this._ringCapacity = capacity
+    this._ringBuffer = new Array(capacity)
+    for (let s = 0; s < capacity; s += 1) {
+      this._ringBuffer[s] = new Array(CONFIG.pointCount)
+      for (let p = 0; p < CONFIG.pointCount; p += 1) {
+        this._ringBuffer[s][p] = { x: 0, y: 0 }
+      }
+    }
+    this._ringHead = 0
+    this._ringCount = 0
+    this._visibleHistory = CONFIG.trail.minHistory
     this.lastTime = performance.now()
 
     // Bloom effect state
@@ -252,14 +269,13 @@ export class Orb {
 
   _lerpState() {
     const lerpSpeed = CONFIG.smoothing.lerpSpeed
-    const keys = Object.keys(this.state)
-    for (let i = 0; i < keys.length; i += 1) {
-      const key = keys[i]
-      if (key === 'tempo' || key === 'looperState' || key === 'isPlaying') {
-        this.state[key] = this.targetState[key]
-      } else {
-        this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
-      }
+    for (let i = 0; i < DISCRETE_KEYS.length; i += 1) {
+      const key = DISCRETE_KEYS[i]
+      this.state[key] = this.targetState[key]
+    }
+    for (let i = 0; i < SMOOTHED_KEYS.length; i += 1) {
+      const key = SMOOTHED_KEYS[i]
+      this.state[key] = lerp(this.state[key], this.targetState[key], lerpSpeed)
     }
   }
 
@@ -531,31 +547,44 @@ export class Orb {
     // Generate curve points
     this._generatePoints(radiusBase, freqX, freqY, jitterAmp, smoothing)
 
-    // Store history snapshot
-    const snapshot = this.points.map((p) => ({ x: p.x, y: p.y }))
-    this.history.push(snapshot)
-    if (this.history.length > this.maxHistory) {
-      this.history.shift()
+    // Write current frame to ring buffer (in-place, zero allocation)
+    const slot = this._ringBuffer[this._ringHead]
+    for (let p = 0; p < CONFIG.pointCount; p += 1) {
+      slot[p].x = this.points[p].x
+      slot[p].y = this.points[p].y
     }
+    this._ringHead = (this._ringHead + 1) % this._ringCapacity
+    this._ringCount = Math.min(this._ringCount + 1, this._ringCapacity)
 
-    // Render
-    const drawR = Math.round(this.currentColor.r)
-    const drawG = Math.round(this.currentColor.g)
-    const drawB = Math.round(this.currentColor.b)
+    // Smooth visible history toward target (invariant 3: no trail-length popping)
+    const visLerp = CONFIG.smoothing.lerpSpeed
+    this._visibleHistory = lerp(this._visibleHistory, this.maxHistory, visLerp)
+    const visibleFloor = Math.max(1, Math.floor(this._visibleHistory))
+
+    // Invariant 2: no stale-frame resurrection
+    if (visibleFloor < this._ringCount) {
+      this._ringCount = visibleFloor
+    }
+    const drawCount = Math.min(this._ringCount, visibleFloor)
+
+    // Render — single rgb string, alpha driven entirely by globalAlpha (4c)
+    const strokeColor = `rgb(${Math.round(this.currentColor.r)}, ${Math.round(this.currentColor.g)}, ${Math.round(this.currentColor.b)})`
     const trailWidth = strokeWidth * T.widthRatio
 
-    for (let i = 0; i < this.history.length; i += 1) {
-      const historyAlpha = (i + 1) / (this.maxHistory + 1)
-      this._drawPath(
-        ctx,
-        this.history[i],
-        `rgba(${drawR}, ${drawG}, ${drawB}, ${historyAlpha * T.alphaMultiplier})`,
-        1,
-        trailWidth
-      )
+    for (let i = 0; i < drawCount; i += 1) {
+      const slotIdx = (this._ringHead - drawCount + i + this._ringCapacity) % this._ringCapacity
+      const historyAlpha = (i + 1) / (this.maxHistory + 1) * T.alphaMultiplier
+      this._drawPath(ctx, this._ringBuffer[slotIdx], strokeColor, historyAlpha, trailWidth)
     }
 
-    this._drawPath(ctx, this.points, `rgb(${drawR}, ${drawG}, ${drawB})`, strokeAlpha, strokeWidth)
+    this._drawPath(ctx, this.points, strokeColor, strokeAlpha, strokeWidth)
     ctx.globalAlpha = 1
+  }
+
+  dispose() {
+    this.ctx = null
+    this.canvas = null
+    this.points = null
+    this._ringBuffer = null
   }
 }
