@@ -12,6 +12,7 @@ namespace
 {
     constexpr int kEditorWidth = 420;
     constexpr int kEditorHeight = 700;
+    constexpr double kTransportStateStaleMs = 1000.0;
 
     // Resource provider for Unravel's embedded UI assets
     std::optional<juce::WebBrowserComponent::Resource> getUnravelResource(const juce::String& url)
@@ -211,6 +212,7 @@ UnravelEditor::UnravelEditor(UnravelProcessor& proc)
     webView.setWantsKeyboardFocus(true);
     webView.setMouseClickGrabsKeyboardFocus(true);
     loadInitialURL();
+    lastVisualStatePopMs = juce::Time::getMillisecondCounterHiRes();
 
     // Drive UI updates via VBlank (screen refresh rate)
     vblankAttachment = std::make_unique<juce::VBlankAttachment>(
@@ -228,12 +230,15 @@ void UnravelEditor::resized()
 
 void UnravelEditor::handleUpdate()
 {
+    const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+
     // C++ -> JS: Pull the latest snapshot from the FIFO and push to the browser
     threadbare::dsp::UnravelState dequeued{};
     if (processorRef.popVisualState(dequeued))
     {
         cachedVisualState = dequeued;
         hasCachedVisualState = true;
+        lastVisualStatePopMs = nowMs;
     }
 
     if (! hasCachedVisualState)
@@ -268,7 +273,8 @@ void UnravelEditor::handleUpdate()
     obj->setProperty("entropy", state.entropy);
     
     // === TRANSPORT STATE ===
-    obj->setProperty("isPlaying", state.isPlaying);
+    const bool transportStateIsStale = (nowMs - lastVisualStatePopMs) > kTransportStateStaleMs;
+    obj->setProperty("isPlaying", transportStateIsStale ? false : state.isPlaying);
     
     // Current preset
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());

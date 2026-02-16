@@ -93,7 +93,7 @@ const CONFIG = {
   transport: {
     decelerationRate: 0.03,  // How fast it slows when stopped (lower = more gradual)
     accelerationRate: 0.06,  // How fast it speeds up when playing
-    idleSpeed: 0.15,         // Minimum speed when stopped (keeps orb alive)
+    idleSpeed: 0.0,          // Fully stop phase motion when transport is stopped
   },
 
   // === DISINTEGRATION LOOPER: Entropy Visual Effects ===
@@ -146,6 +146,7 @@ const CONFIG = {
 // ORB IMPLEMENTATION
 // =============================================================================
 const TWO_PI = Math.PI * 2
+const SPEED_EPSILON = 1e-4
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
 
@@ -277,7 +278,7 @@ export class Orb {
     const isPlaying = this.state.isPlaying !== false
 
     // === TRANSPORT-AWARE PLAYBACK SPEED ===
-    // When stopped, slow down to idle speed (not zero) so orb stays alive
+    // On stop, both phase drift and 3D rotation should settle to a true pause.
     const { transport: TR } = CONFIG
     const targetSpeed = isPlaying ? 1.0 : TR.idleSpeed
     const speedRate = targetSpeed > this.playbackSpeed ? TR.accelerationRate : TR.decelerationRate
@@ -285,6 +286,8 @@ export class Orb {
     const rotationTargetSpeed = isPlaying ? 1.0 : 0.0
     const rotationRate = rotationTargetSpeed > this.rotationSpeed ? TR.accelerationRate : TR.decelerationRate
     this.rotationSpeed = lerp(this.rotationSpeed, rotationTargetSpeed, rotationRate)
+    if (!isPlaying && Math.abs(this.playbackSpeed) < SPEED_EPSILON) this.playbackSpeed = 0.0
+    if (!isPlaying && Math.abs(this.rotationSpeed) < SPEED_EPSILON) this.rotationSpeed = 0.0
 
     // === STATE-AWARE COLOR CALCULATION ===
     const { colors: C, recordingPulse: RP } = CONFIG
@@ -436,7 +439,10 @@ export class Orb {
     // Apply transport-aware playback speed
     basePhaseIncrement *= this.playbackSpeed
 
-    this.phase += basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
+    const phaseIncrement = basePhaseIncrement * (TP.driftMin + drift * TP.driftRange)
+    if (Math.abs(phaseIncrement) > SPEED_EPSILON) {
+      this.phase += phaseIncrement
+    }
 
     // === 3D ROTATION ===
     const { rotation3d: R3 } = CONFIG
@@ -444,11 +450,13 @@ export class Orb {
 
     if (useRotation) {
       const rotationIncrement = basePhaseIncrement * this.rotationSpeed
-      this.rotationPhase += rotationIncrement
-      // X and Y oscillate (tilt back and forth), Z rotates continuously
-      this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
-      this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
-      this.rotationZ += rotationIncrement * R3.zSpeed
+      if (Math.abs(rotationIncrement) > SPEED_EPSILON) {
+        this.rotationPhase += rotationIncrement
+        // X and Y oscillate (tilt back and forth), Z rotates continuously
+        this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
+        this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
+        this.rotationZ += rotationIncrement * R3.zSpeed
+      }
     }
 
     // Precompute trig for 3D rotation

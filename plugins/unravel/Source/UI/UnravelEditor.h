@@ -22,6 +22,7 @@ private:
     std::unique_ptr<juce::VBlankAttachment> vblankAttachment;
     threadbare::dsp::UnravelState cachedVisualState{};
     bool hasCachedVisualState = false;
+    double lastVisualStatePopMs = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UnravelEditor)
 };
