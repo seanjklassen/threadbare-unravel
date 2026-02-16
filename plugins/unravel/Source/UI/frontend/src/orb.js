@@ -159,7 +159,7 @@ export class Orb {
     this.ctx = canvas.getContext('2d')
     this.points = new Array(CONFIG.pointCount)
     for (let i = 0; i < CONFIG.pointCount; i += 1) {
-      this.points[i] = { x: 0, y: 0, z: 0 }  // Added z for 3D
+      this.points[i] = { x: 0, y: 0 }
     }
 
     this.phase = 0
@@ -266,6 +266,7 @@ export class Orb {
     // Extract state values
     const minDim = Math.max(1, Math.min(this.width, this.height))
     const inLevel = clamp(this.state.inLevel, 0, 1)
+    const rawInLevel = clamp(this.targetState.inLevel, 0, 1)
     const tailLevel = clamp(this.state.tailLevel, 0, 1)
     const puckX = clamp(this.state.puckX, 0, 1)
     const puckY = clamp(this.state.puckY, 0, 1)
@@ -276,6 +277,7 @@ export class Orb {
     const looperState = this.state.looperState || 0  // 0=Idle, 1=Recording, 2=Looping
     const entropy = clamp(this.state.entropy || 0, 0, 1)
     const isPlaying = this.state.isPlaying !== false
+    const isDisintegrating = looperState === 2 && entropy > 0
 
     // === TRANSPORT-AWARE PLAYBACK SPEED ===
     // On stop, both phase drift and 3D rotation should settle to a true pause.
@@ -321,9 +323,7 @@ export class Orb {
     this.currentColor.b = lerp(this.currentColor.b, targetColor.b, colorLerp)
 
     // === INPUT REACTIVITY: Bloom effect ===
-    // Use TARGET (raw) inLevel for transient detection, not smoothed state
     const { inputReactivity: IR } = CONFIG
-    const rawInLevel = clamp(this.targetState.inLevel, 0, 1)
     if (rawInLevel > IR.bloomThreshold) {
       // Spike detected - boost bloom toward 1
       const bloomTarget = (rawInLevel - IR.bloomThreshold) / (1 - IR.bloomThreshold)
@@ -338,13 +338,9 @@ export class Orb {
     const useBreathing = BR.enabled && !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableBreathing)
 
     if (useBreathing) {
-      // Use raw target values for more responsive detection
-      const rawInLevel = clamp(this.targetState.inLevel, 0, 1)
-      const rawIsPlaying = this.targetState.isPlaying
-      
       // Breathing is always subtly active, but stronger when idle
       // "Idle" = DAW stopped (isPlaying explicitly false) OR very low input
-      const isIdle = rawIsPlaying === false || rawInLevel < BR.idleThreshold
+      const isIdle = isPlaying === false || rawInLevel < BR.idleThreshold
       const targetIntensity = isIdle ? 1.0 : 0.3  // Always at least 30% breathing
       
       if (targetIntensity > this.breathIntensity) {
@@ -375,7 +371,7 @@ export class Orb {
     radiusBase *= breathScale
 
     // Apply entropy-based radius reduction (looping only)
-    if (looperState === 2 && entropy > 0) {
+    if (isDisintegrating) {
       radiusBase *= (1 - entropy * E.maxRadiusReduction)
     }
 
@@ -392,7 +388,7 @@ export class Orb {
     strokeAlpha *= pulseAlpha
 
     // Apply entropy-based alpha reduction (looping only)
-    if (looperState === 2 && entropy > 0) {
+    if (isDisintegrating) {
       strokeAlpha *= (1 - entropy * E.maxAlphaReduction)
       
       // Add flicker at high entropy
@@ -410,7 +406,7 @@ export class Orb {
     // Reduced motion: use static trail length
     if (prefersReducedMotion) {
       trailHistoryMax = CONFIG.accessibility.reducedMotion.staticTrailLength
-    } else if (looperState === 2 && entropy > 0) {
+    } else if (isDisintegrating) {
       trailHistoryMax *= (1 - entropy * E.maxTrailReduction)
     }
     this.maxHistory = Math.max(1, Math.floor(trailHistoryMax))
@@ -432,7 +428,7 @@ export class Orb {
     let basePhaseIncrement = rotationsPerMs * deltaMs * TWO_PI
 
     // Apply entropy-based speed reduction (looping only)
-    if (looperState === 2 && entropy > 0) {
+    if (isDisintegrating) {
       basePhaseIncrement *= (1 - entropy * E.maxSpeedReduction)
     }
 
@@ -448,24 +444,23 @@ export class Orb {
     const { rotation3d: R3 } = CONFIG
     const useRotation = !(prefersReducedMotion && CONFIG.accessibility.reducedMotion.disableRotation)
 
+    let cosX = 1, sinX = 0, cosY = 1, sinY = 0, cosZ = 1, sinZ = 0
+
     if (useRotation) {
       const rotationIncrement = basePhaseIncrement * this.rotationSpeed
       if (Math.abs(rotationIncrement) > SPEED_EPSILON) {
         this.rotationPhase += rotationIncrement
-        // X and Y oscillate (tilt back and forth), Z rotates continuously
         this.rotationX = Math.sin(this.rotationPhase * R3.xSpeed * 1000) * R3.xAmplitude
         this.rotationY = Math.sin(this.rotationPhase * R3.ySpeed * 1000 + Math.PI * 0.5) * R3.yAmplitude
         this.rotationZ += rotationIncrement * R3.zSpeed
       }
+      cosX = Math.cos(this.rotationX)
+      sinX = Math.sin(this.rotationX)
+      cosY = Math.cos(this.rotationY)
+      sinY = Math.sin(this.rotationY)
+      cosZ = Math.cos(this.rotationZ)
+      sinZ = Math.sin(this.rotationZ)
     }
-
-    // Precompute trig for 3D rotation
-    const cosX = Math.cos(this.rotationX)
-    const sinX = Math.sin(this.rotationX)
-    const cosY = Math.cos(this.rotationY)
-    const sinY = Math.sin(this.rotationY)
-    const cosZ = Math.cos(this.rotationZ)
-    const sinZ = Math.sin(this.rotationZ)
 
     // === GENERATE CURVE POINTS ===
     let prevRadius = radiusBase
@@ -510,7 +505,6 @@ export class Orb {
       const point = this.points[i]
       point.x = this.centerX + px
       point.y = this.centerY + py
-      point.z = pz
     }
 
     // Store history snapshot
