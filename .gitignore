@@ -14,6 +14,9 @@ compile_commands.json
 *.app/
 /ThreadbareUnravel_artefacts/
 
+# Build staging artefacts
+/staging/
+
 # OS/editor clutter
 .DS_Store
 Thumbs.db
