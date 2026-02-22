@@ -4,9 +4,9 @@
 
 ## reverb with a memory problem.
 
-I kept reaching for a reverb that sounded more like the way I remember a song. Like the feeling of it coming back to me later, softer and not quite right. I wanted one that simulated recollection.
+I had reverbs I liked. They were all simulating spaces — halls, plates, springs. I kept reaching for one that sounded less like a room and more like something slipping away from me. What happens to a sound after you stop paying attention to it. The way it comes back softer, shifted, not quite right.
 
-So I built it. Unravel holds onto what you played and replays fragments of it. Sometimes detuned and sometimes reversed, and feeds them back into the reverb engine. So, the tail drifts and degrades over time, carrying traces of your recent performance the way memory carries traces of a conversation you had last week. It's recognizable but a little unreliable.
+Unravel holds onto a few seconds of what you just played and dissolves it into the tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
 
 ---
 
@@ -28,7 +28,9 @@ The thing I didn't expect: you can play the puck while the music runs. Drag it s
 ---
 
 ### disintegration looper
-Record up to 60 seconds of your audio and loop it. Each pass degrades the signal. Filters converge, saturation builds, random dropouts appear where the oxide has shed. Pitch wanders downward. Left and right channels drift apart. Wow and flutter creep in, and a noise floor rises underneath until there's nothing left. The idea came from listening to William Basinski's Disintegration Loops and wanting that process as something you could control in real time.
+Record up to 60 seconds of your audio and loop it. Each pass degrades the signal. Filters converge, saturation builds, random dropouts appear where the oxide has shed. Pitch wanders downward. Left and right channels drift apart. Wow and flutter creep in, and a noise floor rises underneath until there's nothing left. The degrading loop runs through the same reverb engine, so as entropy builds, the two become the same thing.
+
+The idea came from listening to William Basinski's Disintegration Loops and wanting that process as something you could control in real time.
 
 **spectral to diffuse.** 
 Left emphasizes spectral thinning, like a photograph fading in the sun. 
@@ -48,7 +50,7 @@ Up reaches broken entropy in as short as two passes.
 The puck is the instrument. The drawer is the workbench. The puck maps across every parameter simultaneously and for most people, most of the time, it's the only control you need. But if you want to push the ghost engine harder than the puck allows, or you've decided at midnight that the decay needs to be exactly 7.2 seconds and you can't explain why, you can make that tweak. Open the drawer when you want precision. The puck keeps working either way, scaling relative to whatever you've set manually.
 
 ### ghost engine
-Continuously records your input and spawns up to eight ghostly fragments at any time -- some shimmer, some play backwards, and all of it feeds into the reverb rather than sitting on top. The ghost material doesn't decorate the tail. It is the tail.
+The reverb is always listening. It keeps a rolling memory of what you just played and pulls fragments back out as the tail evolves — some pitched up, some reversed, some barely recognizable. They feed into the reverb engine, not on top of it, so the ghost material becomes part of the tail itself. At low settings it adds a warmth you can't quite place. Push it further and the reverb starts to sound like your own playing coming apart at the edges.
 
 ### scatter
 Four voices that trigger off your transients, grab ghost fragments, pitch-shift them, and fling them across the stereo field. At low amounts it adds texture, a glittering edge. Turn it up and the reverb sounds like it is coming apart at the seams.
@@ -121,7 +123,7 @@ At default settings, CPU is fine. If you max the ghost engine, scatter, and disi
 Threadbare -- Unravel
 
 **Short Description:**
-Granular memory reverb with 8x8 FDN. Records the last 750ms of your performance, replays it as detuned grains with reverse playback and shimmer. One 2D puck macro control. Disintegration looper with tape-modeled entropy. For shoegaze, ambient, dream pop.
+Granular memory reverb with 8x8 FDN. Maintains a 2-second rolling buffer of your performance, spawning detuned grains with reverse playback and shimmer directly into the reverb network. One 2D puck macro control. Disintegration looper with tape-modeled entropy. For shoegaze, ambient, dream pop.
 
 **Full Description:**
 Every reverb plugin simulates a room. This one simulates memory.
