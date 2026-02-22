@@ -167,7 +167,7 @@ Note: local development builds may copy plugins into the user Library (see `docs
 
 ### 4.1 Concept
 
-Unravel turns audio into a slowly dissolving, modulated cloud with memories of what you played a moment ago. It is not a room simulator. It is a memory simulator running at audio rate.
+I kept reaching for a reverb that sounded less like a room and more like something slipping away from me. Unravel holds onto a few seconds of what you just played and dissolves it into the tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb, which is what gives it that ache.
 
 **What it's for:**
 - Shoegaze / dream pop / ambient guitars.

@@ -4,9 +4,9 @@
 
 ## reverb with a memory problem.
 
-I kept reaching for a reverb that sounded more like the way I remember a song. Like the feeling of it coming back to me later, softer and not quite right. I wanted one that simulated recollection.
+I kept reaching for a reverb that sounded less like a room and more like something slipping away from me. Unravel holds onto a few seconds of what you just played and dissolves it into the tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb, which is what gives it that ache.
 
-So I built it. Unravel holds onto what you played and replays fragments of it. Sometimes detuned and sometimes reversed, and feeds them back into the reverb engine. So, the tail drifts and degrades over time, carrying traces of your recent performance the way memory carries traces of a conversation you had last week. It's recognizable but a little unreliable.
+The tail drifts and degrades over time, carrying traces of your recent performance. It's recognizable but a little unreliable.
 
 ---
 
