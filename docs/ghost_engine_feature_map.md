@@ -85,20 +85,20 @@ Formula: `prob = 0.25 × ghost²` (only when ghost > 0.5)
 
 ---
 
-### Memory Proximity (Spawn Position)
+### Memory Proximity (Spawn Position — Continuous Range)
 
 ```
-Puck X    Recent Zone    Distant Zone
-          (0-200ms)      (500-750ms)
+Puck X    Max Lookback    Behavior
 ──────────────────────────────────────
- -1.0       100%            0%        ◀─ Body
- -0.5        75%           25%
-  0.0        50%           50%        ◀─ Center
- +0.5        25%           75%
- +1.0         0%          100%        ◀─ Air
+ -1.0       150ms         ◀─ Body (very recent memories)
+ -0.5       300ms
+  0.0       450ms         ◀─ Center (medium)
+ +0.5       600ms
+ +1.0       750ms         ◀─ Air (distant memories)
 ```
 
-Linear interpolation (can adjust with `kProximityBiasPower`)
+Continuous interpolation between `kMinLookbackMs` (150ms) and `kMaxLookbackMs` (750ms).
+Grains spawn at random positions within `[0, maxLookback]` from the write head.
 
 ---
 
@@ -208,8 +208,8 @@ For debugging/testing, these features can be independently disabled:
 static constexpr float kReverseProbability = 0.0f;
 
 // Disable proximity (always use recent zone):
-static constexpr float kDistantZoneStartMs = 0.0f;
-static constexpr float kDistantZoneEndMs = 200.0f;
+static constexpr float kMinLookbackMs = 150.0f;
+static constexpr float kMaxLookbackMs = 150.0f;
 
 // Disable stereo width variation (always narrow):
 static constexpr float kMinPanWidth = 0.3f;
@@ -331,14 +331,13 @@ All features essentially "free" in terms of CPU.
 // Reverse
 kReverseProbability = 0.25f;  // 25% at ghost=1.0
 
-// Proximity
-kRecentZoneMs = 200.0f;       // 0-200ms
-kDistantZoneStartMs = 500.0f; // 500-750ms
-kDistantZoneEndMs = 750.0f;
+// Proximity (Continuous Range)
+kMinLookbackMs = 150.0f;      // At puckX=-1 (body/recent)
+kMaxLookbackMs = 750.0f;      // At puckX=+1 (air/distant)
 
 // Stereo
 kMinPanWidth = 0.3f;          // Narrow
-kMaxPanWidth = 1.0f;          // Full width
+kMaxPanWidth = 0.85f;         // Capped for mono compatibility
 kMirrorReverseGrains = true;  // Flip reverse grains
 
 // Looper (grain locking)
@@ -370,7 +369,7 @@ All values tunable at runtime by editing `UnravelTuning.h`.
 │  ┌───────────────────────────────────────┐    │
 │  │     GHOST ENGINE (Enhanced)            │    │
 │  │                                         │    │
-│  │  History Buffer (750ms)                │    │
+│  │  History Buffer (2.0s)                 │    │
 │  │  Grain Pool (8 grains)                 │    │
 │  │  Frozen Positions (8 slots)            │    │
 │  │                                         │    │

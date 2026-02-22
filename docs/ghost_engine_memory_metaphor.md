@@ -48,7 +48,7 @@ The ghost engine implements each of these as sonic phenomena.
 **The feeling:** Sometimes you can't let go of a moment. Your mind replays it again and again, each time noticing something different—a slightly different angle, emphasis, or emotional coloring. But memories aren't static. Each time you revisit them, they change. They degrade. Eventually, they fade.
 
 **The sound:**
-- When the looper is activated, it records 4 bars of your reverb tail (tempo-synced)
+- When the looper is activated, it records up to 60 seconds of your signal (time-based, DAW-agnostic, input-gated)
 - The loop plays back, but with each iteration it degrades:
   - Filters converge (highs thin, lows fade)
   - Pitch drifts downward (like a dying tape motor)
@@ -59,7 +59,7 @@ The ghost engine implements each of these as sonic phenomena.
 
 **User experience:**
 - Click the looper button to start recording during a guitar chord
-- After 4 bars, the loop begins: the chord becomes a degrading memory that slowly evaporates
+- After the recording window completes, the loop begins: the chord becomes a degrading memory that slowly evaporates
 - Puck Y controls how fast it fades (top = fast, bottom = endless)
 - Puck X controls the character: left (Ghost) = spectral thinning, right (Fog) = diffuse smearing
 - When entropy reaches 1.0, the loop fades gracefully back to normal reverb
@@ -73,10 +73,10 @@ The ghost engine implements each of these as sonic phenomena.
 **The feeling:** Recent memories feel immediate and vivid (you remember details). Distant memories feel hazy and ethereal (you remember the feeling, not the facts).
 
 **The sound:**
-- Puck X-axis controls WHERE in the history buffer grains spawn from:
-  - **Left (Body):** Grains spawn from the last 0-200ms (recent zone)
-  - **Right (Air):** Grains spawn from 500-750ms ago (distant zone)
-  - **Center:** Even mix of both
+- Puck X-axis controls WHERE in the history buffer grains spawn from (continuous range):
+  - **Left (Body):** Grains spawn from the last 0-150ms (recent memories)
+  - **Right (Air):** Grains can reach back up to 750ms (distant memories)
+  - **Center:** Grains spawn within 0-450ms (blended depth)
 
 **Sonic characteristics by position:**
 
@@ -152,7 +152,7 @@ When all four features are active simultaneously, you get:
 - **Use case:** Subtle doubling, room presence, "just happened" quality
 
 ### Scenario 2: "Distant Air Memory" (Puck: Top-Right, Ghost: High)
-- Distant memories (500-750ms ago)
+- Distant memories (up to 750ms ago)
 - Many reverse grains (25%)
 - Wide stereo field
 - Weak early reflections, strong diffuse wash
@@ -160,7 +160,7 @@ When all four features are active simultaneously, you get:
 - **Use case:** Ambient washes, shoegaze textures, "fading memory" quality
 
 ### Scenario 3: "Fading Memory" (Looper: Active, Any Puck Position)
-- 4 bars of reverb captured and looped
+- Up to 60 seconds of signal captured and looped
 - Each iteration degrades: filters converge, pitch drifts, dropouts occur
 - Ghost engine locked onto specific moments, replaying with variation
 - Puck Y controls decay rate (top = fast fade, bottom = slow fade)

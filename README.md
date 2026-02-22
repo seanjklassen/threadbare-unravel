@@ -24,8 +24,8 @@ cmake --build build --target ThreadbareUnravel_All -j8
 ```
 
 Plugins are installed to:
-- **AU:** `~/Library/Audio/Plug-Ins/Components/ThreadbareUnravel.component`
-- **VST3:** `~/Library/Audio/Plug-Ins/VST3/ThreadbareUnravel.vst3`
+- **AU:** `~/Library/Audio/Plug-Ins/Components/unravel.component`
+- **VST3:** `~/Library/Audio/Plug-Ins/VST3/unravel.vst3`
 
 ### Frontend Development
 

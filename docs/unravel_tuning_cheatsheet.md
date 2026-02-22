@@ -22,11 +22,11 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 - `kMaxDepthSamples = 100`: extreme tape warble at 48kHz; creates heavy detune.
 
 ## Ghost
-- `kHistorySeconds = 1.2`: extended memory buffer (750ms lookback + safety margin).
+- `kHistorySeconds = 2.0`: extended memory buffer supporting Glitch Looper slices at slow tempos.
 - `kGrainMinSec = 0.05`, `kGrainMaxSec = 0.30`: dense to smooth textures.
 - `kDetuneSemi = 0.2`: ±20 cents wobble.
 - `kShimmerSemi = 12` with `kShimmerProbability = 25%`: obvious sparkle.
-- `kMinGainDb = -24`, `kMaxGainDb = -6`: ghost sits against FDN input.
+- `kMinGainDb = -24`, `kMaxGainDb = -9`: ghost sits against FDN input.
 - `kReverseProbability = 0.25`: 25% reverse grains at ghost=1.0.
 - `kReverseGainReduction = 0.75`: -2.5dB for reverse grains.
 - `kMinLookbackMs = 150`, `kMaxLookbackMs = 750`: puck X memory proximity.
