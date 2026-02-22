@@ -41,7 +41,7 @@ Threadbare makes audio tools for people who care more about how music feels than
 Write like a musician explaining their favorite pedal to a friend. First person is fine. Technical accuracy matters, but it should never feel like a spec sheet unless it literally is one.
 
 **Good:**
-> I kept reaching for a reverb that sounded more like the way I remember a song. Like the feeling of it coming back to me later, softer and not quite right.
+> I had reverbs I liked. They were all simulating spaces. I kept reaching for one that sounded less like a room and more like something slipping away from me.
 
 **Bad:**
 > Introducing our revolutionary new reverb plugin featuring cutting-edge granular synthesis technology and an innovative 8x8 FDN architecture!
