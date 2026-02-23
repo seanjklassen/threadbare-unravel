@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       // Resolve shared UI shell from monorepo root
       '@threadbare/shell': path.resolve(__dirname, '../../../../../shared/ui/shell/src'),
+      '@threadbare/bridge': path.resolve(__dirname, '../../../../../shared/ui/bridge'),
     }
   },
   

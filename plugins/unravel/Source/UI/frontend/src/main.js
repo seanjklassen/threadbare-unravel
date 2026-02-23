@@ -8,86 +8,16 @@
 // JUCE 8 Native Function Integration - MUST BE FIRST
 // =============================================================================
 
-// Promise handler to track pending native function calls
-class PromiseHandler {
-  constructor() {
-    this.lastPromiseId = 0
-    this.promises = new Map()
-    
-    // Listen for completion events from the backend (with safety check)
-    if (window.__JUCE__?.backend?.addEventListener) {
-      window.__JUCE__.backend.addEventListener('__juce__complete', ({ promiseId, result }) => {
-        if (this.promises.has(promiseId)) {
-          this.promises.get(promiseId).resolve(result)
-          this.promises.delete(promiseId)
-        }
-      })
-    }
-  }
-  
-  createPromise() {
-    const promiseId = this.lastPromiseId++
-    const result = new Promise((resolve, reject) => {
-      this.promises.set(promiseId, { resolve, reject })
-    })
-    return [promiseId, result]
-  }
-}
+import { createNativeFunctionBridge, createParamSender } from '@threadbare/bridge/juce-bridge.js'
 
-// Initialize promise handler (with safety)
-let promiseHandler = null
-if (window.__JUCE__?.backend) {
-  promiseHandler = new PromiseHandler()
-}
+const getNativeFunction = createNativeFunctionBridge()
+const sendParam = createParamSender(getNativeFunction)
 
-// Replicate JUCE's getNativeFunction
-const getNativeFunction = (name) => {
-  const registeredFunctions = window.__JUCE__?.initialisationData?.__juce__functions || []
-  
-  if (!registeredFunctions.includes(name)) {
-    return null
-  }
-  
-  if (!promiseHandler || !window.__JUCE__?.backend?.emitEvent) {
-    return null
-  }
-  
-  // Return a function that invokes the backend via emitEvent
-  return function() {
-    const [promiseId, result] = promiseHandler.createPromise()
-    
-    window.__JUCE__.backend.emitEvent('__juce__invoke', {
-      name: name,
-      params: Array.prototype.slice.call(arguments),
-      resultId: promiseId
-    })
-    
-    return result
-  }
-}
-
-// Make it globally available IMMEDIATELY
-window.__getNativeFunction = getNativeFunction
-
-// Cache native setParameter function
-let nativeSetParameter = null
 let nativeLooperTrigger = null
 
-const sendParam = (id, val) => {
-  // Lazily get the native function using our polyfill
-  if (!nativeSetParameter && window.__getNativeFunction) {
-    nativeSetParameter = window.__getNativeFunction('setParameter')
-  }
-  
-  if (typeof nativeSetParameter === 'function') {
-    nativeSetParameter(id, val)
-  }
-  // Silently skip if not available - reduces console spam
-}
-
 const getLooperTrigger = () => {
-  if (!nativeLooperTrigger && window.__getNativeFunction) {
-    nativeLooperTrigger = window.__getNativeFunction('triggerDisintegration')
+  if (!nativeLooperTrigger) {
+    nativeLooperTrigger = getNativeFunction('triggerDisintegration')
   }
   return typeof nativeLooperTrigger === 'function' ? nativeLooperTrigger : null
 }
