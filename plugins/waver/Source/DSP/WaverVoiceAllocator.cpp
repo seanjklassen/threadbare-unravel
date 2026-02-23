@@ -6,12 +6,12 @@
 
 namespace threadbare::dsp
 {
-void WaverVoiceAllocator::prepare(double sampleRate) noexcept
+void WaverVoiceAllocator::prepare(double sampleRate, std::uint32_t driftSeed) noexcept
 {
-    for (auto& voice : voices)
+    for (int i = 0; i < static_cast<int>(kVoiceCount); ++i)
     {
-        voice.prepare(sampleRate);
-        voice.setPortamento(glideMs, glideAlwaysMode);
+        voices[static_cast<std::size_t>(i)].prepare(sampleRate, i, driftSeed);
+        voices[static_cast<std::size_t>(i)].setPortamento(glideMs, glideAlwaysMode);
     }
 }
 
@@ -96,6 +96,66 @@ void WaverVoiceAllocator::setLfoToPwm(float depth) noexcept
 {
     for (auto& voice : voices)
         voice.setLfoToPwm(depth);
+}
+
+void WaverVoiceAllocator::setDriftAmount(float amount) noexcept
+{
+    for (auto& voice : voices)
+        voice.setDriftAmount(amount);
+}
+
+void WaverVoiceAllocator::setAge(float age) noexcept
+{
+    for (auto& voice : voices)
+        voice.setAge(age);
+}
+
+void WaverVoiceAllocator::setSubLevel(float level) noexcept
+{
+    for (auto& voice : voices)
+        voice.setSubLevel(level);
+}
+
+void WaverVoiceAllocator::setNoiseLevel(float level) noexcept
+{
+    for (auto& voice : voices)
+        voice.setNoiseLevel(level);
+}
+
+void WaverVoiceAllocator::setLfoRate(float hz) noexcept
+{
+    for (auto& voice : voices)
+        voice.setLfoRate(hz);
+}
+
+void WaverVoiceAllocator::setLfoShape(int shape) noexcept
+{
+    for (auto& voice : voices)
+        voice.setLfoShape(shape);
+}
+
+void WaverVoiceAllocator::setLfoToVibrato(float cents) noexcept
+{
+    for (auto& voice : voices)
+        voice.setLfoToVibrato(cents);
+}
+
+void WaverVoiceAllocator::setToyParams(float modIndex, float ratioNorm, float feedback) noexcept
+{
+    for (auto& voice : voices)
+        voice.setToyParams(modIndex, ratioNorm, feedback);
+}
+
+void WaverVoiceAllocator::setLayerLevels(float dco, float toy) noexcept
+{
+    for (auto& voice : voices)
+        voice.setLayerLevels(dco, toy);
+}
+
+void WaverVoiceAllocator::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept
+{
+    for (auto& voice : voices)
+        voice.setEnvelopeParams(attack, decay, sustain, release);
 }
 
 void WaverVoiceAllocator::render(std::span<float> left, std::span<float> right) noexcept

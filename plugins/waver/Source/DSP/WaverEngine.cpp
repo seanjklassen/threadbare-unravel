@@ -4,9 +4,9 @@
 
 namespace threadbare::dsp
 {
-void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec) noexcept
+void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t driftSeed) noexcept
 {
-    voiceAllocator.prepare(spec.sampleRate);
+    voiceAllocator.prepare(spec.sampleRate, driftSeed);
     voiceAllocator.setPortamento(0.0f, false);
     chorus.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
     chorus.setMode(BbdChorus::Mode::modeI);
@@ -64,5 +64,55 @@ void WaverEngine::setWaveBlend(float blend) noexcept
 void WaverEngine::setLfoToPwm(float depth) noexcept
 {
     voiceAllocator.setLfoToPwm(depth);
+}
+
+void WaverEngine::setDriftAmount(float amount) noexcept
+{
+    voiceAllocator.setDriftAmount(amount);
+}
+
+void WaverEngine::setAge(float age) noexcept
+{
+    voiceAllocator.setAge(age);
+}
+
+void WaverEngine::setSubLevel(float level) noexcept
+{
+    voiceAllocator.setSubLevel(level);
+}
+
+void WaverEngine::setNoiseLevel(float level) noexcept
+{
+    voiceAllocator.setNoiseLevel(level);
+}
+
+void WaverEngine::setLfoRate(float hz) noexcept
+{
+    voiceAllocator.setLfoRate(hz);
+}
+
+void WaverEngine::setLfoShape(int shape) noexcept
+{
+    voiceAllocator.setLfoShape(shape);
+}
+
+void WaverEngine::setLfoToVibrato(float cents) noexcept
+{
+    voiceAllocator.setLfoToVibrato(cents);
+}
+
+void WaverEngine::setToyParams(float modIndex, float ratioNorm, float feedback) noexcept
+{
+    voiceAllocator.setToyParams(modIndex, ratioNorm, feedback);
+}
+
+void WaverEngine::setLayerLevels(float dco, float toy) noexcept
+{
+    voiceAllocator.setLayerLevels(dco, toy);
+}
+
+void WaverEngine::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept
+{
+    voiceAllocator.setEnvelopeParams(attack, decay, sustain, release);
 }
 } // namespace threadbare::dsp

@@ -28,7 +28,7 @@ void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         spec.sampleRate = rateDependent.sampleRate * osFactor;
         spec.maximumBlockSize = static_cast<juce::uint32>(preparedBlockSize * oversampling->getOversamplingFactor());
     }
-    engine.prepare(spec);
+    engine.prepare(spec, static_cast<std::uint32_t>(determinismState.globalSeed & 0xFFFFFFFFu));
     applyQualityMode(qualityMode);
     stateQueue.reset();
     uiEventQueue.reset();
@@ -65,11 +65,39 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float outputGainDb = apvts.getRawParameterValue("outputGain")->load();
     const float macroShape = apvts.getRawParameterValue("macroShape")->load();
     const float lfoToPwm = apvts.getRawParameterValue("lfoToPwm")->load();
+    const float driftAmt = apvts.getRawParameterValue("driftAmount")->load();
+    const float puckY = apvts.getRawParameterValue("puckY")->load();
+    const float dcoSubLvl = apvts.getRawParameterValue("dcoSubLevel")->load();
+    const float noiseLvl = apvts.getRawParameterValue("noiseLevel")->load();
+    const float lfoRateHz = apvts.getRawParameterValue("lfoRate")->load();
+    const int lfoShapeIdx = static_cast<int>(apvts.getRawParameterValue("lfoShape")->load());
+    const float lfoVibrato = apvts.getRawParameterValue("lfoToVibrato")->load();
+    const float toyIdx = apvts.getRawParameterValue("toyIndex")->load();
+    const float toyRat = apvts.getRawParameterValue("toyRatio")->load();
+    const float layDco = apvts.getRawParameterValue("layerDco")->load();
+    const float layToy = apvts.getRawParameterValue("layerToy")->load();
+    const float envA = apvts.getRawParameterValue("envAttack")->load();
+    const float envD = apvts.getRawParameterValue("envDecay")->load();
+    const float envS = apvts.getRawParameterValue("envSustain")->load();
+    const float envR = apvts.getRawParameterValue("envRelease")->load();
+
+    const float ageNorm = (puckY + 1.0f) * 0.5f;
+
     engine.setPortamento(portaTimeMs, portaMode == 1);
     engine.setChorusMode(chorusMode);
     engine.setFilter(filterCutoff, filterRes, filterMode == 1);
     engine.setWaveBlend(macroShape);
     engine.setLfoToPwm(lfoToPwm);
+    engine.setDriftAmount(driftAmt);
+    engine.setAge(ageNorm);
+    engine.setSubLevel(dcoSubLvl);
+    engine.setNoiseLevel(noiseLvl);
+    engine.setLfoRate(lfoRateHz);
+    engine.setLfoShape(lfoShapeIdx);
+    engine.setLfoToVibrato(lfoVibrato);
+    engine.setToyParams(toyIdx, toyRat, 0.0f);
+    engine.setLayerLevels(layDco, layToy);
+    engine.setEnvelopeParams(envA, envD, envS, envR);
 
     const auto renderRange = [&](int startSample, int endSample)
     {

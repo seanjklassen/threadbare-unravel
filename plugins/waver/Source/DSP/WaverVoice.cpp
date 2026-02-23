@@ -4,9 +4,27 @@
 #include <cmath>
 #include <numbers>
 
+#include "../WaverTuning.h"
+
 namespace threadbare::dsp
 {
-void WaverVoice::prepare(double newSampleRate) noexcept
+
+void ComponentTolerances::computeFromSeed(std::uint32_t seed) noexcept
+{
+    auto next = [&]() -> float {
+        seed = seed * 1664525u + 1013904223u;
+        return (static_cast<float>((seed >> 8) & 0xFFFFu) / 65535.0f) * 2.0f - 1.0f;
+    };
+
+    filterCutoffScale = 1.0f + next() * 0.02f;
+    filterResScale = 1.0f + next() * 0.015f;
+    const float vcaDb = next() * 0.5f;
+    vcaGainScale = std::pow(10.0f, vcaDb / 20.0f);
+    envAttackScale = 1.0f + next() * 0.04f;
+    envReleaseScale = 1.0f + next() * 0.04f;
+}
+
+void WaverVoice::prepare(double newSampleRate, int voiceIndex, std::uint32_t driftSeed) noexcept
 {
     sampleRate = std::max(1.0, newSampleRate);
     adsr.setSampleRate(sampleRate);
@@ -26,6 +44,12 @@ void WaverVoice::prepare(double newSampleRate) noexcept
     lfo.prepare(sampleRate);
     lfo.setRateHz(3.0f);
     lfo.setShape(WaverLFO::Shape::tri);
+
+    ouDrift.prepare(sampleRate, driftSeed + static_cast<std::uint32_t>(voiceIndex) * 0x9E3779B9u);
+    toyEngine.prepare(sampleRate);
+
+    const std::uint32_t tolSeed = driftSeed ^ (static_cast<std::uint32_t>(voiceIndex) * 2654435761u);
+    tolerances.computeFromSeed(tolSeed);
 
     dcBlockerR = std::exp((-2.0f * std::numbers::pi_v<float> * 10.0f) / static_cast<float>(sampleRate));
     reset();
@@ -60,6 +84,8 @@ void WaverVoice::reset() noexcept
     dcY1 = 0.0f;
     retriggerStartSample = 0.0f;
     lastOutputSample = 0.0f;
+    ouDrift.reset();
+    toyEngine.reset();
 }
 
 void WaverVoice::noteOn(int noteNumber, float velocity, bool stolen) noexcept
@@ -74,7 +100,8 @@ void WaverVoice::noteOn(int noteNumber, float velocity, bool stolen) noexcept
     active = true;
     ageCounter = 0;
 
-    // Keep continuity for normal retriggers; only hard-reset on stolen voices.
+    toyEngine.setNote(targetFrequencyHz);
+
     if (stolen)
     {
         phase = 0.0f;
@@ -82,6 +109,8 @@ void WaverVoice::noteOn(int noteNumber, float velocity, bool stolen) noexcept
         lfo.reset();
         otaFilter.reset();
         moogLadder.reset();
+        toyEngine.reset();
+        toyEngine.setNote(targetFrequencyHz);
     }
 
     if (stolen)
@@ -101,6 +130,12 @@ void WaverVoice::noteOn(int noteNumber, float velocity, bool stolen) noexcept
     retriggerRampRemaining = retriggerRampTotal;
     retriggerStartSample = lastOutputSample;
 
+    adsr.setParameters({
+        adsrParameters.attack * tolerances.envAttackScale,
+        adsrParameters.decay,
+        adsrParameters.sustain,
+        adsrParameters.release * tolerances.envReleaseScale
+    });
     adsr.noteOn();
 }
 
@@ -130,12 +165,25 @@ float WaverVoice::processSample() noexcept
     if (!active)
         return 0.0f;
 
-    currentFrequencyHz += (targetFrequencyHz - currentFrequencyHz) * (1.0f - glideCoeff);
-    phaseIncrement = currentFrequencyHz / static_cast<float>(sampleRate);
-    subPhaseIncrement = (currentFrequencyHz * 0.5f) / static_cast<float>(sampleRate);
+    // OU drift: per-sample advance for determinism.
+    const float drift = ouDrift.processSample(driftAmount, ageParam);
 
+    // Drift -> pitch: ±2-8 cents scaled by driftAmount.
+    const float pitchCents = drift *
+        (threadbare::tuning::waver::kDriftMinCents +
+         driftAmount * (threadbare::tuning::waver::kDriftMaxCents - threadbare::tuning::waver::kDriftMinCents));
+    const float pitchMultiplier = std::pow(2.0f, pitchCents / 1200.0f);
+
+    // LFO vibrato: pitch modulation in cents.
     const float lfoValue = lfo.processSample();
+    const float vibratoMultiplier = std::pow(2.0f, (lfoToVibratoCents * lfoValue) / 1200.0f);
 
+    currentFrequencyHz += (targetFrequencyHz - currentFrequencyHz) * (1.0f - glideCoeff);
+    const float driftedFreq = currentFrequencyHz * pitchMultiplier * vibratoMultiplier;
+    phaseIncrement = driftedFreq / static_cast<float>(sampleRate);
+    subPhaseIncrement = (driftedFreq * 0.5f) / static_cast<float>(sampleRate);
+
+    // DCO oscillator.
     float saw = 2.0f * phase - 1.0f;
     saw -= polyBlep(phase, phaseIncrement);
 
@@ -159,15 +207,12 @@ float WaverVoice::processSample() noexcept
     if (phase >= 1.0f)
         phase -= 1.0f;
 
-    float osc = saw * (1.0f - waveBlend) + pulse * waveBlend;
-    osc += sub * subLevel;
-    osc += noise * noiseLevel;
+    float dcoOut = saw * (1.0f - waveBlend) + pulse * waveBlend;
+    dcoOut += sub * subLevel;
+    dcoOut += noise * noiseLevel;
 
-    float filtered = useLadderFilter ? moogLadder.process(osc) : otaFilter.process(osc);
-    const float dcBlocked = filtered - dcX1 + dcBlockerR * dcY1;
-    dcX1 = filtered;
-    dcY1 = dcBlocked;
-
+    // Toy engine: shares envelope for AM, tracks same note.
+    toyEngine.setNote(driftedFreq);
     float envelope = adsr.getNextSample();
     if (!adsr.isActive())
     {
@@ -176,6 +221,30 @@ float WaverVoice::processSample() noexcept
         return 0.0f;
     }
 
+    const float toyOut = toyEngine.processSample(envelope);
+
+    // Layer mix.
+    float layerMixed = dcoOut * layerDcoLevel + toyOut * layerToyLevel;
+
+    // Filter with drift and component tolerances.
+    const float filterDriftScale = 1.0f + drift *
+        (threadbare::tuning::waver::kFilterDriftMin +
+         driftAmount * (threadbare::tuning::waver::kFilterDriftMax - threadbare::tuning::waver::kFilterDriftMin));
+    const float effectiveCutoff = baseFilterCutoffHz * filterDriftScale * tolerances.filterCutoffScale;
+    const float effectiveRes = baseFilterRes * tolerances.filterResScale;
+
+    otaFilter.setCutoffHz(std::clamp(effectiveCutoff, 20.0f, 20000.0f));
+    otaFilter.setResonance(std::clamp(effectiveRes, 0.0f, 1.0f));
+    moogLadder.setCutoffHz(std::clamp(effectiveCutoff, 20.0f, 20000.0f));
+    moogLadder.setResonance(std::clamp(effectiveRes, 0.0f, 1.0f));
+
+    float filtered = useLadderFilter ? moogLadder.process(layerMixed) : otaFilter.process(layerMixed);
+
+    const float dcBlocked = filtered - dcX1 + dcBlockerR * dcY1;
+    dcX1 = filtered;
+    dcY1 = dcBlocked;
+
+    // Ramps.
     if (stealRampRemaining > 0 && stealRampTotal > 0)
     {
         const float ramp = 1.0f - static_cast<float>(stealRampRemaining) / static_cast<float>(stealRampTotal);
@@ -191,7 +260,7 @@ float WaverVoice::processSample() noexcept
     }
 
     ++ageCounter;
-    currentLevel = envelope * velocityGain;
+    currentLevel = envelope * velocityGain * tolerances.vcaGainScale;
     float output = dcBlocked * currentLevel;
 
     if (retriggerRampRemaining > 0 && retriggerRampTotal > 0)
@@ -276,10 +345,8 @@ void WaverVoice::setGlideStartFrequency(float hz) noexcept
 
 void WaverVoice::setFilter(float cutoffHz, float resonanceValue, bool ladderMode) noexcept
 {
-    otaFilter.setCutoffHz(cutoffHz);
-    otaFilter.setResonance(resonanceValue);
-    moogLadder.setCutoffHz(cutoffHz);
-    moogLadder.setResonance(resonanceValue);
+    baseFilterCutoffHz = cutoffHz;
+    baseFilterRes = resonanceValue;
     useLadderFilter = ladderMode;
 }
 
@@ -291,5 +358,68 @@ void WaverVoice::setWaveBlend(float blend) noexcept
 void WaverVoice::setLfoToPwm(float depth) noexcept
 {
     lfoToPwmDepth = juce::jlimit(0.0f, 1.0f, depth);
+}
+
+void WaverVoice::setDriftAmount(float amount) noexcept
+{
+    driftAmount = std::clamp(amount, 0.0f, 1.0f);
+}
+
+void WaverVoice::setAge(float age) noexcept
+{
+    ageParam = std::clamp(age, 0.0f, 1.0f);
+    toyEngine.setEnvelopeStepping(ageParam * 0.8f);
+}
+
+void WaverVoice::setSubLevel(float level) noexcept
+{
+    subLevel = std::clamp(level, 0.0f, 1.0f);
+}
+
+void WaverVoice::setNoiseLevel(float level) noexcept
+{
+    noiseLevel = std::clamp(level, 0.0f, 1.0f);
+}
+
+void WaverVoice::setLfoRate(float hz) noexcept
+{
+    lfo.setRateHz(hz);
+}
+
+void WaverVoice::setLfoShape(int shape) noexcept
+{
+    lfo.setShape(static_cast<WaverLFO::Shape>(std::clamp(shape, 0, 3)));
+}
+
+void WaverVoice::setLfoToVibrato(float cents) noexcept
+{
+    lfoToVibratoCents = std::clamp(cents, 0.0f, 50.0f);
+}
+
+void WaverVoice::setToyParams(float modIndex, float ratioNorm, float feedback) noexcept
+{
+    toyEngine.setModIndex(modIndex * 4.0f);
+    toyEngine.setRatioNorm(ratioNorm);
+    toyEngine.setFeedback(feedback);
+}
+
+void WaverVoice::setLayerLevels(float dco, float toy) noexcept
+{
+    layerDcoLevel = std::clamp(dco, 0.0f, 1.0f);
+    layerToyLevel = std::clamp(toy, 0.0f, 1.0f);
+}
+
+void WaverVoice::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept
+{
+    adsrParameters.attack = attack;
+    adsrParameters.decay = decay;
+    adsrParameters.sustain = sustain;
+    adsrParameters.release = release;
+    adsr.setParameters({
+        attack * tolerances.envAttackScale,
+        decay,
+        sustain,
+        release * tolerances.envReleaseScale
+    });
 }
 } // namespace threadbare::dsp
