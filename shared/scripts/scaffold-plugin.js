@@ -76,7 +76,8 @@ function discoverExistingPluginCodes() {
     const cmakePath = path.join(pluginsDir, entry.name, "CMakeLists.txt");
     if (!fs.existsSync(cmakePath)) continue;
     const content = fs.readFileSync(cmakePath, "utf8");
-    const match = content.match(/PLUGIN_CODE\s+([A-Za-z0-9]{4})/);
+    // Keep discovery aligned with validation: 4 printable ASCII chars.
+    const match = content.match(/PLUGIN_CODE\s+([!-~]{4})/);
     if (match) {
       existing.set(match[1], cmakePath);
     }
@@ -93,8 +94,10 @@ function generateDeterministicPluginCode(name) {
 
 function pickUniquePluginCode(name, requestedCode, existingCodes) {
   const validate = (code) => {
-    if (!/^[\x20-\x7E]{4}$/.test(code)) {
-      fail("PLUGIN_CODE must be exactly 4 ASCII characters.");
+    // CMake token parsing treats whitespace as argument separators, so require
+    // printable non-whitespace ASCII to keep discovery and validation consistent.
+    if (!/^[!-~]{4}$/.test(code)) {
+      fail("PLUGIN_CODE must be exactly 4 printable non-whitespace ASCII characters.");
     }
   };
 
