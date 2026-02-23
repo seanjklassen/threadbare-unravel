@@ -15,12 +15,18 @@ void OrganEngine::prepare(double sr) noexcept
     for (int i = 0; i < kNoteCount; ++i)
     {
         const float freq = 440.0f * std::pow(2.0f, (static_cast<float>(i) - 69.0f) / 12.0f);
-        notes[static_cast<std::size_t>(i)].phaseInc = freq / srF;
-        notes[static_cast<std::size_t>(i)].phase = 0.0f;
-        notes[static_cast<std::size_t>(i)].active = false;
-        notes[static_cast<std::size_t>(i)].clickRemaining = 0.0f;
-        notes[static_cast<std::size_t>(i)].clickGain = 0.0f;
+        auto& n = notes[static_cast<std::size_t>(i)];
+        n.phaseInc = freq / srF;
+        n.phase = 0.0f;
+        n.active = false;
+        n.wasActivated = false;
+        n.clickRemaining = 0.0f;
+        n.clickGain = 0.0f;
+        n.leakEnvelope = 0.0f;
     }
+
+    // ~3 second decay for leakage after note-off.
+    leakDecayCoeff = std::exp(-1.0f / (srF * 3.0f));
 
     recalcFormant();
 }
@@ -31,8 +37,10 @@ void OrganEngine::reset() noexcept
     {
         n.phase = 0.0f;
         n.active = false;
+        n.wasActivated = false;
         n.clickRemaining = 0.0f;
         n.clickGain = 0.0f;
+        n.leakEnvelope = 0.0f;
     }
     bpZ1 = 0.0f;
     bpZ2 = 0.0f;
@@ -45,6 +53,8 @@ void OrganEngine::noteOn(int noteNumber) noexcept
 
     auto& n = notes[static_cast<std::size_t>(noteNumber)];
     n.active = true;
+    n.wasActivated = true;
+    n.leakEnvelope = 1.0f;
 
     const float clickMs = 8.0f;
     n.clickRemaining = static_cast<float>(sampleRate) * (clickMs * 0.001f);
@@ -94,20 +104,20 @@ float OrganEngine::processSample() noexcept
         if (n.phase >= 1.0f)
             n.phase -= 1.0f;
 
-        if (!n.active && n.clickRemaining <= 0.0f && leakageLevel <= 0.0f)
+        // Decay leakage envelope for inactive notes.
+        if (!n.active && n.leakEnvelope > 0.0f)
+            n.leakEnvelope *= leakDecayCoeff;
+
+        const bool hasLeakage = n.wasActivated && !n.active && n.leakEnvelope > 1e-6f && leakageLevel > 0.0f;
+        if (!n.active && n.clickRemaining <= 0.0f && !hasLeakage)
             continue;
 
-        // Organ tone: square-ish with drawbar registrations.
         const float fund = std::sin(twoPi * n.phase);
 
         float tone = 0.0f;
-        // 16' — one octave below.
         tone += draw16 * std::sin(twoPi * n.phase * 0.5f);
-        // 8' — fundamental.
         tone += draw8 * fund;
-        // 4' — one octave above.
         tone += draw4 * std::sin(twoPi * n.phase * 2.0f);
-        // Mixture — upper partials (5-1/3', 2-2/3', 2').
         tone += drawMix * 0.33f * (
             std::sin(twoPi * n.phase * 3.0f) +
             std::sin(twoPi * n.phase * 4.0f) +
@@ -117,11 +127,9 @@ float OrganEngine::processSample() noexcept
         if (n.active)
             contribution = tone * 0.15f;
 
-        // Leakage: faint bleed even when not active.
-        if (!n.active && leakageLevel > 0.0f)
-            contribution = tone * leakageLevel;
+        if (hasLeakage)
+            contribution = tone * leakageLevel * n.leakEnvelope;
 
-        // Key-click transient.
         if (n.clickRemaining > 0.0f)
         {
             const float clickEnv = n.clickRemaining / (static_cast<float>(sampleRate) * 0.008f);

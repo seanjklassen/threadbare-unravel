@@ -333,8 +333,12 @@ void WaverVoice::setPortamento(float glideMs, bool alwaysMode) noexcept
         return;
     }
 
-    const float samples = static_cast<float>(sampleRate) * (glideMs * 0.001f);
-    glideCoeff = std::exp(-1.0f / std::max(samples, 1.0f));
+    // Square the normalized value so the low end of the slider is gentle.
+    // At max (2000ms) glide is still available but 80% of the range stays subtle.
+    const float norm = glideMs / 2000.0f;
+    const float shaped = norm * norm * 2000.0f;
+    const float samples = static_cast<float>(sampleRate) * (shaped * 0.001f);
+    glideCoeff = std::exp(-4.0f / std::max(samples, 1.0f));
 }
 
 void WaverVoice::setGlideStartFrequency(float hz) noexcept

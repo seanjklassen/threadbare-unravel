@@ -32,7 +32,9 @@ private:
         float phaseInc = 0.0f;
         float clickRemaining = 0.0f;
         float clickGain = 0.0f;
+        float leakEnvelope = 0.0f;
         bool active = false;
+        bool wasActivated = false;
     };
 
     float formantProcess(float input) noexcept;
@@ -47,6 +49,7 @@ private:
 
     float ageParam = 0.0f;
     float leakageLevel = 0.0f;
+    float leakDecayCoeff = 0.9999f;
 
     // Formant bandpass: second-order biquad state.
     float bpB0 = 0.0f, bpB1 = 0.0f, bpB2 = 0.0f;
