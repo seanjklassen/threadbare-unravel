@@ -1,0 +1,1095 @@
+#!/usr/bin/env node
+/**
+ * scaffold-plugin.js
+ *
+ * Generate a new Threadbare plugin scaffold (effect or synth).
+ *
+ * Usage:
+ *   node shared/scripts/scaffold-plugin.js <name> [--type effect|synth] [--plugin-code XXXX]
+ */
+
+const fs = require("fs");
+const path = require("path");
+
+const repoRoot = path.resolve(__dirname, "..", "..");
+
+function fail(message) {
+  console.error(`Error: ${message}`);
+  process.exit(1);
+}
+
+function toPascalCase(name) {
+  return name
+    .split(/[^a-zA-Z0-9]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join("");
+}
+
+function parseArgs(argv) {
+  const args = argv.slice(2);
+  if (args.length < 1) {
+    fail("Usage: node shared/scripts/scaffold-plugin.js <name> [--type effect|synth] [--plugin-code XXXX]");
+  }
+
+  const name = args[0].toLowerCase();
+  // Keep plugin IDs namespace-safe for generated C++ (`threadbare::<plugin>`).
+  // Hyphens are intentionally disallowed because generate_params.js emits this
+  // ID directly into namespace declarations.
+  if (!/^[a-z][a-z0-9]*$/.test(name)) {
+    fail("Plugin name must match ^[a-z][a-z0-9]*$ (lowercase alphanumeric, no hyphens)");
+  }
+
+  let type = "effect";
+  let pluginCode = null;
+
+  for (let i = 1; i < args.length; i += 1) {
+    if (args[i] === "--type") {
+      const next = args[i + 1];
+      if (!next) fail("Missing value for --type");
+      if (next !== "effect" && next !== "synth") {
+        fail("--type must be 'effect' or 'synth'");
+      }
+      type = next;
+      i += 1;
+      continue;
+    }
+
+    if (args[i] === "--plugin-code") {
+      const next = args[i + 1];
+      if (!next) fail("Missing value for --plugin-code");
+      pluginCode = next;
+      i += 1;
+      continue;
+    }
+
+    fail(`Unknown argument: ${args[i]}`);
+  }
+
+  return { name, type, pluginCode };
+}
+
+function discoverExistingPluginCodes() {
+  const pluginsDir = path.join(repoRoot, "plugins");
+  const existing = new Map();
+  if (!fs.existsSync(pluginsDir)) return existing;
+
+  for (const entry of fs.readdirSync(pluginsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const cmakePath = path.join(pluginsDir, entry.name, "CMakeLists.txt");
+    if (!fs.existsSync(cmakePath)) continue;
+    const content = fs.readFileSync(cmakePath, "utf8");
+    // Keep discovery aligned with validation: 4 printable ASCII chars.
+    const match = content.match(/PLUGIN_CODE\s+([!-~]{4})/);
+    if (match) {
+      existing.set(match[1], cmakePath);
+    }
+  }
+
+  return existing;
+}
+
+function generateDeterministicPluginCode(name) {
+  const sanitized = name.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  const base = `${sanitized}XXXX`.slice(0, 4);
+  return base;
+}
+
+function pickUniquePluginCode(name, requestedCode, existingCodes) {
+  const validate = (code) => {
+    // CMake token parsing treats whitespace as argument separators, so require
+    // printable non-whitespace ASCII to keep discovery and validation consistent.
+    if (!/^[!-~]{4}$/.test(code)) {
+      fail("PLUGIN_CODE must be exactly 4 printable non-whitespace ASCII characters.");
+    }
+  };
+
+  if (requestedCode) {
+    validate(requestedCode);
+    if (existingCodes.has(requestedCode)) {
+      fail(
+        `PLUGIN_CODE '${requestedCode}' already exists in ${existingCodes.get(requestedCode)}. ` +
+          "Choose a different --plugin-code value."
+      );
+    }
+    return requestedCode;
+  }
+
+  const candidate = generateDeterministicPluginCode(name);
+  validate(candidate);
+  if (existingCodes.has(candidate)) {
+    fail(
+      `Deterministic PLUGIN_CODE '${candidate}' collides with ${existingCodes.get(candidate)}. ` +
+        "Re-run with --plugin-code <XXXX>."
+    );
+  }
+  return candidate;
+}
+
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function writeFile(targetPath, content) {
+  ensureDir(path.dirname(targetPath));
+  fs.writeFileSync(targetPath, content, "utf8");
+}
+
+function writeBinary(targetPath, base64Data) {
+  ensureDir(path.dirname(targetPath));
+  fs.writeFileSync(targetPath, Buffer.from(base64Data, "base64"));
+}
+
+function createPluginContext(name, type, pluginCode) {
+  const Name = toPascalCase(name);
+  const targetName = `Threadbare${Name}`;
+  const namespaceName = name.replace(/-/g, "");
+  const isSynth = type === "synth";
+
+  return {
+    name,
+    Name,
+    targetName,
+    namespaceName,
+    type,
+    pluginCode,
+    isSynth,
+    midiInput: isSynth ? "TRUE" : "FALSE",
+    needsInputBus: isSynth ? false : true,
+    busesConstructor: isSynth
+      ? `BusesProperties()
+              .withOutput("Output", juce::AudioChannelSet::stereo(), true)`
+      : `BusesProperties()
+              .withInput("Input", juce::AudioChannelSet::stereo(), true)
+              .withOutput("Output", juce::AudioChannelSet::stereo(), true)`,
+  };
+}
+
+function cmakeTemplate(ctx) {
+  const pluginVar = ctx.name.toUpperCase().replace(/-/g, "_");
+  const dspLib = `${ctx.name}_dsp`;
+  const generateTarget = `${ctx.Name}GenerateParams`;
+  const synthFlags = `    IS_SYNTH ${ctx.isSynth ? "TRUE" : "FALSE"}
+    NEEDS_MIDI_INPUT ${ctx.midiInput}
+    NEEDS_MIDI_OUTPUT FALSE`;
+
+  return `# ==============================================================================
+# THREADBARE ${ctx.Name.toUpperCase()} PLUGIN
+# Generated by shared/scripts/scaffold-plugin.js
+# ==============================================================================
+
+set(${pluginVar}_SOURCE_ROOT \${CMAKE_CURRENT_SOURCE_DIR}/Source)
+set(${pluginVar}_DSP_DIR \${${pluginVar}_SOURCE_ROOT}/DSP)
+set(${pluginVar}_PROCESSORS_DIR \${${pluginVar}_SOURCE_ROOT}/Processors)
+set(${pluginVar}_UI_DIR \${${pluginVar}_SOURCE_ROOT}/UI)
+set(${pluginVar}_CONFIG_DIR \${CMAKE_CURRENT_SOURCE_DIR}/config)
+
+option(THREADBARE_COPY_PLUGIN_AFTER_BUILD "Copy plugin to system folders after build" ON)
+
+# ==============================================================================
+# PARAMETER GENERATION (params.json -> C++ header + JS module)
+# ==============================================================================
+set(PARAMS_JSON \${${pluginVar}_CONFIG_DIR}/params.json)
+set(PARAMS_CPP_OUTPUT \${${pluginVar}_SOURCE_ROOT}/${ctx.Name}GeneratedParams.h)
+set(PARAMS_JS_OUTPUT \${${pluginVar}_UI_DIR}/frontend/src/generated/params.js)
+set(PARAMS_GENERATOR \${CMAKE_SOURCE_DIR}/shared/scripts/generate_params.js)
+
+find_program(NODE_EXECUTABLE node HINTS /usr/local/bin /opt/homebrew/bin)
+if(NOT NODE_EXECUTABLE)
+    message(WARNING "Node.js not found - parameter generation will be skipped")
+else()
+    add_custom_command(
+        OUTPUT \${PARAMS_CPP_OUTPUT} \${PARAMS_JS_OUTPUT}
+        COMMAND \${NODE_EXECUTABLE} \${PARAMS_GENERATOR} \${PARAMS_JSON} \${PARAMS_CPP_OUTPUT} \${PARAMS_JS_OUTPUT}
+        DEPENDS \${PARAMS_JSON} \${PARAMS_GENERATOR}
+        COMMENT "Generating parameter definitions from params.json"
+        VERBATIM
+    )
+
+    add_custom_target(${generateTarget}
+        DEPENDS \${PARAMS_CPP_OUTPUT} \${PARAMS_JS_OUTPUT}
+    )
+endif()
+
+# ==============================================================================
+# DSP LIBRARY
+# ==============================================================================
+file(GLOB_RECURSE ${pluginVar}_DSP_SOURCES CONFIGURE_DEPENDS "\${${pluginVar}_DSP_DIR}/*.cpp")
+file(GLOB_RECURSE ${pluginVar}_PROCESSOR_SOURCES CONFIGURE_DEPENDS "\${${pluginVar}_PROCESSORS_DIR}/*.cpp")
+file(GLOB_RECURSE ${pluginVar}_UI_SOURCES CONFIGURE_DEPENDS "\${${pluginVar}_UI_DIR}/*.cpp")
+
+if(${pluginVar}_DSP_SOURCES STREQUAL "")
+    message(FATAL_ERROR "No DSP sources found in \${${pluginVar}_DSP_DIR}.")
+endif()
+
+add_library(${dspLib} STATIC \${${pluginVar}_DSP_SOURCES})
+target_include_directories(${dspLib} PUBLIC \${${pluginVar}_SOURCE_ROOT})
+target_compile_features(${dspLib} PUBLIC cxx_std_20)
+target_link_libraries(${dspLib} PUBLIC juce::juce_dsp)
+
+# ==============================================================================
+# FRONTEND RESOURCES
+# ==============================================================================
+file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS "\${${pluginVar}_UI_DIR}/frontend/dist/*")
+juce_add_binary_data(${ctx.Name}Resources
+    NAMESPACE ${ctx.Name}Resources
+    SOURCES \${UI_RESOURCES}
+)
+
+set_source_files_properties(\${UI_RESOURCES} PROPERTIES
+    HEADER_FILE_ONLY FALSE
+)
+
+# ==============================================================================
+# PLUGIN TARGET
+# ==============================================================================
+juce_add_plugin(${ctx.targetName}
+    COMPANY_NAME "threadbare"
+${synthFlags}
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD \${THREADBARE_COPY_PLUGIN_AFTER_BUILD}
+    VST3_CAN_REPLACE_VST2 FALSE
+    PLUGIN_MANUFACTURER_CODE TrbR
+    PLUGIN_CODE ${ctx.pluginCode}
+    FORMATS VST3 AU Standalone
+    PRODUCT_NAME "${ctx.name}"
+    ICON_BIG "\${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
+    ICON_SMALL "\${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
+)
+
+juce_generate_juce_header(${ctx.targetName})
+
+target_sources(${ctx.targetName} PRIVATE
+    \${${pluginVar}_PROCESSOR_SOURCES}
+    \${${pluginVar}_UI_SOURCES}
+    \${PARAMS_CPP_OUTPUT}
+)
+target_include_directories(${ctx.targetName} PRIVATE \${${pluginVar}_SOURCE_ROOT})
+target_compile_features(${ctx.targetName} PUBLIC cxx_std_20)
+
+if(TARGET ${generateTarget})
+    add_dependencies(${ctx.targetName} ${generateTarget})
+endif()
+
+target_link_libraries(${ctx.targetName}
+    PRIVATE
+        ${dspLib}
+        ${ctx.Name}Resources
+        threadbare_core
+        juce::juce_audio_utils
+        juce::juce_gui_extra
+        juce::juce_recommended_warning_flags
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+)
+
+target_compile_definitions(${ctx.targetName}
+    PRIVATE
+        JUCE_VST3_CAN_REPLACE_VST2=0
+)
+
+if(DEFINED THREADBARE_ARTEFACTS_OUT)
+    string(REPLACE "\\"" "" THREADBARE_ARTEFACTS_OUT_CLEAN "\${THREADBARE_ARTEFACTS_OUT}")
+    if(TARGET ${ctx.targetName}_VST3)
+        get_target_property(PLUGIN_VST3_PATH ${ctx.targetName}_VST3 JUCE_PLUGIN_ARTEFACT_FILE)
+    else()
+        set(PLUGIN_VST3_PATH "")
+    endif()
+    if(TARGET ${ctx.targetName}_AU)
+        get_target_property(PLUGIN_AU_PATH ${ctx.targetName}_AU JUCE_PLUGIN_ARTEFACT_FILE)
+    else()
+        set(PLUGIN_AU_PATH "")
+    endif()
+    string(REPLACE "\\\\" "\\\\\\\\" PLUGIN_VST3_PATH_ESC "\${PLUGIN_VST3_PATH}")
+    string(REPLACE "\\\\" "\\\\\\\\" PLUGIN_AU_PATH_ESC "\${PLUGIN_AU_PATH}")
+    file(WRITE "\${THREADBARE_ARTEFACTS_OUT_CLEAN}" "{\\n")
+    file(APPEND "\${THREADBARE_ARTEFACTS_OUT_CLEAN}" "  \\"vst3\\": \\"\${PLUGIN_VST3_PATH_ESC}\\",\\n")
+    file(APPEND "\${THREADBARE_ARTEFACTS_OUT_CLEAN}" "  \\"au\\": \\"\${PLUGIN_AU_PATH_ESC}\\"\\n")
+    file(APPEND "\${THREADBARE_ARTEFACTS_OUT_CLEAN}" "}\\n")
+endif()
+`;
+}
+
+function paramsTemplate(ctx) {
+  return `{
+  "plugin": "${ctx.name}",
+  "parameters": [
+    {
+      "id": "puckX",
+      "name": "Puck X",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "puckY",
+      "name": "Puck Y",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "mix",
+      "name": "Mix",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "output",
+      "name": "Output",
+      "type": "float",
+      "min": -24.0,
+      "max": 12.0,
+      "default": 0.0,
+      "unit": "dB"
+    }
+  ]
+}
+`;
+}
+
+function tuningTemplate(ctx) {
+  return `#pragma once
+
+namespace threadbare::tuning
+{
+namespace ${ctx.Name}
+{
+    inline constexpr float kDefaultMix = 0.5f;
+}
+} // namespace threadbare::tuning
+`;
+}
+
+function engineHeaderTemplate(ctx) {
+  const synthDecl = ctx.isSynth
+    ? `
+    void noteOn(int midiNote, float velocity) noexcept;
+    void noteOff(int midiNote, float velocity) noexcept;`
+    : "";
+  return `#pragma once
+
+#include <juce_dsp/juce_dsp.h>
+#include <span>
+
+namespace threadbare::dsp
+{
+class ${ctx.Name}Engine
+{
+public:
+    void prepare(const juce::dsp::ProcessSpec& spec) noexcept;
+    void reset() noexcept;
+    void process(std::span<float> left, std::span<float> right) noexcept;${synthDecl}
+};
+} // namespace threadbare::dsp
+`;
+}
+
+function engineCppTemplate(ctx) {
+  const synthMethods = ctx.isSynth
+    ? `
+void ${ctx.Name}Engine::noteOn(int midiNote, float velocity) noexcept
+{
+    juce::ignoreUnused(midiNote, velocity);
+}
+
+void ${ctx.Name}Engine::noteOff(int midiNote, float velocity) noexcept
+{
+    juce::ignoreUnused(midiNote, velocity);
+}
+`
+    : "";
+  return `#include "${ctx.Name}Engine.h"
+
+namespace threadbare::dsp
+{
+void ${ctx.Name}Engine::prepare(const juce::dsp::ProcessSpec& spec) noexcept
+{
+    juce::ignoreUnused(spec);
+}
+
+void ${ctx.Name}Engine::reset() noexcept {}
+
+void ${ctx.Name}Engine::process(std::span<float> left, std::span<float> right) noexcept
+{
+    juce::ignoreUnused(left, right);
+}
+${synthMethods}} // namespace threadbare::dsp
+`;
+}
+
+function processorHeaderTemplate(ctx) {
+  const synthOverrides = ctx.isSynth
+    ? `
+    bool acceptsMidi() const override { return true; }
+    bool isBusesLayoutSupported(const BusesLayout& layouts) const override;`
+    : "";
+  return `#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <map>
+#include <vector>
+
+#include "../${ctx.Name}GeneratedParams.h"
+#include "../DSP/${ctx.Name}Engine.h"
+#include "ProcessorBase.h"
+
+class ${ctx.Name}Processor final : public threadbare::core::ProcessorBase
+{
+public:
+    ${ctx.Name}Processor();
+    ~${ctx.Name}Processor() override = default;
+
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
+    void reset() override;
+    void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+    const juce::String getName() const override { return "${ctx.Name}"; }
+    // TODO: override getTailLengthSeconds() for processors with tails/release envelopes.
+
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
+    void changeProgramName(int index, const juce::String& newName) override;
+
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    struct ${ctx.Name}State
+    {
+        float puckX = 0.0f;
+        float puckY = 0.0f;
+        float mix = 0.5f;
+        float output = 0.0f;
+        float inLevel = 0.0f;
+        float outLevel = 0.0f;
+    };
+
+    bool popVisualState(${ctx.Name}State& out) noexcept;
+
+protected:
+    void onSaveState(juce::ValueTree& state) override;
+    void onRestoreState(const juce::ValueTree& tree) override;
+${synthOverrides}
+
+private:
+    struct Preset
+    {
+        juce::String name;
+        std::map<juce::String, float> parameters;
+    };
+
+    void initialiseFactoryPresets();
+    void applyPreset(const Preset& preset);
+
+    threadbare::dsp::${ctx.Name}Engine engine;
+    threadbare::core::StateQueue<${ctx.Name}State> stateQueue;
+    ${ctx.Name}State latestState;
+    std::vector<Preset> factoryPresets;
+    int currentProgramIndex = 0;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(${ctx.Name}Processor)
+};
+`;
+}
+
+function processorCppTemplate(ctx) {
+  const midiLoop = ctx.isSynth
+    ? `    for (const auto metadata : midiMessages)
+    {
+        const auto message = metadata.getMessage();
+        if (message.isNoteOn())
+            engine.noteOn(message.getNoteNumber(), message.getFloatVelocity());
+        else if (message.isNoteOff())
+            engine.noteOff(message.getNoteNumber(), message.getFloatVelocity());
+    }
+    midiMessages.clear();`
+    : "    juce::ignoreUnused(midiMessages);";
+
+  const synthLayoutOverride = ctx.isSynth
+    ? `
+bool ${ctx.Name}Processor::isBusesLayoutSupported(const BusesLayout& layouts) const
+{
+    if (!layouts.getMainInputChannelSet().isDisabled())
+        return false;
+    const auto& out = layouts.getMainOutputChannelSet();
+    return out == juce::AudioChannelSet::mono()
+        || out == juce::AudioChannelSet::stereo();
+}
+`
+    : "";
+
+  return `#include "${ctx.Name}Processor.h"
+#include "../UI/${ctx.Name}Editor.h"
+
+${ctx.Name}Processor::${ctx.Name}Processor()
+    : ProcessorBase(
+          ${ctx.busesConstructor},
+          createParameterLayout())
+{
+    initialiseFactoryPresets();
+}
+
+void ${ctx.Name}Processor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    juce::dsp::ProcessSpec spec{
+        sampleRate,
+        static_cast<juce::uint32>(samplesPerBlock),
+        static_cast<juce::uint32>(juce::jmax(1, getMainBusNumOutputChannels()))
+    };
+    engine.prepare(spec);
+    stateQueue.reset();
+}
+
+void ${ctx.Name}Processor::releaseResources() {}
+
+void ${ctx.Name}Processor::reset()
+{
+    engine.reset();
+    stateQueue.reset();
+}
+
+void ${ctx.Name}Processor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+{
+    juce::ScopedNoDenormals noDenormals;
+${midiLoop}
+
+    const auto numSamples = buffer.getNumSamples();
+    auto* left = buffer.getWritePointer(0);
+    auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : left;
+    engine.process(
+        std::span<float>(left, static_cast<std::size_t>(numSamples)),
+        std::span<float>(right, static_cast<std::size_t>(numSamples)));
+
+    latestState.inLevel = 0.0f;
+    latestState.outLevel = 0.0f;
+    stateQueue.push(latestState);
+}
+
+juce::AudioProcessorEditor* ${ctx.Name}Processor::createEditor()
+{
+    return new ${ctx.Name}Editor(*this);
+}
+
+int ${ctx.Name}Processor::getNumPrograms()
+{
+    return static_cast<int>(factoryPresets.size());
+}
+
+int ${ctx.Name}Processor::getCurrentProgram()
+{
+    return currentProgramIndex;
+}
+
+void ${ctx.Name}Processor::setCurrentProgram(int index)
+{
+    if (factoryPresets.empty())
+        return;
+
+    currentProgramIndex = juce::jlimit(0, getNumPrograms() - 1, index);
+    applyPreset(factoryPresets[static_cast<size_t>(currentProgramIndex)]);
+}
+
+const juce::String ${ctx.Name}Processor::getProgramName(int index)
+{
+    if (index >= 0 && index < getNumPrograms())
+        return factoryPresets[static_cast<size_t>(index)].name;
+    return {};
+}
+
+void ${ctx.Name}Processor::changeProgramName(int, const juce::String&) {}
+
+juce::AudioProcessorValueTreeState::ParameterLayout ${ctx.Name}Processor::createParameterLayout()
+{
+    return threadbare::${ctx.namespaceName}::${ctx.Name}GeneratedParams::createParameterLayout();
+}
+
+void ${ctx.Name}Processor::onSaveState(juce::ValueTree& state)
+{
+    state.setProperty("currentPreset", currentProgramIndex, nullptr);
+}
+
+void ${ctx.Name}Processor::onRestoreState(const juce::ValueTree& tree)
+{
+    if (tree.hasProperty("currentPreset"))
+        currentProgramIndex = static_cast<int>(tree.getProperty("currentPreset"));
+}
+
+bool ${ctx.Name}Processor::popVisualState(${ctx.Name}State& out) noexcept
+{
+    ${ctx.Name}State latest;
+    bool popped = false;
+    while (stateQueue.pop(latest))
+    {
+        out = latest;
+        popped = true;
+    }
+    return popped;
+}
+${synthLayoutOverride}
+void ${ctx.Name}Processor::initialiseFactoryPresets()
+{
+    factoryPresets = {
+        {"default", {{"puckX", 0.0f}, {"puckY", 0.0f}, {"mix", 0.5f}, {"output", 0.0f}}}
+    };
+}
+
+void ${ctx.Name}Processor::applyPreset(const Preset& preset)
+{
+    for (const auto& [id, value] : preset.parameters)
+    {
+        if (auto* param = apvts.getParameter(id))
+        {
+            const auto normalised = param->convertTo0to1(value);
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(normalised);
+            param->endChangeGesture();
+        }
+    }
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new ${ctx.Name}Processor();
+}
+`;
+}
+
+function editorHeaderTemplate(ctx) {
+  return `#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_gui_extra/juce_gui_extra.h>
+
+class ${ctx.Name}Processor;
+
+class ${ctx.Name}Editor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit ${ctx.Name}Editor(${ctx.Name}Processor& processor);
+    ~${ctx.Name}Editor() override = default;
+
+    void resized() override;
+
+private:
+    void handleUpdate();
+
+    ${ctx.Name}Processor& processorRef;
+    juce::WebBrowserComponent webView;
+    std::unique_ptr<juce::VBlankAttachment> vblankAttachment;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(${ctx.Name}Editor)
+};
+`;
+}
+
+function editorCppTemplate(ctx) {
+  return `#include "${ctx.Name}Editor.h"
+#include "../Processors/${ctx.Name}Processor.h"
+#include "WebViewBridge.h"
+
+#include <juce_data_structures/juce_data_structures.h>
+#include "BinaryData.h"
+
+namespace
+{
+constexpr int kEditorWidth = 420;
+constexpr int kEditorHeight = 700;
+
+std::optional<juce::WebBrowserComponent::Resource> get${ctx.Name}Resource(const juce::String& url)
+{
+    using Bridge = threadbare::core::WebViewBridge;
+    auto path = Bridge::cleanURLPath(url, "${ctx.Name}Resources");
+    int dataSize = 0;
+    const char* data = nullptr;
+    const auto originalPath = path;
+
+    juce::StringArray namesToTry;
+    const auto mangled = path.replaceCharacter('.', '_')
+                             .replaceCharacter('-', '_')
+                             .replaceCharacter('/', '_');
+    namesToTry.add(mangled);
+    namesToTry.add(Bridge::toResourceName(path));
+    namesToTry.add("dist_" + mangled);
+    if (path.contains("/"))
+    {
+        const auto filename = path.fromLastOccurrenceOf("/", false, false);
+        namesToTry.add(filename.replaceCharacter('.', '_').replaceCharacter('-', '_'));
+    }
+    namesToTry.removeDuplicates(false);
+
+    for (const auto& name : namesToTry)
+    {
+        data = ${ctx.Name}Resources::getNamedResource(name.toRawUTF8(), dataSize);
+        if (data != nullptr && dataSize > 0)
+            break;
+    }
+
+    if (data == nullptr)
+    {
+        for (int i = 0; i < ${ctx.Name}Resources::namedResourceListSize; ++i)
+        {
+            const auto* resourceName = ${ctx.Name}Resources::namedResourceList[i];
+            const auto* originalFilename = ${ctx.Name}Resources::getNamedResourceOriginalFilename(resourceName);
+            if (originalFilename == nullptr)
+                continue;
+
+            const juce::String originalString(originalFilename);
+            if (originalString.endsWithIgnoreCase(path) || path.endsWithIgnoreCase(originalString))
+            {
+                data = ${ctx.Name}Resources::getNamedResource(resourceName, dataSize);
+                if (data != nullptr && dataSize > 0)
+                    break;
+            }
+        }
+    }
+
+    if (data == nullptr || dataSize <= 0)
+    {
+        DBG("${ctx.Name}Editor: Resource not found: " << url);
+        return std::nullopt;
+    }
+
+    return juce::WebBrowserComponent::Resource{
+        std::vector<std::byte>(reinterpret_cast<const std::byte*>(data), reinterpret_cast<const std::byte*>(data) + dataSize),
+        Bridge::getMimeType(originalPath)
+    };
+}
+
+threadbare::core::NativeFunctionMap createNativeFunctions(${ctx.Name}Processor& processor)
+{
+    auto* processorPtr = &processor;
+    return {
+        {
+            "setParameter",
+            [processorPtr](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (args.size() >= 2)
+                {
+                    const auto paramId = args[0].toString();
+                    const auto value = static_cast<float>(args[1]);
+                    if (auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(
+                            processorPtr->getValueTreeState().getParameter(paramId)))
+                    {
+                        const auto normalised = rangedParam->convertTo0to1(value);
+                        rangedParam->beginChangeGesture();
+                        rangedParam->setValueNotifyingHost(normalised);
+                        rangedParam->endChangeGesture();
+                    }
+                }
+                completion({});
+            }
+        },
+        {
+            "getPresetList",
+            [processorPtr](const juce::Array<juce::var>&, juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                juce::Array<juce::var> presets;
+                for (int i = 0; i < processorPtr->getNumPrograms(); ++i)
+                    presets.add(processorPtr->getProgramName(i));
+                completion(presets);
+            }
+        },
+        {
+            "loadPreset",
+            [processorPtr](const juce::Array<juce::var>& args, juce::WebBrowserComponent::NativeFunctionCompletion completion)
+            {
+                if (args.size() < 1)
+                {
+                    completion(false);
+                    return;
+                }
+                const auto index = static_cast<int>(args[0]);
+                if (index >= 0 && index < processorPtr->getNumPrograms())
+                {
+                    processorPtr->setCurrentProgram(index);
+                    completion(true);
+                    return;
+                }
+                completion(false);
+            }
+        }
+    };
+}
+} // namespace
+
+${ctx.Name}Editor::${ctx.Name}Editor(${ctx.Name}Processor& processor)
+    : juce::AudioProcessorEditor(processor),
+      processorRef(processor),
+      webView(threadbare::core::WebViewBridge::createOptions(
+          get${ctx.Name}Resource,
+          createNativeFunctions(processor),
+          "${ctx.targetName}"))
+{
+    setSize(kEditorWidth, kEditorHeight);
+    addAndMakeVisible(webView);
+    webView.goToURL(threadbare::core::WebViewBridge::getInitialURL());
+    vblankAttachment = std::make_unique<juce::VBlankAttachment>(&webView, [this] { handleUpdate(); });
+}
+
+void ${ctx.Name}Editor::resized()
+{
+    webView.setBounds(getLocalBounds());
+}
+
+void ${ctx.Name}Editor::handleUpdate()
+{
+    ${ctx.Name}Processor::${ctx.Name}State state{};
+    if (!processorRef.popVisualState(state))
+        return;
+
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("puckX", state.puckX);
+    obj->setProperty("puckY", state.puckY);
+    obj->setProperty("mix", state.mix);
+    obj->setProperty("output", state.output);
+    obj->setProperty("inLevel", state.inLevel);
+    obj->setProperty("outLevel", state.outLevel);
+    obj->setProperty("currentPreset", processorRef.getCurrentProgram());
+    webView.emitEventIfBrowserIsVisible("updateState", juce::JSON::toString(juce::var(obj)));
+}
+`;
+}
+
+function frontendPackageTemplate(ctx) {
+  return `{
+  "name": "${ctx.name}-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.2.4",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
+`;
+}
+
+function frontendViteTemplate() {
+  return `import { defineConfig } from "vite"
+import { viteSingleFile } from "vite-plugin-singlefile"
+import path from "path"
+
+export default defineConfig({
+  plugins: [viteSingleFile()],
+  resolve: {
+    alias: {
+      "@threadbare/shell": path.resolve(__dirname, "../../../../../shared/ui/shell/src"),
+      "@threadbare/bridge": path.resolve(__dirname, "../../../../../shared/ui/bridge"),
+    },
+  },
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+    minify: false,
+    cssCodeSplit: false,
+  },
+})
+`;
+}
+
+function frontendHtmlTemplate(ctx) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${ctx.Name}</title>
+  </head>
+  <body>
+    <div class="tb-canvas-shell">
+      <div id="viz-slot">
+        <canvas id="orb"></canvas>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+`;
+}
+
+function frontendMainTemplate(ctx) {
+  return `import { initShell } from "@threadbare/shell/index.js"
+import "@threadbare/shell/shell.css"
+import { createNativeFunctionBridge, createParamSender } from "@threadbare/bridge/juce-bridge.js"
+
+import { ${ctx.Name}Viz } from "./viz.js"
+import { PARAMS, PARAM_IDS } from "./generated/params.js"
+
+const getNativeFunction = createNativeFunctionBridge()
+const sendParam = createParamSender(getNativeFunction)
+
+const THEME = {
+  bg: "#2b2b2b", // TODO: replace with plugin theme token
+  text: "#d8d8d8", // TODO: replace with plugin theme token
+  accent: "#9bc8ff", // TODO: replace with plugin theme token
+  "accent-hover": "#c3e0ff", // TODO: replace with plugin theme token
+}
+
+let shell = null
+
+function initApp() {
+  shell = initShell({
+    VizClass: ${ctx.Name}Viz,
+    params: PARAMS,
+    paramOrder: PARAM_IDS,
+    themeTokens: THEME,
+    getNativeFn: getNativeFunction,
+    sendParam,
+  })
+}
+
+if (window.__JUCE__?.backend?.addEventListener) {
+  window.__JUCE__.backend.addEventListener("updateState", (payload) => {
+    shell?.updateState(payload)
+  })
+}
+
+window.updateState = (payload) => {
+  shell?.updateState(payload)
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp)
+} else {
+  initApp()
+}
+`;
+}
+
+function generatedParamsJsTemplate() {
+  return `// Bootstrap parameter module.
+// This is overwritten by shared/scripts/generate_params.js during CMake builds.
+export const PARAMS = {
+  puckX: { id: "puckX", name: "Puck X", type: "float", min: -1.0, max: 1.0, default: 0.0 },
+  puckY: { id: "puckY", name: "Puck Y", type: "float", min: -1.0, max: 1.0, default: 0.0 },
+  mix: { id: "mix", name: "Mix", type: "float", min: 0.0, max: 1.0, default: 0.5 },
+  output: { id: "output", name: "Output", type: "float", min: -24.0, max: 12.0, default: 0.0, unit: "dB" },
+}
+
+export const PARAM_IDS = ["puckX", "puckY", "mix", "output"]
+export const getParam = (id) => PARAMS[id]
+export default PARAMS
+`;
+}
+
+function frontendVizTemplate(ctx) {
+  return `export class ${ctx.Name}Viz {
+  constructor(canvas) {
+    this.canvas = canvas
+    this.ctx = canvas.getContext("2d")
+    this.state = {}
+    this.resize()
+  }
+
+  resize() {
+    const dpr = window.devicePixelRatio || 1
+    const width = this.canvas.clientWidth || 400
+    const height = this.canvas.clientHeight || 400
+    this.canvas.width = Math.round(width * dpr)
+    this.canvas.height = Math.round(height * dpr)
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  }
+
+  update(state) {
+    this.state = state || {}
+  }
+
+  draw() {
+    const ctx = this.ctx
+    const w = this.canvas.clientWidth || 400
+    const h = this.canvas.clientHeight || 400
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = "rgba(255, 255, 255, 0.12)"
+    ctx.beginPath()
+    ctx.arc(w * 0.5, h * 0.5, 48, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  dispose() {}
+}
+`;
+}
+
+function generateFiles(ctx) {
+  const pluginRoot = path.join(repoRoot, "plugins", ctx.name);
+  if (fs.existsSync(pluginRoot)) {
+    fail(`Plugin directory already exists: ${pluginRoot}`);
+  }
+
+  const generated = [];
+  const addText = (relativePath, content) => {
+    const absolutePath = path.join(pluginRoot, relativePath);
+    writeFile(absolutePath, content);
+    generated.push(absolutePath);
+  };
+  const addBinary = (relativePath, base64Data) => {
+    const absolutePath = path.join(pluginRoot, relativePath);
+    writeBinary(absolutePath, base64Data);
+    generated.push(absolutePath);
+  };
+
+  addText("CMakeLists.txt", cmakeTemplate(ctx));
+  addText("config/params.json", paramsTemplate(ctx));
+  addText(`Source/${ctx.Name}Tuning.h`, tuningTemplate(ctx));
+  addText(`Source/DSP/${ctx.Name}Engine.h`, engineHeaderTemplate(ctx));
+  addText(`Source/DSP/${ctx.Name}Engine.cpp`, engineCppTemplate(ctx));
+  addText(`Source/Processors/${ctx.Name}Processor.h`, processorHeaderTemplate(ctx));
+  addText(`Source/Processors/${ctx.Name}Processor.cpp`, processorCppTemplate(ctx));
+  addText(`Source/UI/${ctx.Name}Editor.h`, editorHeaderTemplate(ctx));
+  addText(`Source/UI/${ctx.Name}Editor.cpp`, editorCppTemplate(ctx));
+  addText("Source/UI/frontend/package.json", frontendPackageTemplate(ctx));
+  addText("Source/UI/frontend/vite.config.js", frontendViteTemplate());
+  addText("Source/UI/frontend/index.html", frontendHtmlTemplate(ctx));
+  addText("Source/UI/frontend/src/main.js", frontendMainTemplate(ctx));
+  addText("Source/UI/frontend/src/viz.js", frontendVizTemplate(ctx));
+  addText("Source/UI/frontend/src/generated/params.js", generatedParamsJsTemplate());
+
+  // 1x1 transparent PNG placeholder.
+  addBinary("assets/app-icon.png", "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X7N8AAAAASUVORK5CYII=");
+
+  return generated;
+}
+
+function printSummary(ctx, generated) {
+  console.log("");
+  console.log("Scaffold complete.");
+  console.log(`Plugin: ${ctx.name}`);
+  console.log(`Type: ${ctx.type}`);
+  console.log(`PLUGIN_CODE: ${ctx.pluginCode}`);
+  console.log("");
+  console.log("Created files:");
+  for (const file of generated) {
+    console.log(`- ${path.relative(repoRoot, file)}`);
+  }
+  console.log("");
+  console.log("Next steps:");
+  console.log(`1) Add 'add_subdirectory(plugins/${ctx.name})' to CMakeLists.txt`);
+  console.log(`2) cd plugins/${ctx.name}/Source/UI/frontend && npm install`);
+  console.log(`3) npm run build`);
+  console.log("4) cmake -B build && cmake --build build");
+}
+
+function main() {
+  const { name, type, pluginCode: requestedCode } = parseArgs(process.argv);
+  const existingCodes = discoverExistingPluginCodes();
+  const pluginCode = pickUniquePluginCode(name, requestedCode, existingCodes);
+  const ctx = createPluginContext(name, type, pluginCode);
+  const generated = generateFiles(ctx);
+  printSummary(ctx, generated);
+}
+
+main();
+

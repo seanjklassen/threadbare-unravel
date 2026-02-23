@@ -163,6 +163,11 @@ cmake --build build-release --config Release
 
 Note: local development builds may copy plugins into the user Library (see `docs/build_guide.md`). The macOS installer produced by `scripts/build-installer.sh` installs to system locations under `/Library/Audio/Plug-Ins/`.
 
+**Versioning model**
+- Root `CMakeLists.txt` `project(Threadbare VERSION x.y.z)` is the monorepo infrastructure version.
+- `installer/product.json` `version` is the plugin release version used by installer output.
+- Plugin `CMakeLists.txt` inherits the monorepo version for build orchestration; installer metadata controls shipped product versioning.
+
 ---
 
 ## 4. Product: Unravel
@@ -448,6 +453,21 @@ Each product section should include its own supplemental testing checklist for p
 
 This section is a step-by-step reference for adding a new plugin to the Threadbare monorepo. It covers every layer — CMake, DSP, processor, editor, frontend, params, assets, installers, and CI. Use Unravel as the working reference.
 
+### 6.0 Scaffold Script (Recommended Starting Point)
+
+Use the shared scaffold script to generate a complete plugin baseline:
+
+```bash
+node shared/scripts/scaffold-plugin.js {name} --type {effect|synth} --plugin-code {Xxxx}
+```
+
+- `--type` defaults to `effect`.
+- `--plugin-code` must be a unique 4-char ASCII code (collision checks run against existing plugin CMake files).
+- The script generates the directory tree from section 6.1, starter CMake, processor/editor/frontend stubs, and params scaffolding.
+- The script does not update root `CMakeLists.txt` and does not run `npm install`.
+
+In the checklist (section 6.12), steps 1-10 are mostly scaffolded and become verification/customization tasks.
+
 ### 6.1 Directory Structure
 
 Create the following tree under `plugins/{name}/`:
@@ -497,6 +517,11 @@ JUCE and `shared/core` are already available — every plugin shares them.
 ### 6.3 Plugin CMakeLists.txt
 
 Follow the Unravel pattern (`plugins/unravel/CMakeLists.txt`). The key sections:
+
+**Synth vs effect target flags**
+- Effects: `IS_SYNTH FALSE`, `NEEDS_MIDI_INPUT FALSE`, stereo input + output.
+- Synths: `IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`, `NEEDS_MIDI_OUTPUT FALSE`, output-only audio bus.
+- `PLUGIN_CODE` must be unique across the monorepo (4-char ASCII). Validate before adding a new plugin.
 
 **Parameter generation** — wire `params.json` through the shared generator:
 
@@ -707,6 +732,42 @@ struct {Name}State
 - Implement `getNumPrograms()`, `getCurrentProgram()`, `setCurrentProgram()`, `getProgramName()`.
 - Preset names follow brand guide section 2.4: single lowercase words, evocative.
 
+**Preset struct + apply pattern (Unravel reference):**
+
+```cpp
+struct Preset {
+    juce::String name;
+    std::map<juce::String, float> parameters;
+};
+
+void applyPreset(const Preset& preset)
+{
+    for (const auto& [id, value] : preset.parameters)
+    {
+        if (auto* parameter = apvts.getParameter(id))
+        {
+            const float normalised = parameter->convertTo0to1(value);
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost(normalised);
+            parameter->endChangeGesture();
+        }
+    }
+}
+```
+
+Persist preset index using `onSaveState` / `onRestoreState` hooks when presets are part of UX state.
+
+**Synth-specific `ProcessorBase` overrides**
+- `acceptsMidi() const override { return true; }`
+- Override `isBusesLayoutSupported()` to accept output-only mono/stereo layouts.
+- Keep constructor buses and overrides aligned; mismatched settings lead to host layout rejection.
+
+**State struct guidance**
+- Include all UI-visible parameter values.
+- Include metering fields (`inLevel`, `tailLevel`, etc.).
+- Include feature flags (transport/looper/voice count) needed by visualization and controls.
+- Keep the struct flat and trivially copyable (no strings, pointers, dynamic containers).
+
 ### 6.7 Editor Layer (Source/UI/)
 
 The editor owns the `WebBrowserComponent` and bridges C++ state to the JS frontend.
@@ -770,6 +831,13 @@ auto {Name}Editor::makeBrowserOptions()
 - Native function registration via `withNativeFunction()`.
 - Resource provider callback for serving embedded files.
 
+**Resource provider lookup pattern (BinaryData)**
+- Clean incoming URL (`cleanURLPath`) and strip namespace prefixes.
+- Try standard mangled names (`.`/`-`/`/` -> `_`).
+- Try alphanumeric mangling (`toResourceName`), `dist_`-prefixed variants, and filename-only fallbacks.
+- If needed, fallback by comparing original filenames from binary data metadata.
+- Log misses with `DBG()` for fast diagnosis.
+
 **handleUpdate** — called at screen refresh rate via `VBlankAttachment`:
 
 ```cpp
@@ -798,6 +866,12 @@ void {Name}Editor::handleUpdate()
 
 Add plugin-specific functions as needed (e.g., looper triggers).
 
+**WebView debugging**
+- Standalone builds: right-click in the WebView area to access inspector/tools (platform-dependent).
+- macOS: `defaults write com.threadbare.{name} WebKitDeveloperExtras -bool true` may be required.
+- Windows (WebView2): set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`.
+- Use resource-provider `DBG()` logging when frontend files fail to resolve.
+
 ### 6.8 Frontend Setup
 
 Each plugin has its own Vite project under `Source/UI/frontend/`.
@@ -823,12 +897,14 @@ Each plugin has its own Vite project under `Source/UI/frontend/`.
 ```javascript
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import path from 'path'
 
 export default defineConfig({
   plugins: [viteSingleFile()],
   resolve: {
     alias: {
-      '@threadbare/shell': '../../../../../shared/ui/shell/src'
+      '@threadbare/shell': path.resolve(__dirname, '../../../../../shared/ui/shell/src'),
+      '@threadbare/bridge': path.resolve(__dirname, '../../../../../shared/ui/bridge')
     }
   },
   build: {
@@ -839,12 +915,13 @@ export default defineConfig({
 })
 ```
 
-The alias `@threadbare/shell` resolves to the shared UI shell. The `viteSingleFile` plugin bundles everything into a single `index.html` that JUCE embeds as binary data.
+The aliases `@threadbare/shell` and `@threadbare/bridge` resolve to shared frontend modules. The `viteSingleFile` plugin bundles everything into a single `index.html` that JUCE embeds as binary data.
 
 **main.js** (entry point):
 
 ```javascript
 import { initShell } from '@threadbare/shell/index.js'
+import { createNativeFunctionBridge, createParamSender } from '@threadbare/bridge/juce-bridge.js'
 import { {Name}Viz } from './viz.js'
 import { PARAMS, PARAM_IDS } from './generated/params.js'
 
@@ -855,16 +932,8 @@ const THEME = {
   'accent-hover': '#......',
 }
 
-// JUCE 8 native function polyfill
-function getNativeFunction(name) {
-  // (copy polyfill from Unravel's main.js — handles promise tracking,
-  //  __juce__invoke, __juce__complete event protocol)
-}
-
-function sendParam(id, value) {
-  const fn = getNativeFunction('setParameter')
-  fn(id, value)
-}
+const getNativeFunction = createNativeFunctionBridge()
+const sendParam = createParamSender(getNativeFunction)
 
 const shell = initShell({
   VizClass: {Name}Viz,
@@ -914,6 +983,11 @@ The built `dist/index.html` is picked up by `juce_add_binary_data` in CMake.
 ### 6.10 Installer Setup
 
 Installers currently live in a shared `installer/` directory with Unravel-specific content. For a second plugin, duplicate and adapt the plugin-specific files.
+
+**Product metadata strategy**
+- Current state (pre-migration): installer metadata source is `installer/product.json`.
+- Future state (post-migration): per-plugin metadata is `plugins/{name}/installer/product.json`.
+- During migration, scripts should support `--plugin-config` to make metadata source explicit.
 
 **Product metadata** (`installer/product.json`):
 
@@ -977,6 +1051,8 @@ The GitHub Actions workflow (`.github/workflows/installer-build.yml`) currently 
 
 Summary of everything needed to go from zero to a building, installable new plugin:
 
+Note: when using `shared/scripts/scaffold-plugin.js`, steps 1-10 are generated boilerplate and should be treated as review/customization items rather than greenfield implementation.
+
 - [ ] Create `plugins/{name}/` directory tree (section 6.1)
 - [ ] Write `config/params.json` with all parameters (section 6.4)
 - [ ] Write `{Name}Tuning.h` with DSP constants (section 6.5)
@@ -990,6 +1066,7 @@ Summary of everything needed to go from zero to a building, installable new plug
 - [ ] Create `app-icon.png` (section 6.9)
 - [ ] Add `add_subdirectory(plugins/{name})` to root `CMakeLists.txt` (section 6.2)
 - [ ] Verify local build: `cmake -B build && cmake --build build`
+- [ ] Verify unique `PLUGIN_CODE` (4-char ASCII, no collisions) before first build
 - [ ] Create installer metadata and scripts (section 6.10)
 - [ ] Update CI workflow for new plugin (section 6.11)
 - [ ] Define emotional targets and accent color (brand guide section 8)
