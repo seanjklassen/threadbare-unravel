@@ -1,0 +1,14 @@
+{
+  "name": "waver-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.2.4",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
