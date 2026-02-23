@@ -2,6 +2,8 @@
 
 *Living reference for all Threadbare products. Version 1.0 — February 2026.*
 
+**Document structure:** Sections 1-3 define global standards that apply to every Threadbare plugin (company identity, technical architecture, real-time safety rules, build system). Section 4 is the product spec for Unravel — every current and future product gets its own section here. Section 5 defines global quality standards. Section 6 is the step-by-step guide for building a new plugin. Section 7 is the documentation index.
+
 ---
 
 ## 1. Company Overview
@@ -123,7 +125,7 @@ These apply to `processBlock`, `process`, and any audio-thread logic across all 
 3. **No exceptions.** Disable or guarantee they cannot be thrown on the audio thread.
 4. **Numeric stability.** `juce::ScopedNoDenormals` at the start of every process block.
 5. **Smoothing.** `juce::SmoothedValue` for all gain and mix parameters.
-6. **Interpolation.** Cubic (Hermite or Catmull-Rom) for delay line reads. Linear interpolation is forbidden for FDN delay lines.
+6. **Interpolation.** Cubic (Hermite or Catmull-Rom) for delay line reads. Linear interpolation is forbidden for any delay-based DSP.
 7. **Per-sample updates.** Size and delay parameters update every sample (audio-rate smoothing), not once per block.
 
 ### 3.5 Build & Distribution
@@ -164,6 +166,8 @@ Note: local development builds may copy plugins into the user Library (see `docs
 ---
 
 ## 4. Product: Unravel
+
+*Everything in this section is specific to Unravel. Future products get their own section following the same structure. For the detailed spec, see also `docs/unravel_spec.md`.*
 
 ### 4.1 Concept
 
@@ -383,15 +387,28 @@ All names evoke emotion, sensation, or visual imagery. Never technical descripti
 | Formats | VST3, AU, Standalone |
 | No AAX in v1 | Avoids PACE signing complexity |
 
+### 4.11 Unravel-Specific Testing
+
+In addition to the global checklist (section 5.4):
+
+- [ ] Reverb tails are smooth and non-metallic across the full decay range.
+- [ ] Ghost engine grains blend naturally into the tail at all mix levels.
+- [ ] Looper records, loops, degrades, and exits cleanly.
+- [ ] Looper puck mapping (entropy rate, spectral/diffuse character) responds correctly.
+- [ ] Disintegration entropy reaches 1.0 and fades back to normal reverb gracefully.
+- [ ] Orb visualization responds to audio state and looper transitions.
+
 ---
 
 ## 5. Quality Standards
 
+These apply to every Threadbare plugin. Product-specific quality targets (e.g., Unravel's reverb tail character, looper behavior) belong in the product's own section.
+
 ### 5.1 Audio Quality
 
 - No audible zipper noise on parameter changes.
-- No clicks or pops on preset changes, looper transitions, or state changes.
-- No metallic ringing or icy artifacts in reverb tails.
+- No clicks or pops on preset changes, state transitions, or feature toggles.
+- No unpleasant artifacts in processing output (ringing, aliasing, harsh transients).
 - CPU usage acceptable at default settings; manageable at max settings.
 - Mono-compatible at reasonable settings.
 
@@ -412,17 +429,18 @@ All names evoke emotion, sensation, or visual imagery. Never technical descripti
 - No console errors in browser dev tools.
 - Responsive within target dimensions.
 
-### 5.4 Testing Checklist (Per Release)
+### 5.4 Testing Checklist (Per Release — All Plugins)
 
 - [ ] UI loads in Standalone, VST3 (Reaper), AU (Logic).
 - [ ] All parameters update when moving controls.
 - [ ] Presets load and switch correctly.
 - [ ] State persists across DAW save/load.
-- [ ] Looper records, loops, degrades, and exits cleanly.
 - [ ] No clicks/pops at any parameter setting.
 - [ ] CPU stable under sustained max-setting use.
 - [ ] Windows build works with WebView2.
 - [ ] Installer runs clean on fresh macOS and Windows systems.
+
+Each product section should include its own supplemental testing checklist for product-specific features.
 
 ---
 
@@ -981,21 +999,28 @@ Summary of everything needed to go from zero to a building, installable new plug
 
 ## 7. Documentation Index
 
+**Global (all plugins):**
+
 | Document | Purpose |
 |---|---|
-| `docs/threadbare-prd.md` | This file. Comprehensive product requirements and reference. |
+| `docs/threadbare-prd.md` | This file. Product requirements, architecture, and standards. |
 | `docs/threadbare-brand-guide.md` | Visual identity, voice, and design language. |
-| `docs/unravel_spec.md` | Detailed Unravel product spec (v1.1). |
-| `docs/unravel_tuning_cheatsheet.md` | Quick reference for `UnravelTuning.h` constants. |
 | `docs/build_guide.md` | Build instructions and CI setup. |
 | `docs/webview_integration_guide.md` | JUCE 8 WebView setup and troubleshooting. |
+| `docs/installer_ux_completion_map.md` | Installer UX implementation status. |
+| `docs/Plugin Installer UX Research.md` | Installer UX research and best practices. |
+| `.cursorrules` | AI coding rules for real-time safety and project conventions. |
+
+**Unravel-specific:**
+
+| Document | Purpose |
+|---|---|
+| `docs/unravel_spec.md` | Detailed Unravel product spec (v1.1). |
+| `docs/unravel_tuning_cheatsheet.md` | Quick reference for `UnravelTuning.h` constants. |
 | `docs/ghost_engine_feature_map.md` | Ghost engine control-to-feature matrix. |
 | `docs/ghost_engine_memory_metaphor.md` | Design philosophy behind the ghost engine. |
 | `docs/glitch_sparkle_plan.md` | Glitch Sparkle design plan. |
 | `docs/unravel_landing_page_copy.md` | Marketing copy for landing page and store listing. |
-| `docs/installer_ux_completion_map.md` | Installer UX implementation status. |
-| `docs/Plugin Installer UX Research.md` | Installer UX research and best practices. |
-| `.cursorrules` | AI coding rules for real-time safety and project conventions. |
 | `plugins/unravel/config/params.json` | Parameter definitions (source of truth). |
 | `plugins/unravel/Source/UnravelTuning.h` | All DSP tuning constants. |
 
