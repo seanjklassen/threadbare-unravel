@@ -10,29 +10,49 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
     voiceAllocator.setPortamento(0.0f, false);
     chorus.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
     chorus.setMode(BbdChorus::Mode::modeI);
+    organ.prepare(spec.sampleRate);
+    printChain.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
 }
 
 void WaverEngine::reset() noexcept
 {
     voiceAllocator.reset();
     chorus.reset();
+    organ.reset();
+    printChain.reset();
 }
 
 void WaverEngine::process(std::span<float> left, std::span<float> right) noexcept
 {
+    // Voice allocator renders DCO+Toy into left/right (mono-summed).
     voiceAllocator.render(left, right);
+
+    // Mix in the global organ bus.
+    for (std::size_t i = 0; i < left.size(); ++i)
+    {
+        const float organSample = organ.processSample() * organLevel;
+        left[i] += organSample;
+        right[i] += organSample;
+    }
+
+    // BBD chorus (stereo widening).
     chorus.process(left.data(), right.data(), static_cast<int>(left.size()));
+
+    // Print chain (overdrive -> tape -> wow/flutter -> noise floor).
+    printChain.process(left.data(), right.data(), static_cast<int>(left.size()));
 }
 
 void WaverEngine::noteOn(int midiNote, float velocity) noexcept
 {
     voiceAllocator.noteOn(midiNote, velocity);
+    organ.noteOn(midiNote);
 }
 
 void WaverEngine::noteOff(int midiNote, float velocity) noexcept
 {
     juce::ignoreUnused(velocity);
     voiceAllocator.noteOff(midiNote);
+    organ.noteOff(midiNote);
 }
 
 void WaverEngine::setSustainPedal(bool isDown) noexcept
@@ -74,6 +94,8 @@ void WaverEngine::setDriftAmount(float amount) noexcept
 void WaverEngine::setAge(float age) noexcept
 {
     voiceAllocator.setAge(age);
+    organ.setAge(age);
+    printChain.setAge(age);
 }
 
 void WaverEngine::setSubLevel(float level) noexcept
@@ -114,5 +136,28 @@ void WaverEngine::setLayerLevels(float dco, float toy) noexcept
 void WaverEngine::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept
 {
     voiceAllocator.setEnvelopeParams(attack, decay, sustain, release);
+}
+
+void WaverEngine::setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept
+{
+    organ.setDrawbars(sub16, fund8, harm4, mixture);
+}
+
+void WaverEngine::setOrganLevel(float level) noexcept
+{
+    organLevel = std::clamp(level, 0.0f, 1.0f);
+}
+
+void WaverEngine::setPrintParams(float driveGain, float tapeSat, float wowDepth,
+                                  float flutterDepth, float hissLevel, float humFreqHz,
+                                  float printMix) noexcept
+{
+    printChain.setDriveGain(driveGain);
+    printChain.setTapeSat(tapeSat);
+    printChain.setWowDepth(wowDepth);
+    printChain.setFlutterDepth(flutterDepth);
+    printChain.setHissLevel(hissLevel);
+    printChain.setHumFreq(humFreqHz);
+    printChain.setMix(printMix);
 }
 } // namespace threadbare::dsp

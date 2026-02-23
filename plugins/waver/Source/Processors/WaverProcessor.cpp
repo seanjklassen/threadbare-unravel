@@ -95,9 +95,26 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     engine.setLfoRate(lfoRateHz);
     engine.setLfoShape(lfoShapeIdx);
     engine.setLfoToVibrato(lfoVibrato);
+    const float layOrgan = apvts.getRawParameterValue("layerOrgan")->load();
+    const float org16 = apvts.getRawParameterValue("organ16")->load();
+    const float org8 = apvts.getRawParameterValue("organ8")->load();
+    const float org4 = apvts.getRawParameterValue("organ4")->load();
+    const float orgMix = apvts.getRawParameterValue("organMix")->load();
+    const float driveGn = apvts.getRawParameterValue("driveGain")->load();
+    const float tapeSt = apvts.getRawParameterValue("tapeSat")->load();
+    const float wowDp = apvts.getRawParameterValue("wowDepth")->load();
+    const float flutDp = apvts.getRawParameterValue("flutterDepth")->load();
+    const float hissLv = apvts.getRawParameterValue("hissLevel")->load();
+    const int humIdx = static_cast<int>(apvts.getRawParameterValue("humFreq")->load());
+    const float printMx = apvts.getRawParameterValue("printMix")->load();
+    const float humHz = humIdx == 0 ? 50.0f : 60.0f;
+
     engine.setToyParams(toyIdx, toyRat, 0.0f);
     engine.setLayerLevels(layDco, layToy);
     engine.setEnvelopeParams(envA, envD, envS, envR);
+    engine.setOrganDrawbars(org16, org8, org4, orgMix);
+    engine.setOrganLevel(layOrgan);
+    engine.setPrintParams(driveGn, tapeSt, wowDp, flutDp, hissLv, humHz, printMx);
 
     const auto renderRange = [&](int startSample, int endSample)
     {

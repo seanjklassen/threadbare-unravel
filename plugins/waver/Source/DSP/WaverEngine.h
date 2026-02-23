@@ -5,6 +5,8 @@
 #include <span>
 
 #include "BbdChorus.h"
+#include "OrganEngine.h"
+#include "PrintChain.h"
 #include "WaverVoiceAllocator.h"
 
 namespace threadbare::dsp
@@ -34,10 +36,19 @@ public:
     void setLayerLevels(float dco, float toy) noexcept;
     void setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept;
 
+    void setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept;
+    void setOrganLevel(float level) noexcept;
+    void setPrintParams(float driveGain, float tapeSat, float wowDepth,
+                        float flutterDepth, float hissLevel, float humFreqHz,
+                        float printMix) noexcept;
+
     WaverVoiceAllocator& getAllocator() noexcept { return voiceAllocator; }
 
 private:
     WaverVoiceAllocator voiceAllocator;
     BbdChorus chorus;
+    OrganEngine organ;
+    PrintChain printChain;
+    float organLevel = 0.3f;
 };
 } // namespace threadbare::dsp
