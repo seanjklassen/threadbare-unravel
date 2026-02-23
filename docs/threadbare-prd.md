@@ -426,7 +426,560 @@ All names evoke emotion, sensation, or visual imagery. Never technical descripti
 
 ---
 
-## 6. Documentation Index
+## 6. New Plugin Guide
+
+This section is a step-by-step reference for adding a new plugin to the Threadbare monorepo. It covers every layer — CMake, DSP, processor, editor, frontend, params, assets, installers, and CI. Use Unravel as the working reference.
+
+### 6.1 Directory Structure
+
+Create the following tree under `plugins/{name}/`:
+
+```
+plugins/{name}/
+├── CMakeLists.txt
+├── config/
+│   └── params.json
+├── assets/
+│   └── app-icon.png
+└── Source/
+    ├── {Name}Tuning.h
+    ├── {Name}GeneratedParams.h        (auto-generated)
+    ├── DSP/
+    │   ├── {Name}Engine.h
+    │   └── {Name}Engine.cpp
+    ├── Processors/
+    │   ├── {Name}Processor.h
+    │   └── {Name}Processor.cpp
+    └── UI/
+        ├── {Name}Editor.h
+        ├── {Name}Editor.cpp
+        └── frontend/
+            ├── package.json
+            ├── vite.config.js
+            ├── index.html
+            └── src/
+                ├── main.js
+                ├── viz.js               (plugin-specific visualization)
+                └── generated/
+                    └── params.js        (auto-generated)
+```
+
+### 6.2 Root CMake Registration
+
+Add one line to the root `CMakeLists.txt`:
+
+```cmake
+# PLUGINS
+add_subdirectory(plugins/unravel)
+add_subdirectory(plugins/{name})
+```
+
+JUCE and `shared/core` are already available — every plugin shares them.
+
+### 6.3 Plugin CMakeLists.txt
+
+Follow the Unravel pattern (`plugins/unravel/CMakeLists.txt`). The key sections:
+
+**Parameter generation** — wire `params.json` through the shared generator:
+
+```cmake
+set(PARAMS_JSON ${CMAKE_CURRENT_SOURCE_DIR}/config/params.json)
+set(PARAMS_CPP_OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/Source/{Name}GeneratedParams.h)
+set(PARAMS_JS_OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/Source/UI/frontend/src/generated/params.js)
+set(PARAMS_GENERATOR ${CMAKE_SOURCE_DIR}/shared/scripts/generate_params.js)
+
+find_program(NODE_EXECUTABLE node HINTS /usr/local/bin /opt/homebrew/bin)
+add_custom_command(
+    OUTPUT ${PARAMS_CPP_OUTPUT} ${PARAMS_JS_OUTPUT}
+    COMMAND ${NODE_EXECUTABLE} ${PARAMS_GENERATOR}
+            ${PARAMS_JSON} ${PARAMS_CPP_OUTPUT} ${PARAMS_JS_OUTPUT}
+    DEPENDS ${PARAMS_JSON} ${PARAMS_GENERATOR}
+    COMMENT "Generating parameter definitions from params.json"
+)
+add_custom_target({Name}GenerateParams DEPENDS ${PARAMS_CPP_OUTPUT} ${PARAMS_JS_OUTPUT})
+```
+
+**DSP library** — static library, no JUCE UI dependencies:
+
+```cmake
+add_library({name}_dsp STATIC ${DSP_SOURCES})
+target_link_libraries({name}_dsp PUBLIC juce::juce_dsp)
+target_compile_features({name}_dsp PUBLIC cxx_std_20)
+```
+
+**Frontend resources** — embedded as binary data:
+
+```cmake
+file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/Source/UI/frontend/dist/*")
+juce_add_binary_data({Name}Resources NAMESPACE {Name}Resources SOURCES ${UI_RESOURCES})
+```
+
+**Plugin target** — register with JUCE:
+
+```cmake
+juce_add_plugin(Threadbare{Name}
+    COMPANY_NAME "threadbare"
+    PLUGIN_MANUFACTURER_CODE TrbR          # Same for all Threadbare plugins
+    PLUGIN_CODE {Xxxx}                     # Unique 4-char code
+    FORMATS VST3 AU Standalone
+    PRODUCT_NAME "{name}"                  # Lowercase
+    ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
+    ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/assets/app-icon.png"
+)
+
+target_link_libraries(Threadbare{Name}
+    PRIVATE
+        {name}_dsp
+        {Name}Resources
+        threadbare_core                    # ProcessorBase, WebViewBridge, StateQueue
+        juce::juce_audio_utils
+        juce::juce_gui_extra
+)
+```
+
+**Artefact output** — required for installer scripts to find built plugins:
+
+```cmake
+if(DEFINED THREADBARE_ARTEFACTS_OUT)
+    # Write JSON with vst3 and au artefact paths
+    # (copy the block from plugins/unravel/CMakeLists.txt lines 125-143)
+endif()
+```
+
+### 6.4 Parameter Definition (params.json)
+
+The single source of truth for all parameters. `shared/scripts/generate_params.js` produces both a C++ header and a JS module from this file.
+
+**Schema:**
+
+```json
+{
+  "plugin": "{name}",
+  "parameters": [
+    {
+      "id": "paramId",
+      "name": "Display Name",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "skewCentre": 0.25,
+      "unit": "ms"
+    },
+    {
+      "id": "toggle",
+      "name": "Toggle",
+      "type": "bool",
+      "default": false
+    }
+  ]
+}
+```
+
+**Constraints:**
+- `id` must be a valid camelCase identifier (used as C++ constant and JS key).
+- `type` is `"float"` or `"bool"`.
+- `skewCentre` is optional — sets the midpoint for logarithmic controls (e.g., decay).
+- `unit` is optional — `"s"`, `"ms"`, `"dB"`, or omit for dimensionless.
+
+**Generated C++ header** (`{Name}GeneratedParams.h`):
+- Namespace: `threadbare::{name}`
+- `createParameterLayout()` — returns `juce::AudioProcessorValueTreeState::ParameterLayout`.
+- `IDs` struct — string constants (e.g., `IDs::PARAM_ID`).
+- `Meta` struct — `k`-prefixed range constants (e.g., `Meta::kPARAM_ID_MIN`, `kPARAM_ID_MAX`, `kPARAM_ID_DEFAULT`).
+
+**Generated JS module** (`generated/params.js`):
+- `PARAMS` — object mapping IDs to `{ name, type, min, max, default, ... }`.
+- `PARAM_IDS` — array of IDs in definition order.
+- `getParam(id)` — lookup helper.
+
+### 6.5 DSP Layer (Source/DSP/)
+
+Pure C++ signal processing. No JUCE UI headers.
+
+**Rules:**
+- Pull constants from `{Name}Tuning.h` (namespace `threadbare::tuning`). Never hardcode magic numbers.
+- Accept `std::span<float>` buffers. Avoid passing `juce::AudioBuffer` into inner DSP classes.
+- Follow the Iron Laws (section 3.4): no allocations, no locks, no exceptions, `ScopedNoDenormals`, `SmoothedValue`, cubic interpolation, per-sample updates.
+- The DSP library links only against `juce::juce_dsp` — no `juce_gui_*` dependencies.
+
+**Tuning header pattern** (`{Name}Tuning.h`):
+
+```cpp
+#pragma once
+namespace threadbare::tuning {
+namespace {Name} {
+
+    // Section: Core
+    inline constexpr float kSomeParam = 0.5f;   // What it controls [safe: 0.1-0.9]
+
+} // namespace {Name}
+} // namespace threadbare::tuning
+```
+
+Group constants by section. Each constant gets a comment describing what it controls in ear-language and what happens if you push it, plus a safe range.
+
+### 6.6 Processor Layer (Source/Processors/)
+
+Inherits from `threadbare::core::ProcessorBase`, which provides APVTS ownership, state persistence, and default audio bus configuration.
+
+**Required implementation:**
+
+```cpp
+class {Name}Processor final : public threadbare::core::ProcessorBase
+{
+public:
+    {Name}Processor()
+        : ProcessorBase(
+              BusesProperties()
+                  .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                  .withOutput("Output", juce::AudioChannelSet::stereo(), true),
+              createParameterLayout())
+    {
+        initialiseFactoryPresets();
+    }
+
+    // --- Required overrides ---
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
+    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    juce::AudioProcessorEditor* createEditor() override;
+
+    const juce::String getName() const override { return "{name}"; }
+
+    // --- Parameter layout (uses generated header) ---
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    // --- Audio→UI state ---
+    bool popVisualState({Name}State& out) { return stateQueue.pop(out); }
+
+private:
+    threadbare::core::StateQueue<{Name}State> stateQueue;
+    // ... DSP engine, cached parameter pointers, presets
+};
+```
+
+**State struct** — must be trivially copyable (no strings, no pointers, no containers):
+
+```cpp
+struct {Name}State
+{
+    float paramA = 0.0f;
+    float paramB = 0.0f;
+    float inLevel = 0.0f;
+    float tailLevel = 0.0f;
+    // ... all fields the UI needs for visualization and display
+};
+```
+
+**processBlock pattern:**
+1. `juce::ScopedNoDenormals noDenormals;`
+2. Read parameters from cached `std::atomic<float>*` pointers.
+3. Run DSP.
+4. Build state struct, push to `stateQueue`.
+
+**State persistence hooks** (optional, provided by ProcessorBase):
+- `onSaveState(juce::ValueTree&)` — save custom state (e.g., current preset index).
+- `onRestoreState(juce::ValueTree&)` — restore custom state.
+- `onStateRestored()` — post-restore actions (e.g., push state to UI).
+
+**Presets:**
+- Store as a vector of structs (param values + name).
+- Implement `getNumPrograms()`, `getCurrentProgram()`, `setCurrentProgram()`, `getProgramName()`.
+- Preset names follow brand guide section 2.4: single lowercase words, evocative.
+
+### 6.7 Editor Layer (Source/UI/)
+
+The editor owns the `WebBrowserComponent` and bridges C++ state to the JS frontend.
+
+**Pattern:**
+
+```cpp
+class {Name}Editor final : public juce::AudioProcessorEditor
+{
+public:
+    {Name}Editor({Name}Processor& p);
+    void resized() override { webView.setBounds(getLocalBounds()); }
+
+private:
+    {Name}Processor& processorRef;
+    juce::WebBrowserComponent webView;
+    juce::VBlankAttachment vblank;
+
+    // Resource provider: serves embedded frontend files
+    auto getResource(const juce::String& url)
+        -> std::optional<juce::WebBrowserComponent::Resource>;
+
+    // Native function map: JS → C++ bridge
+    auto createNativeFunctions()
+        -> std::map<juce::String, std::function</*...*/>>;
+
+    // Called at screen refresh rate by VBlankAttachment
+    void handleUpdate();
+};
+```
+
+**Constructor wiring:**
+
+```cpp
+{Name}Editor::{Name}Editor({Name}Processor& p)
+    : AudioProcessorEditor(p),
+      processorRef(p),
+      webView(makeBrowserOptions()),
+      vblank(this, [this] { handleUpdate(); })
+{
+    setSize(kEditorWidth, kEditorHeight);
+    addAndMakeVisible(webView);
+    webView.goToURL(WebViewBridge::getInitialURL());
+}
+```
+
+**WebViewBridge integration:**
+
+```cpp
+auto {Name}Editor::makeBrowserOptions()
+{
+    return WebViewBridge::createOptions(
+        createNativeFunctions(),
+        [this](const auto& url) { return getResource(url); }
+    );
+}
+```
+
+`WebViewBridge::createOptions()` handles:
+- Windows WebView2 backend with safe `userDataFolder`.
+- Native function registration via `withNativeFunction()`.
+- Resource provider callback for serving embedded files.
+
+**handleUpdate** — called at screen refresh rate via `VBlankAttachment`:
+
+```cpp
+void {Name}Editor::handleUpdate()
+{
+    {Name}State state;
+    if (!processorRef.popVisualState(state)) return;
+
+    auto json = juce::DynamicObject::Ptr(new juce::DynamicObject());
+    json->setProperty("paramA", state.paramA);
+    json->setProperty("inLevel", state.inLevel);
+    // ... all state fields
+
+    webView.emitEventIfBrowserIsVisible(
+        "updateState", juce::JSON::toString(json.get()));
+}
+```
+
+**Native functions** — the JS→C++ bridge. At minimum:
+
+| Function | Purpose |
+|---|---|
+| `setParameter(id, value)` | Set any APVTS parameter from UI |
+| `getPresetList()` | Return preset names array |
+| `loadPreset(index)` | Load a preset by index |
+
+Add plugin-specific functions as needed (e.g., looper triggers).
+
+### 6.8 Frontend Setup
+
+Each plugin has its own Vite project under `Source/UI/frontend/`.
+
+**package.json** (minimal):
+
+```json
+{
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "vite-plugin-singlefile": "^2.0.0"
+  }
+}
+```
+
+**vite.config.js:**
+
+```javascript
+import { defineConfig } from 'vite'
+import { viteSingleFile } from 'vite-plugin-singlefile'
+
+export default defineConfig({
+  plugins: [viteSingleFile()],
+  resolve: {
+    alias: {
+      '@threadbare/shell': '../../../../../shared/ui/shell/src'
+    }
+  },
+  build: {
+    outDir: 'dist',
+    minify: false,
+    sourcemap: false
+  }
+})
+```
+
+The alias `@threadbare/shell` resolves to the shared UI shell. The `viteSingleFile` plugin bundles everything into a single `index.html` that JUCE embeds as binary data.
+
+**main.js** (entry point):
+
+```javascript
+import { initShell } from '@threadbare/shell/index.js'
+import { {Name}Viz } from './viz.js'
+import { PARAMS, PARAM_IDS } from './generated/params.js'
+
+const THEME = {
+  bg: '#......',
+  text: '#......',
+  accent: '#......',
+  'accent-hover': '#......',
+}
+
+// JUCE 8 native function polyfill
+function getNativeFunction(name) {
+  // (copy polyfill from Unravel's main.js — handles promise tracking,
+  //  __juce__invoke, __juce__complete event protocol)
+}
+
+function sendParam(id, value) {
+  const fn = getNativeFunction('setParameter')
+  fn(id, value)
+}
+
+const shell = initShell({
+  VizClass: {Name}Viz,
+  params: PARAMS,
+  paramOrder: PARAM_IDS,
+  themeTokens: THEME,
+  getNativeFn: getNativeFunction,
+  sendParam: sendParam,
+})
+```
+
+**Shared UI shell** (`shared/ui/shell/src/`) provides:
+- `initShell()` — main initializer, wires everything together.
+- `Controls` — puck, settings overlay, elastic sliders.
+- `Presets` — dropdown preset manager.
+- `ElasticSlider` — spring-physics slider with rubber-band feel.
+- `shell.css` — all shared styles, theme tokens, animations, reduced-motion support.
+
+**Plugin-specific visualization** (`viz.js`):
+- Each plugin provides its own `VizClass` (Unravel has the Lissajous orb).
+- The class receives state updates from the shell and renders on a canvas.
+- This is what gives each plugin its visual identity.
+
+**Theme tokens:**
+- Four CSS custom properties: `--bg`, `--text`, `--accent`, `--accent-hover`.
+- Set via `themeTokens` in `initShell()`, applied to `:root`.
+- Pick a unique accent color per plugin (see brand guide section 5.2).
+
+**Build the frontend** before building the C++ plugin:
+
+```bash
+cd plugins/{name}/Source/UI/frontend
+npm install && npm run build
+```
+
+The built `dist/index.html` is picked up by `juce_add_binary_data` in CMake.
+
+### 6.9 Assets
+
+| Asset | Location | Requirements |
+|---|---|---|
+| App icon | `plugins/{name}/assets/app-icon.png` | Works at 16x16 through 512x512. Monochromatic or limited palette. |
+| macOS installer background | `installer/macos/resources/background.png` | Branded installer background. |
+| Windows wizard image | `installer/windows/assets/wizard-image.png` | 240x459 px minimum. |
+| Windows wizard small | `installer/windows/assets/wizard-small.png` | 55x58 px. |
+
+### 6.10 Installer Setup
+
+Installers currently live in a shared `installer/` directory with Unravel-specific content. For a second plugin, duplicate and adapt the plugin-specific files.
+
+**Product metadata** (`installer/product.json`):
+
+```json
+{
+  "productName": "{Name}",
+  "productId": "{name}",
+  "companyName": "threadbare",
+  "version": "0.1.0",
+  "formats": ["VST3", "AU"],
+  "bundleIds": {
+    "vst3": "com.threadbare.{name}.vst3",
+    "au": "com.threadbare.{name}.component"
+  },
+  "supportData": {
+    "macos": "/Library/Application Support/{Name}",
+    "windows": "%PUBLIC%\\Documents\\{Name}"
+  }
+}
+```
+
+**macOS installer** — adapt from `installer/macos/`:
+- `Distribution.xml` — update bundle IDs and package references.
+- `scripts/preinstall` — update plugin bundle names to remove.
+- `scripts/postinstall` — update support directory name.
+- `resources/welcome.html`, `conclusion.html` — update product name and copy.
+- `resources/background.png` — plugin-specific branding.
+
+**Windows installer** — adapt from `installer/windows/`:
+- `Installer.iss` — update `AppName`, `AppVersion`, `OutputBaseFilename`, source paths, and bundle names.
+- `assets/` — plugin-specific wizard images.
+- `azure-metadata.json` — update certificate profile name if using separate signing identity.
+
+**Build scripts** — `scripts/build-installer.sh` and `scripts/build-installer.ps1` currently hardcode `product_name="unravel"`. For a second plugin, either:
+- Parameterize: accept a plugin name argument and read metadata from `installer/product.json`.
+- Duplicate: create plugin-specific build scripts (simpler short-term, harder to maintain).
+
+### 6.11 CI Pipeline
+
+The GitHub Actions workflow (`.github/workflows/installer-build.yml`) currently hardcodes Unravel paths. For multi-plugin support:
+
+**Frontend build directory:**
+- Currently hardcoded to `plugins/unravel/Source/UI/frontend`.
+- Parameterize with a workflow input or matrix strategy.
+
+**Artifact names:**
+- Currently `unravel-macos-installer` and `unravel-windows-installer`.
+- Include plugin name in artifact names.
+
+**Windows signing:**
+- Certificate profile name is plugin-specific (`unravel-code-signing`).
+- Each plugin may need its own profile or share a company-wide certificate.
+
+**Required secrets** (shared across all plugins):
+- macOS: `APPLE_DEVELOPER_ID_APP`, `APPLE_DEVELOPER_ID_INSTALLER`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`.
+- Windows: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
+
+**Recommended approach:** Add a `plugin` input to the workflow dispatch and use it to parameterize all paths. Alternatively, use a matrix strategy to build all plugins in one run.
+
+### 6.12 Checklist
+
+Summary of everything needed to go from zero to a building, installable new plugin:
+
+- [ ] Create `plugins/{name}/` directory tree (section 6.1)
+- [ ] Write `config/params.json` with all parameters (section 6.4)
+- [ ] Write `{Name}Tuning.h` with DSP constants (section 6.5)
+- [ ] Implement DSP engine in `Source/DSP/` (section 6.5)
+- [ ] Implement processor in `Source/Processors/` inheriting `ProcessorBase` (section 6.6)
+- [ ] Define trivially-copyable state struct for audio→UI communication (section 6.6)
+- [ ] Implement editor in `Source/UI/` with `WebViewBridge` and `VBlankAttachment` (section 6.7)
+- [ ] Set up frontend with Vite, shell integration, theme tokens, and visualization (section 6.8)
+- [ ] Build frontend (`npm install && npm run build`) (section 6.8)
+- [ ] Write plugin `CMakeLists.txt` and register in root CMake (sections 6.2, 6.3)
+- [ ] Create `app-icon.png` (section 6.9)
+- [ ] Add `add_subdirectory(plugins/{name})` to root `CMakeLists.txt` (section 6.2)
+- [ ] Verify local build: `cmake -B build && cmake --build build`
+- [ ] Create installer metadata and scripts (section 6.10)
+- [ ] Update CI workflow for new plugin (section 6.11)
+- [ ] Define emotional targets and accent color (brand guide section 8)
+- [ ] Name the presets (brand guide section 2.4)
+
+---
+
+## 7. Documentation Index
 
 | Document | Purpose |
 |---|---|
