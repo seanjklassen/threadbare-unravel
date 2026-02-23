@@ -33,8 +33,11 @@ function parseArgs(argv) {
   }
 
   const name = args[0].toLowerCase();
-  if (!/^[a-z][a-z0-9-]*$/.test(name)) {
-    fail("Plugin name must match ^[a-z][a-z0-9-]*$");
+  // Keep plugin IDs namespace-safe for generated C++ (`threadbare::<plugin>`).
+  // Hyphens are intentionally disallowed because generate_params.js emits this
+  // ID directly into namespace declarations.
+  if (!/^[a-z][a-z0-9]*$/.test(name)) {
+    fail("Plugin name must match ^[a-z][a-z0-9]*$ (lowercase alphanumeric, no hyphens)");
   }
 
   let type = "effect";
@@ -705,16 +708,59 @@ std::optional<juce::WebBrowserComponent::Resource> get${ctx.Name}Resource(const 
 {
     using Bridge = threadbare::core::WebViewBridge;
     auto path = Bridge::cleanURLPath(url, "${ctx.Name}Resources");
-    const auto resourceName = Bridge::toResourceName(path);
-
     int dataSize = 0;
-    const auto* data = ${ctx.Name}Resources::getNamedResource(resourceName.toRawUTF8(), dataSize);
+    const char* data = nullptr;
+    const auto originalPath = path;
+
+    juce::StringArray namesToTry;
+    const auto mangled = path.replaceCharacter('.', '_')
+                             .replaceCharacter('-', '_')
+                             .replaceCharacter('/', '_');
+    namesToTry.add(mangled);
+    namesToTry.add(Bridge::toResourceName(path));
+    namesToTry.add("dist_" + mangled);
+    if (path.contains("/"))
+    {
+        const auto filename = path.fromLastOccurrenceOf("/", false, false);
+        namesToTry.add(filename.replaceCharacter('.', '_').replaceCharacter('-', '_'));
+    }
+    namesToTry.removeDuplicates(false);
+
+    for (const auto& name : namesToTry)
+    {
+        data = ${ctx.Name}Resources::getNamedResource(name.toRawUTF8(), dataSize);
+        if (data != nullptr && dataSize > 0)
+            break;
+    }
+
+    if (data == nullptr)
+    {
+        for (int i = 0; i < ${ctx.Name}Resources::namedResourceListSize; ++i)
+        {
+            const auto* resourceName = ${ctx.Name}Resources::namedResourceList[i];
+            const auto* originalFilename = ${ctx.Name}Resources::getNamedResourceOriginalFilename(resourceName);
+            if (originalFilename == nullptr)
+                continue;
+
+            const juce::String originalString(originalFilename);
+            if (originalString.endsWithIgnoreCase(path) || path.endsWithIgnoreCase(originalString))
+            {
+                data = ${ctx.Name}Resources::getNamedResource(resourceName, dataSize);
+                if (data != nullptr && dataSize > 0)
+                    break;
+            }
+        }
+    }
+
     if (data == nullptr || dataSize <= 0)
+    {
+        DBG("${ctx.Name}Editor: Resource not found: " << url);
         return std::nullopt;
+    }
 
     return juce::WebBrowserComponent::Resource{
         std::vector<std::byte>(reinterpret_cast<const std::byte*>(data), reinterpret_cast<const std::byte*>(data) + dataSize),
-        Bridge::getMimeType(path)
+        Bridge::getMimeType(originalPath)
     };
 }
 
