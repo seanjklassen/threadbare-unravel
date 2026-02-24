@@ -1,12 +1,12 @@
 const WAVER_PALETTE = Object.freeze({
-  surfaceBase: "#E4E4D8",
-  surfaceBaseHover: "#CC8A7E",
+  surfaceBase: "#7D8FA0",
+  surfaceBaseHover: "#E8B8A8",
   textPrimary: "#31312B",
-  panelInk: "#E4E4D8",
-  panelInkSoft: "#31312B",
-  waveformShadowDrift: "#b8cac8",
+  panelInk: "#7D8FA0",
+  panelInkSoft: "#E4E4D8",
+  waveformShadowDrift: "#E4E4D8",
   textUpper: "#31312B",
-  textLower: "#E4E4D8",
+  textLower: "#31312B",
 })
 
 function hexToRgb(hex) {
