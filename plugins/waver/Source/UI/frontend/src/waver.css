@@ -1,0 +1,121 @@
+.drawer-group-heading {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent, #C4A46C);
+  opacity: 0.7;
+  margin: 18px 0 8px;
+  padding: 0 4px;
+  border-bottom: 1px solid rgba(196, 164, 108, 0.15);
+  padding-bottom: 4px;
+}
+
+.drawer-group-heading:first-child {
+  margin-top: 4px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  min-height: 32px;
+}
+
+.control-row--choice {
+  grid-template-columns: 72px 1fr;
+}
+
+.param-label {
+  font-size: 11px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.param-value {
+  font-size: 10px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.waver-slider {
+  position: relative;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.waver-slider:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent, #C4A46C);
+}
+
+.waver-slider__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--accent, #C4A46C);
+  opacity: 0.2;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.waver-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  background: var(--accent, #C4A46C);
+  border-radius: 1.5px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: height 0.1s ease;
+}
+
+.waver-slider:active .waver-slider__thumb {
+  height: 20px;
+}
+
+.choice-group {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.choice-btn {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.choice-btn:hover {
+  opacity: 0.7;
+}
+
+.choice-btn.active {
+  opacity: 1;
+  background: var(--accent, #C4A46C);
+  color: var(--bg, #241D19);
+}

@@ -93,6 +93,9 @@ function generateCppHeader(plugin, params) {
                 // Simple parameter
                 lines.push(`        params.push_back(std::make_unique<juce::AudioParameterFloat>("${param.id}", "${param.name}", ${formatFloat(param.min)}f, ${formatFloat(param.max)}f, ${formatFloat(param.default)}f));`);
             }
+        } else if (param.type === 'choice') {
+            const options = (param.options || []).map((option) => `"${escapeString(option)}"`).join(', ');
+            lines.push(`        params.push_back(std::make_unique<juce::AudioParameterChoice>("${param.id}", "${param.name}", juce::StringArray{ ${options} }, ${param.default}));`);
         }
         lines.push('');
     }
@@ -129,6 +132,10 @@ function generateCppHeader(plugin, params) {
         } else if (param.type === 'bool') {
             const constPrefix = camelToScreamingSnakeWithPrefix(param.id);
             lines.push(`        static constexpr bool ${constPrefix}_DEFAULT = ${param.default ? 'true' : 'false'};`);
+        } else if (param.type === 'choice') {
+            const constPrefix = camelToScreamingSnakeWithPrefix(param.id);
+            lines.push(`        static constexpr int ${constPrefix}_DEFAULT = ${param.default};`);
+            lines.push(`        static constexpr const char* ${constPrefix}_OPTIONS = "${(param.options || []).map((option) => escapeString(option)).join(",")}";`);
         }
     }
     lines.push('    };');
@@ -166,15 +173,15 @@ function generateJsModule(plugin, params) {
         
         if (param.type === 'bool') {
             lines.push(`  ${param.id}: {`);
-            lines.push(`    id: '${param.id}',`);
-            lines.push(`    name: '${param.name}',`);
+            lines.push(`    id: '${escapeJsString(param.id)}',`);
+            lines.push(`    name: '${escapeJsString(param.name)}',`);
             lines.push(`    type: 'bool',`);
             lines.push(`    default: ${param.default}`);
             lines.push(`  }${comma}`);
         } else if (param.type === 'float') {
             lines.push(`  ${param.id}: {`);
-            lines.push(`    id: '${param.id}',`);
-            lines.push(`    name: '${param.name}',`);
+            lines.push(`    id: '${escapeJsString(param.id)}',`);
+            lines.push(`    name: '${escapeJsString(param.name)}',`);
             lines.push(`    type: 'float',`);
             lines.push(`    min: ${param.min},`);
             lines.push(`    max: ${param.max},`);
@@ -183,8 +190,16 @@ function generateJsModule(plugin, params) {
                 lines.push(`    skewCentre: ${param.skewCentre}${param.unit ? ',' : ''}`);
             }
             if (param.unit) {
-                lines.push(`    unit: '${param.unit}'`);
+                lines.push(`    unit: '${escapeJsString(param.unit)}'`);
             }
+            lines.push(`  }${comma}`);
+        } else if (param.type === 'choice') {
+            lines.push(`  ${param.id}: {`);
+            lines.push(`    id: '${escapeJsString(param.id)}',`);
+            lines.push(`    name: '${escapeJsString(param.name)}',`);
+            lines.push(`    type: 'choice',`);
+            lines.push(`    options: [${(param.options || []).map((option) => `'${escapeJsString(option)}'`).join(', ')}],`);
+            lines.push(`    default: ${param.default}`);
             lines.push(`  }${comma}`);
         }
     }
@@ -242,6 +257,14 @@ function formatFloat(num) {
         return str + '.0';
     }
     return str;
+}
+
+function escapeString(str) {
+    return String(str).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function escapeJsString(str) {
+    return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 // =============================================================================

@@ -1,0 +1,5739 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Waver</title>
+    <script type="module" crossorigin>(function polyfill() {
+  const relList = document.createElement("link").relList;
+  if (relList && relList.supports && relList.supports("modulepreload")) return;
+  for (const link of document.querySelectorAll('link[rel="modulepreload"]')) processPreload(link);
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type !== "childList") continue;
+      for (const node of mutation.addedNodes) if (node.tagName === "LINK" && node.rel === "modulepreload") processPreload(node);
+    }
+  }).observe(document, {
+    childList: true,
+    subtree: true
+  });
+  function getFetchOpts(link) {
+    const fetchOpts = {};
+    if (link.integrity) fetchOpts.integrity = link.integrity;
+    if (link.referrerPolicy) fetchOpts.referrerPolicy = link.referrerPolicy;
+    if (link.crossOrigin === "use-credentials") fetchOpts.credentials = "include";
+    else if (link.crossOrigin === "anonymous") fetchOpts.credentials = "omit";
+    else fetchOpts.credentials = "same-origin";
+    return fetchOpts;
+  }
+  function processPreload(link) {
+    if (link.ep) return;
+    link.ep = true;
+    const fetchOpts = getFetchOpts(link);
+    fetch(link.href, fetchOpts);
+  }
+})();
+const clamp$1 = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+const VB_WIDTH = 1e3;
+const LINE_Y = 50;
+const CURVE_LIFT = 30;
+const CURVE_PEAK = LINE_Y - CURVE_LIFT;
+const CURVE_SPREAD = 90;
+const CURVE_EXTEND = 180;
+const RENDER_OVERSHOOT = 0.35;
+const HIT_SLOP_PX = 8;
+const THUMB_RADIUS_PX = 8;
+const rubberBandDistance = (offset, dimension, constant) => {
+  return dimension * constant * offset / (dimension + constant * offset);
+};
+const rubberBand = (value, min = 0, max = 1, constant = 0.35) => {
+  if (value < min) {
+    return min - rubberBandDistance(min - value, max - min, constant);
+  }
+  if (value > max) {
+    return max + rubberBandDistance(value - max, max - min, constant);
+  }
+  return value;
+};
+const rubberBandInverse = (value, min = 0, max = 1, constant = 0.35) => {
+  if (value >= min && value <= max) return value;
+  const lower = value < min ? min - 2 : max;
+  const upper = value > max ? max + 2 : min;
+  let lo = lower;
+  let hi = upper;
+  for (let i = 0; i < 12; i += 1) {
+    const mid = (lo + hi) * 0.5;
+    const mapped = rubberBand(mid, min, max, constant);
+    if (value < min) {
+      if (mapped < value) hi = mid;
+      else lo = mid;
+    } else {
+      if (mapped > value) hi = mid;
+      else lo = mid;
+    }
+  }
+  return (lo + hi) * 0.5;
+};
+class ElasticSlider {
+  constructor(element, options = {}) {
+    this.element = element;
+    this.onChange = options.onChange || (() => {
+    });
+    this.track = element.querySelector(".elastic-slider__track");
+    this.path = element.querySelector(".slider-path");
+    this.thumbEl = element.querySelector(".slider-thumb");
+    this.value = parseFloat(element.dataset.value) || 0;
+    this.targetValue = this.value;
+    this.displayValue = this.value;
+    this.velocity = 0;
+    this.isDragging = false;
+    this.pointerId = null;
+    this.lastVisualValue = this.value;
+    this.isThumbDrag = false;
+    this.dragStartRaw = this.value;
+    this.allowSpringDuringDrag = false;
+    this.fineControlSensitivity = 0.1;
+    this.dragStartX = 0;
+    this.dragStartValue = 0;
+    this.springStiffness = 150;
+    this.springDamping = 16;
+    this.mass = 1;
+    this.animationFrame = null;
+    this.lastTime = 0;
+    this.defaultValue = this.value;
+    this.handlePointerDown = this.handlePointerDown.bind(this);
+    this.handlePointerMove = this.handlePointerMove.bind(this);
+    this.handlePointerUp = this.handlePointerUp.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.handleDoubleClick = this.handleDoubleClick.bind(this);
+    this.animate = this.animate.bind(this);
+    this.attachEvents();
+    this.updateDisplay(this.value);
+  }
+  attachEvents() {
+    this.element.addEventListener("pointerdown", this.handlePointerDown);
+    this.element.addEventListener("keydown", this.handleKeyDown);
+    this.element.addEventListener("dblclick", this.handleDoubleClick);
+    window.addEventListener("pointerup", this.handlePointerUp);
+    window.addEventListener("pointercancel", this.handlePointerUp);
+  }
+  detachEvents() {
+    this.element.removeEventListener("pointerdown", this.handlePointerDown);
+    this.element.removeEventListener("keydown", this.handleKeyDown);
+    this.element.removeEventListener("dblclick", this.handleDoubleClick);
+    window.removeEventListener("pointerup", this.handlePointerUp);
+    window.removeEventListener("pointercancel", this.handlePointerUp);
+  }
+  // Double-click to reset to default value
+  handleDoubleClick(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.setValue(this.defaultValue, true);
+    this.onChange(this.defaultValue);
+  }
+  // Set the default value (can be called externally for preset changes)
+  setDefaultValue(value) {
+    this.defaultValue = clamp$1(value);
+  }
+  handlePointerDown(event) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.pointerId = event.pointerId;
+    this.element.classList.add("active");
+    this.element.setPointerCapture?.(event.pointerId);
+    const rect = this.track.getBoundingClientRect();
+    const thumbRect = this.thumbEl?.getBoundingClientRect();
+    const thumbCenterX = thumbRect ? thumbRect.left + thumbRect.width * 0.5 : rect.left + rect.width * (this.displayValue ?? this.value);
+    const isOnThumb = event.target === this.thumbEl || (thumbRect ? event.clientX >= thumbRect.left - HIT_SLOP_PX && event.clientX <= thumbRect.right + HIT_SLOP_PX : Math.abs(event.clientX - thumbCenterX) <= THUMB_RADIUS_PX + HIT_SLOP_PX);
+    let rawValue;
+    let clampedValue;
+    if (isOnThumb) {
+      this.isThumbDrag = true;
+      this.allowSpringDuringDrag = false;
+      this.dragStartX = event.clientX;
+      const currentRenderValue = Math.max(
+        -RENDER_OVERSHOOT,
+        Math.min(1 + RENDER_OVERSHOOT, this.displayValue ?? this.value)
+      );
+      this.dragStartRaw = rubberBandInverse(currentRenderValue);
+      rawValue = this.dragStartRaw;
+      clampedValue = clamp$1(rawValue);
+      this.lastVisualValue = currentRenderValue;
+    } else {
+      this.isThumbDrag = false;
+      this.allowSpringDuringDrag = true;
+      const x = event.clientX - rect.left;
+      rawValue = x / Math.max(1, rect.width);
+      clampedValue = clamp$1(rawValue);
+      this.lastVisualValue = null;
+      this.dragStartX = event.clientX;
+      this.dragStartRaw = rawValue;
+    }
+    this.dragStartValue = clampedValue;
+    this.targetValue = clampedValue;
+    this.value = clampedValue;
+    this.displayValue = this.lastVisualValue ?? this.displayValue;
+    if (!this.animationFrame) {
+      this.lastTime = performance.now();
+      this.animationFrame = requestAnimationFrame(this.animate);
+    }
+    if (this.isThumbDrag) {
+      this.updateDisplay(this.lastVisualValue);
+    }
+    window.addEventListener("pointermove", this.handlePointerMove);
+    this.onChange(this.value);
+  }
+  handlePointerMove(event) {
+    if (!this.isDragging) return;
+    if (this.pointerId !== null && event.pointerId !== this.pointerId) return;
+    this.allowSpringDuringDrag = false;
+    let newValue;
+    let rawValue;
+    if (event.shiftKey) {
+      this.element.classList.add("fine-control");
+      const deltaX = event.clientX - this.dragStartX;
+      const rect = this.track.getBoundingClientRect();
+      const normalizedDelta = deltaX / Math.max(1, rect.width);
+      const fineDelta = normalizedDelta * this.fineControlSensitivity;
+      rawValue = this.dragStartValue + fineDelta;
+      newValue = clamp$1(rawValue);
+    } else {
+      this.element.classList.remove("fine-control");
+      const rect = this.track.getBoundingClientRect();
+      if (this.isThumbDrag) {
+        const deltaX = event.clientX - this.dragStartX;
+        rawValue = this.dragStartRaw + deltaX / Math.max(1, rect.width);
+        newValue = clamp$1(rawValue);
+      } else {
+        const x = event.clientX - rect.left;
+        rawValue = x / Math.max(1, rect.width);
+        newValue = clamp$1(rawValue);
+        this.dragStartX = event.clientX;
+        this.dragStartValue = newValue;
+      }
+    }
+    this.targetValue = newValue;
+    this.value = newValue;
+    const visualValue = rubberBand(rawValue);
+    this.lastVisualValue = visualValue;
+    this.displayValue = visualValue;
+    this.updateDisplay(visualValue);
+    this.onChange(this.value);
+  }
+  handlePointerUp(event) {
+    if (!this.isDragging) return;
+    if (this.pointerId !== null && event.pointerId !== this.pointerId) return;
+    this.isDragging = false;
+    this.pointerId = null;
+    this.element.classList.remove("active");
+    this.element.classList.remove("fine-control");
+    this.element.releasePointerCapture?.(event.pointerId);
+    this.isThumbDrag = false;
+    window.removeEventListener("pointermove", this.handlePointerMove);
+    this.displayValue = this.lastVisualValue ?? this.displayValue;
+    this.targetValue = this.value;
+    if (!this.animationFrame) {
+      this.lastTime = performance.now();
+      this.animationFrame = requestAnimationFrame(this.animate);
+    }
+  }
+  handleKeyDown(event) {
+    const step = event.shiftKey ? 1e-3 : 0.01;
+    let newValue = this.value;
+    switch (event.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        newValue = clamp$1(this.value - step);
+        event.preventDefault();
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+        newValue = clamp$1(this.value + step);
+        event.preventDefault();
+        break;
+      case "Home":
+        newValue = 0;
+        event.preventDefault();
+        break;
+      case "End":
+        newValue = 1;
+        event.preventDefault();
+        break;
+      default:
+        return;
+    }
+    this.setValue(newValue);
+    this.onChange(this.value);
+  }
+  // Spring physics animation
+  animate(currentTime) {
+    const deltaTime = Math.min((currentTime - this.lastTime) / 1e3, 0.1);
+    this.lastTime = currentTime;
+    if (!this.isDragging || this.allowSpringDuringDrag) {
+      const displacement = this.displayValue - this.targetValue;
+      const springForce = -this.springStiffness * displacement;
+      const dampingForce = -this.springDamping * this.velocity;
+      const acceleration = (springForce + dampingForce) / this.mass;
+      this.velocity += acceleration * deltaTime;
+      this.displayValue += this.velocity * deltaTime;
+      const isSettled = Math.abs(displacement) < 1e-4 && Math.abs(this.velocity) < 1e-3;
+      if (isSettled) {
+        this.displayValue = this.targetValue;
+        this.lastVisualValue = this.displayValue;
+        this.velocity = 0;
+        this.animationFrame = null;
+        this.updateDisplay(this.displayValue);
+        return;
+      }
+    } else {
+      this.displayValue = this.lastVisualValue ?? this.targetValue;
+    }
+    this.updateDisplay(this.displayValue);
+    this.animationFrame = requestAnimationFrame(this.animate);
+  }
+  updateDisplay(value) {
+    const clampedValue = clamp$1(value);
+    const renderValue = Math.max(-RENDER_OVERSHOOT, Math.min(1 + RENDER_OVERSHOOT, value));
+    const thumbX = renderValue * VB_WIDTH;
+    const startX = thumbX - CURVE_SPREAD;
+    const endX = thumbX + CURVE_SPREAD;
+    const peakY = CURVE_PEAK;
+    const leftCp1x = startX + CURVE_SPREAD * 0.45;
+    const leftCp2x = thumbX - CURVE_SPREAD * 0.25;
+    const rightCp1x = thumbX + CURVE_SPREAD * 0.25;
+    const rightCp2x = endX - CURVE_SPREAD * 0.45;
+    const lineStartX = -CURVE_EXTEND;
+    const lineEndX = VB_WIDTH + CURVE_EXTEND;
+    let d = `M ${lineStartX},${LINE_Y} `;
+    d += `L ${startX},${LINE_Y} `;
+    d += `C ${leftCp1x},${LINE_Y} ${leftCp2x},${peakY} ${thumbX},${peakY} `;
+    d += `C ${rightCp1x},${peakY} ${rightCp2x},${LINE_Y} ${endX},${LINE_Y} `;
+    d += `L ${lineEndX},${LINE_Y}`;
+    if (this.path) {
+      this.path.setAttribute("d", d);
+    }
+    if (this.thumbEl) {
+      this.thumbEl.style.left = `${renderValue * 100}%`;
+      this.thumbEl.style.transform = "translate(-50%, -50%)";
+    }
+    this.lastVisualValue = value;
+    this.element.setAttribute("aria-valuenow", clampedValue.toFixed(3));
+    this.element.dataset.value = clampedValue.toFixed(3);
+  }
+  setValue(newValue, animate = true) {
+    newValue = clamp$1(newValue);
+    this.value = newValue;
+    this.targetValue = newValue;
+    if (animate && !this.isDragging) {
+      if (!this.animationFrame) {
+        this.lastTime = performance.now();
+        this.animationFrame = requestAnimationFrame(this.animate);
+      }
+    } else {
+      this.displayValue = newValue;
+      this.updateDisplay(newValue);
+    }
+  }
+  getValue() {
+    return this.value;
+  }
+  destroy() {
+    this.detachEvents();
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+    }
+  }
+}
+const clamp = (value, min = 0, max = 1) => Math.min(Math.max(value, min), max);
+const DECAY_RANGE = { min: 0, max: 1 };
+const SIZE_RANGE = { min: 0, max: 1 };
+const PUCK_RADIUS = 40;
+const PUCK_MOTION = {
+  speedForMax: 0.02,
+  // Sensitivity for max visual effect
+  maxStretchX: 0.2,
+  // 20% stretch
+  maxStretchY: 0.18,
+  // 18% squash
+  maxPupilOffset: 10,
+  // 10px pupil lag
+  // Inertia tuning (robust for JUCE WebView which may have slower/irregular event timing)
+  inertiaFriction: 0.95,
+  // Higher = longer coast
+  inertiaThreshold: 3e-4,
+  // Lower = more sensitive to small velocities
+  inertiaBounce: -0.3,
+  // Wall bounce damping
+  inertiaHistoryMs: 200,
+  // Look back window for velocity (longer for WebView)
+  // Frosted glass "liquid lens" tuning (UI-only)
+  glass: {
+    blurMinPx: 8,
+    blurRangePx: 10,
+    // Stronger, inkier grain for a more riso feel
+    grainMin: 0.14,
+    grainRange: 0.26,
+    // SVG displacement (if supported by the host WebView)
+    dispScaleMin: 0.6,
+    dispScaleRange: 1.8,
+    turbFreqMin: 0.018,
+    turbFreqRange: 0.03
+  }
+};
+const toDsp = (normValue) => clamp(normValue) * 2 - 1;
+const fromDsp = (dspValue) => clamp((dspValue + 1) / 2);
+const rangeToNorm = (value, range) => {
+  if (!range || range.max === range.min) return 0;
+  return clamp((value - range.min) / (range.max - range.min));
+};
+const to11Scale = (value = 0, range = { min: 0, max: 1 }) => (rangeToNorm(value, range) * 11).toFixed(2);
+const getBounds = (el) => el?.getBoundingClientRect();
+const normalizeCoord = (value, invert = false) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  let norm = value >= -1 && value <= 1 ? fromDsp(value) : clamp(value);
+  norm = clamp(norm);
+  return invert ? 1 - norm : norm;
+};
+class Controls {
+  constructor(options = {}) {
+    this.params = options.params || {};
+    this.paramOrder = options.paramOrder || Object.keys(this.params);
+    this.onPuckChange = options.onPuckChange || (() => {
+    });
+    this.onFreezeChange = options.onFreezeChange || (() => {
+    });
+    this.sendLooperTrigger = options.sendLooperTrigger || null;
+    this.sendParam = options.sendParam || (() => {
+    });
+    this.puck = document.getElementById("puck");
+    this.surface = document.querySelector(".tb-canvas-shell");
+    this.readoutDecay = document.querySelector('[data-readout="x"]');
+    this.readoutSize = document.querySelector('[data-readout="y"]');
+    this.freezeBtn = document.querySelector(".btn-freeze");
+    this.settingsBtn = document.querySelector(".btn-settings");
+    this.settingsView = document.querySelector(".settings-view");
+    this.settingsBody = document.querySelector(".settings-body");
+    this.app = document.getElementById("app");
+    this.bounds = getBounds(this.surface);
+    this.dimensions = null;
+    this.state = { puckX: 0.5, puckY: 0.5, freeze: false };
+    this.looperState = "idle";
+    this.isPlaying = true;
+    this.isLooperArmed = false;
+    this.axisLabels = {
+      left: document.querySelector(".axis-label-left"),
+      right: document.querySelector(".axis-label-right"),
+      top: document.querySelector(".axis-label-top"),
+      bottom: document.querySelector(".axis-label-bottom")
+    };
+    const defaultLabels = {
+      normal: { left: "vivid", right: "hazy", top: "distant", bottom: "recent" },
+      loop: { left: "spectral", right: "diffuse", top: "fleeting", bottom: "lingering" }
+    };
+    this.axisLabelText = options.axisLabels ? { normal: { ...defaultLabels.normal, ...options.axisLabels.normal }, loop: { ...defaultLabels.loop, ...options.axisLabels.loop || {} } } : defaultLabels;
+    this.isDragging = false;
+    this.pointerId = null;
+    this.dragOffset = { x: 0, y: 0 };
+    this.velocity = { x: 0, y: 0 };
+    this.velocityHistory = [];
+    this.positionHistory = [];
+    this.lastPointerNorm = { x: 0, y: 0 };
+    this.puckRadius = 24;
+    this.inertiaFrame = null;
+    this.lastSentPosition = { x: 0.5, y: 0.5, time: 0 };
+    this.targetPuckX = 0.5;
+    this.targetPuckY = 0.5;
+    this.puckAnimationFrame = null;
+    this.lerpSpeed = 0.12;
+    this.prefersReducedMotion = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    this.frost = {
+      turb: document.getElementById("tb-frost-turb"),
+      disp: document.getElementById("tb-frost-disp")
+    };
+    this._glassRaf = null;
+    this._glassSpeedNorm = 0;
+    this._glassSeed = 2;
+    this.elasticSliders = {};
+    this.sliders = {};
+    this.paramMetadata = this._buildParamMetadata();
+    this.handlePointerDown = this.handlePointerDown.bind(this);
+    this.handlePointerMove = this.handlePointerMove.bind(this);
+    this.handlePointerUp = this.handlePointerUp.bind(this);
+    this.applyInertiaStep = this.applyInertiaStep.bind(this);
+    this.animatePuck = this.animatePuck.bind(this);
+    this.settingsState = this.settingsView?.classList.contains("open") ? "open" : "closed";
+    this.settingsSuppressToggleUntil = 0;
+    this.settingsIgnoreClickUntil = 0;
+    this.onSettingsBtnPointerUp = this.onSettingsBtnPointerUp.bind(this);
+    this.onDocPointerDownCaptureForSettings = this.onDocPointerDownCaptureForSettings.bind(this);
+    this.onCloseSettingsEvent = this.onCloseSettingsEvent.bind(this);
+    this.initDrawerControls();
+    this.attachEvents();
+    this.initPuckPosition();
+    this.updateAxisLabels();
+    this.updateLooperVisual();
+    this.resetPuckMotionStyles();
+  }
+  _scheduleGlassUpdate(speedNorm = 0) {
+    this._glassSpeedNorm = clamp(speedNorm, 0, 1);
+    if (this._glassRaf) return;
+    this._glassRaf = requestAnimationFrame(() => {
+      this._glassRaf = null;
+      this._applyGlassFromSpeed(this._glassSpeedNorm);
+    });
+  }
+  _applyGlassFromSpeed(speedNorm = 0) {
+    if (!this.puck) return;
+    const g = PUCK_MOTION.glass;
+    const s = this.prefersReducedMotion ? Math.min(speedNorm, 0.35) : speedNorm;
+    const blurPx = g.blurMinPx + s * g.blurRangePx;
+    const grain = g.grainMin + s * g.grainRange;
+    this.puck.style.setProperty("--puck-glass-blur", `${blurPx.toFixed(2)}px`);
+    this.puck.style.setProperty("--puck-grain", grain.toFixed(3));
+    if (this.frost?.disp) {
+      const scale = g.dispScaleMin + s * g.dispScaleRange;
+      this.frost.disp.setAttribute("scale", scale.toFixed(3));
+    }
+    if (this.frost?.turb) {
+      const freq = g.turbFreqMin + s * g.turbFreqRange;
+      this.frost.turb.setAttribute("baseFrequency", freq.toFixed(4));
+      if (s > 0.05) {
+        this._glassSeed = (this._glassSeed + 1) % 997;
+        this.frost.turb.setAttribute("seed", String(this._glassSeed));
+      }
+    }
+  }
+  _buildParamMetadata() {
+    const metadata = {};
+    const formatters = {
+      decay: this.formatDecay.bind(this),
+      erPreDelay: this.formatPredelay.bind(this),
+      size: this.formatSize.bind(this),
+      tone: this.formatTone.bind(this),
+      drift: this.formatPercent.bind(this),
+      ghost: this.formatPercent.bind(this),
+      glitch: this.formatPercent.bind(this),
+      duck: this.formatPercent.bind(this),
+      mix: this.formatPercent.bind(this),
+      output: this.formatDb.bind(this)
+    };
+    for (const [id, param] of Object.entries(this.params)) {
+      metadata[id] = {
+        ...param,
+        format: formatters[id] || this.formatPercent.bind(this)
+      };
+    }
+    return metadata;
+  }
+  initPuckPosition() {
+    const tryPosition = () => {
+      this.bounds = getBounds(this.surface);
+      if (this.bounds && this.bounds.width > 0 && this.bounds.height > 0) {
+        this.cacheDimensions();
+        this.setPuckPositionImmediate(this.state.puckX, this.state.puckY);
+        return true;
+      }
+      return false;
+    };
+    if (tryPosition()) return;
+    requestAnimationFrame(() => {
+      if (tryPosition()) return;
+      setTimeout(() => {
+        if (tryPosition()) return;
+        setTimeout(() => tryPosition(), 200);
+      }, 50);
+    });
+  }
+  initDrawerControls() {
+    const paramIds = this.paramOrder.filter(
+      (id) => (
+        // Only include params that are in the drawer (not puckX/puckY/freeze)
+        !["puckX", "puckY", "freeze"].includes(id)
+      )
+    );
+    paramIds.forEach((id) => {
+      const row = document.querySelector(`.control-row[data-param="${id}"]`);
+      if (!row) return;
+      const sliderElement = row.querySelector(".elastic-slider");
+      if (sliderElement) {
+        const metadata = this.paramMetadata[id];
+        if (!metadata) return;
+        const elasticSlider = new ElasticSlider(sliderElement, {
+          onChange: (normValue) => {
+            const actualValue = metadata.min + normValue * (metadata.max - metadata.min);
+            this.sendParam(id, actualValue);
+          }
+        });
+        this.elasticSliders[id] = elasticSlider;
+      }
+    });
+  }
+  attachEvents() {
+    const supportsPointer = typeof window !== "undefined" && "PointerEvent" in window;
+    if (this.puck) {
+      this.puck.addEventListener("pointerdown", this.handlePointerDown);
+      this.puck.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        this.stopInertia();
+        this.stopPuckAnimation();
+        this.setPuckPositionImmediate(0.5, 0.5);
+        this.sendParam("puckX", toDsp(0.5));
+        this.sendParam("puckY", toDsp(1 - 0.5));
+        this.onPuckChange({ puckX: 0.5, puckY: 0.5 });
+        this.renderReadoutsFromNorm(0.5, 0.5);
+      });
+    }
+    if (this.freezeBtn) {
+      this.freezeBtn.addEventListener("click", () => {
+        if (this.looperState === "idle") {
+          if (this.isLooperArmed) {
+            this.setLooperArmed(false);
+            return;
+          }
+          if (this.isPlaying === false) {
+            this.setLooperArmed(true);
+            return;
+          }
+          this.triggerLooperStart();
+        } else {
+          this.setLooperArmed(false);
+          this.triggerLooperStop();
+        }
+      });
+    }
+    if (this.settingsBtn && this.settingsView) {
+      if (supportsPointer) {
+        this.settingsBtn.addEventListener("pointerup", this.onSettingsBtnPointerUp);
+      } else {
+        this.settingsBtn.addEventListener("mouseup", this.onSettingsBtnPointerUp);
+      }
+      this.settingsBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (performance.now() < this.settingsIgnoreClickUntil) return;
+        this.toggleSettingsView();
+      });
+    }
+    window.addEventListener("pointerup", this.handlePointerUp);
+    window.addEventListener("pointercancel", this.handlePointerUp);
+    window.addEventListener("resize", () => this.refreshBounds());
+    if (supportsPointer) {
+      document.addEventListener("pointerdown", this.onDocPointerDownCaptureForSettings, { capture: true });
+    } else {
+      document.addEventListener("mousedown", this.onDocPointerDownCaptureForSettings, { capture: true });
+    }
+    document.addEventListener("tb:close-settings", this.onCloseSettingsEvent);
+  }
+  onCloseSettingsEvent() {
+    this.toggleSettingsView(false, { reason: "external", deferFocusToBtn: true, suppressToggleMs: 250 });
+  }
+  onSettingsBtnPointerUp(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (performance.now() < this.settingsSuppressToggleUntil) return;
+    this.settingsIgnoreClickUntil = performance.now() + 400;
+    this.toggleSettingsView(void 0, { reason: "button", deferFocusToBtn: false });
+  }
+  onDocPointerDownCaptureForSettings(e) {
+    if (this.settingsState !== "open") return;
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement;
+    if (!t) return;
+    if (this.settingsBtn && this.settingsBtn.contains(t)) return;
+    if (this.settingsBody && this.settingsBody.contains(t)) return;
+    if (this.settingsView && this.settingsView.contains(t)) {
+      e.preventDefault();
+      this.settingsIgnoreClickUntil = performance.now() + 400;
+      this.toggleSettingsView(false, { reason: "backdrop", deferFocusToBtn: true, suppressToggleMs: 250 });
+    }
+  }
+  refreshBounds() {
+    this.bounds = getBounds(this.surface);
+    this.cacheDimensions();
+    this.setPuckPositionImmediate(this.state.puckX, this.state.puckY);
+  }
+  handlePointerDown(event) {
+    if (!this.puck) return;
+    this.cacheBounds();
+    this.stopInertia();
+    this.stopPuckAnimation();
+    this.isDragging = true;
+    this.pointerId = event.pointerId;
+    this.puck.classList.add("active");
+    this.surface?.classList.add("puck-dragging");
+    this.puck.setPointerCapture?.(event.pointerId);
+    const bounds = this.bounds;
+    const dims = this.dimensions;
+    if (bounds && dims) {
+      const puckCenterX = bounds.left + dims.minPxX + this.state.puckX * dims.spanX;
+      const puckCenterY = bounds.top + dims.minPxY + this.state.puckY * dims.spanY;
+      this.dragOffset = {
+        x: event.clientX - puckCenterX,
+        y: event.clientY - puckCenterY
+      };
+    } else {
+      this.dragOffset = { x: 0, y: 0 };
+    }
+    this.lastPointerNorm = { x: this.state.puckX, y: this.state.puckY };
+    this.velocity = { x: 0, y: 0 };
+    this.velocityHistory = [];
+    this.positionHistory = [{ x: this.state.puckX, y: this.state.puckY, time: performance.now() }];
+    window.addEventListener("pointermove", this.handlePointerMove);
+  }
+  handlePointerMove(event) {
+    if (!this.isDragging || this.pointerId !== null && event.pointerId !== this.pointerId) {
+      return;
+    }
+    this.updateFromPointer(event);
+  }
+  handlePointerUp(event) {
+    if (!this.isDragging) return;
+    if (this.pointerId !== null && event.pointerId !== this.pointerId && event.type !== "pointercancel") {
+      return;
+    }
+    this.isDragging = false;
+    this.pointerId = null;
+    this.puck?.classList.remove("active");
+    this.surface?.classList.remove("puck-dragging");
+    this.puck?.releasePointerCapture?.(event.pointerId);
+    window.removeEventListener("pointermove", this.handlePointerMove);
+    this.startInertia();
+  }
+  cacheBounds() {
+    this.bounds = getBounds(this.surface) || this.bounds;
+    this.cacheDimensions();
+  }
+  cacheDimensions() {
+    const bounds = this.bounds;
+    if (!bounds) return;
+    const width = Math.max(bounds.width, 1);
+    const height = Math.max(bounds.height, 1);
+    const minPxX = Math.min(PUCK_RADIUS, width / 2);
+    const maxPxX = Math.max(width - PUCK_RADIUS, minPxX);
+    const minPxY = Math.min(PUCK_RADIUS, height / 2);
+    const maxPxY = Math.max(height - PUCK_RADIUS, minPxY);
+    this.dimensions = {
+      width,
+      height,
+      minPxX,
+      maxPxX,
+      spanX: Math.max(maxPxX - minPxX, 1),
+      minPxY,
+      maxPxY,
+      spanY: Math.max(maxPxY - minPxY, 1)
+    };
+  }
+  pointerToNorm(event) {
+    this.cacheBounds();
+    const bounds = this.bounds;
+    const dims = this.dimensions;
+    if (!bounds || !dims) return { x: this.state.puckX, y: this.state.puckY };
+    const centerAbsX = event.clientX - (this.dragOffset?.x || 0);
+    const centerAbsY = event.clientY - (this.dragOffset?.y || 0);
+    const localX = centerAbsX - bounds.left;
+    const localY = centerAbsY - bounds.top;
+    const clampedX = clamp(localX, dims.minPxX, dims.maxPxX);
+    const clampedY = clamp(localY, dims.minPxY, dims.maxPxY);
+    const normX = (clampedX - dims.minPxX) / dims.spanX;
+    const normY = (clampedY - dims.minPxY) / dims.spanY;
+    return { x: clamp(normX), y: clamp(normY) };
+  }
+  setPuckMotionStyles(velocity = { x: 0, y: 0 }) {
+    if (!this.puck) return;
+    const speed = Math.hypot(velocity.x, velocity.y);
+    const speedNorm = clamp(speed / PUCK_MOTION.speedForMax, 0, 1);
+    if (speedNorm < 1e-3) {
+      this.resetPuckMotionStyles();
+      return;
+    }
+    const stretch = 1 + speedNorm * PUCK_MOTION.maxStretchX;
+    const squash = 1 - speedNorm * PUCK_MOTION.maxStretchY;
+    const angle = Math.atan2(velocity.y, velocity.x) * (180 / Math.PI);
+    const offsetX = clamp(-velocity.x / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset;
+    const offsetY = clamp(-velocity.y / PUCK_MOTION.speedForMax, -1, 1) * PUCK_MOTION.maxPupilOffset;
+    this.puck.style.setProperty("--puck-motion-angle", `${angle.toFixed(1)}deg`);
+    this.puck.style.setProperty("--puck-stretch", stretch.toFixed(3));
+    this.puck.style.setProperty("--puck-squash", squash.toFixed(3));
+    this.puck.style.setProperty("--pupil-offset-x", `${offsetX.toFixed(2)}px`);
+    this.puck.style.setProperty("--pupil-offset-y", `${offsetY.toFixed(2)}px`);
+    this._scheduleGlassUpdate(speedNorm);
+  }
+  resetPuckMotionStyles() {
+    if (!this.puck) return;
+    this.puck.style.setProperty("--puck-motion-angle", "0deg");
+    this.puck.style.setProperty("--puck-stretch", "1");
+    this.puck.style.setProperty("--puck-squash", "1");
+    this.puck.style.setProperty("--pupil-offset-x", "0px");
+    this.puck.style.setProperty("--pupil-offset-y", "0px");
+    this._scheduleGlassUpdate(0);
+  }
+  updateFromPointer(event) {
+    event.preventDefault();
+    const { x, y } = this.pointerToNorm(event);
+    const nextX = clamp(x);
+    const nextY = clamp(y);
+    const now = performance.now();
+    const frameVelocity = {
+      x: nextX - this.lastPointerNorm.x,
+      y: nextY - this.lastPointerNorm.y
+    };
+    this.velocityHistory.push({ ...frameVelocity, time: now });
+    if (this.velocityHistory.length > 8) this.velocityHistory.shift();
+    this.positionHistory.push({ x: nextX, y: nextY, time: now });
+    if (this.positionHistory.length > 10) this.positionHistory.shift();
+    this.velocity = frameVelocity;
+    this.lastPointerNorm = { x: nextX, y: nextY };
+    this.setPuckPositionImmediate(nextX, nextY);
+    this.setPuckMotionStyles(this.velocity);
+    this.sendParam("puckX", toDsp(nextX));
+    this.sendParam("puckY", toDsp(1 - nextY));
+    this.lastSentPosition = { x: nextX, y: nextY, time: now };
+    this.onPuckChange({ puckX: nextX, puckY: nextY });
+    this.renderReadoutsFromNorm(nextX, nextY);
+  }
+  // Immediately set puck position without animation
+  setPuckPositionImmediate(x = this.state.puckX, y = this.state.puckY) {
+    if (!this.puck) return;
+    this.cacheBounds();
+    const dims = this.dimensions;
+    if (!dims) return;
+    const clampedX = clamp(x);
+    const clampedY = clamp(y);
+    this.state.puckX = clampedX;
+    this.state.puckY = clampedY;
+    const visualX = dims.minPxX + clampedX * dims.spanX;
+    const visualY = dims.minPxY + clampedY * dims.spanY;
+    this.puck.style.left = `${visualX}px`;
+    this.puck.style.top = `${visualY}px`;
+  }
+  // Set puck position with smooth animation (used for preset changes)
+  setPuckPosition(x = this.state.puckX, y = this.state.puckY) {
+    this.setPuckPositionImmediate(x, y);
+  }
+  // Animate puck to target position
+  animatePuckTo(targetX, targetY) {
+    this.targetPuckX = clamp(targetX);
+    this.targetPuckY = clamp(targetY);
+    if (!this.puckAnimationFrame) {
+      this.animatePuck();
+    }
+  }
+  // Animation loop using lerp
+  animatePuck() {
+    const dx = this.targetPuckX - this.state.puckX;
+    const dy = this.targetPuckY - this.state.puckY;
+    if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) {
+      this.setPuckPositionImmediate(this.targetPuckX, this.targetPuckY);
+      this.puckAnimationFrame = null;
+      this.resetPuckMotionStyles();
+      this.renderReadoutsFromNorm(this.targetPuckX, this.targetPuckY);
+      this.sendParam("puckX", toDsp(this.targetPuckX));
+      this.sendParam("puckY", toDsp(1 - this.targetPuckY));
+      this.onPuckChange({ puckX: this.targetPuckX, puckY: this.targetPuckY });
+      return;
+    }
+    const nextX = this.state.puckX + dx * this.lerpSpeed;
+    const nextY = this.state.puckY + dy * this.lerpSpeed;
+    const motionVelocity = { x: nextX - this.state.puckX, y: nextY - this.state.puckY };
+    this.setPuckPositionImmediate(nextX, nextY);
+    this.setPuckMotionStyles(motionVelocity);
+    this.renderReadoutsFromNorm(nextX, nextY);
+    this.sendParam("puckX", toDsp(nextX));
+    this.sendParam("puckY", toDsp(1 - nextY));
+    this.onPuckChange({ puckX: nextX, puckY: nextY });
+    this.puckAnimationFrame = requestAnimationFrame(() => this.animatePuck());
+  }
+  // Stop puck animation
+  stopPuckAnimation() {
+    if (this.puckAnimationFrame) {
+      cancelAnimationFrame(this.puckAnimationFrame);
+      this.puckAnimationFrame = null;
+    }
+    this.resetPuckMotionStyles();
+  }
+  setFreezeVisual(isActive) {
+    if (!this.freezeBtn) return;
+    this.freezeBtn.classList.toggle("active", isActive);
+    this.freezeBtn.setAttribute("aria-pressed", String(!!isActive));
+    this.state.freeze = !!isActive;
+  }
+  triggerLooperStart() {
+    if (this.sendLooperTrigger) {
+      this.sendLooperTrigger("start");
+      return;
+    }
+    this.sendParam("freeze", 1);
+    this.state.freeze = true;
+    this.onFreezeChange(true);
+  }
+  triggerLooperStop() {
+    if (this.sendLooperTrigger) {
+      this.sendLooperTrigger("stop");
+      return;
+    }
+    this.sendParam("freeze", 1);
+    requestAnimationFrame(() => {
+      this.sendParam("freeze", 0);
+      this.state.freeze = false;
+      this.onFreezeChange(false);
+    });
+  }
+  setLooperArmed(isArmed) {
+    if (!this.freezeBtn) return;
+    this.isLooperArmed = isArmed;
+    this.freezeBtn.classList.toggle("armed-waiting", isArmed);
+    this.updateLooperAria();
+  }
+  updateLooperAria() {
+    if (!this.freezeBtn) return;
+    this.freezeBtn.setAttribute(
+      "aria-pressed",
+      String(this.looperState !== "idle" || this.isLooperArmed)
+    );
+  }
+  /**
+   * Update freeze button and puck visual for disintegration looper states
+   * States: 'idle' | 'recording' | 'looping'
+   */
+  updateLooperVisual() {
+    if (!this.freezeBtn) return;
+    this.freezeBtn.classList.remove("idle", "recording", "looping");
+    this.freezeBtn.classList.add(this.looperState);
+    if (this.looperState !== "idle" && this.isLooperArmed) {
+      this.setLooperArmed(false);
+    }
+    this.updateLooperAria();
+    if (this.puck) {
+      this.puck.classList.remove("idle", "recording", "looping");
+      this.puck.classList.add(this.looperState);
+    }
+    const app = document.querySelector(".tb-app");
+    if (app) {
+      app.classList.toggle("looping", this.looperState === "looping");
+    }
+  }
+  /**
+   * Update axis label text based on looper state
+   * Labels show different descriptors for normal vs loop mode
+   */
+  updateAxisLabels() {
+    const isLooping = this.looperState === "looping";
+    const labels = isLooping ? this.axisLabelText.loop : this.axisLabelText.normal;
+    if (this.axisLabels.left) this.axisLabels.left.textContent = labels.left;
+    if (this.axisLabels.right) this.axisLabels.right.textContent = labels.right;
+    if (this.axisLabels.top) this.axisLabels.top.textContent = labels.top;
+    if (this.axisLabels.bottom) this.axisLabels.bottom.textContent = labels.bottom;
+  }
+  /**
+   * Toggle the full-screen settings view
+   * @param {boolean} [shouldOpen] - Force open (true) or close (false), or toggle if undefined
+   */
+  toggleSettingsView(shouldOpen, { reason = "unknown", deferFocusToBtn = false, suppressToggleMs = 0 } = {}) {
+    if (!this.settingsView || !this.app) return;
+    const isCurrentlyOpen = this.settingsView.classList.contains("open");
+    const nextState = shouldOpen !== void 0 ? shouldOpen : !isCurrentlyOpen;
+    if (nextState) {
+      if (performance.now() < this.settingsSuppressToggleUntil) return;
+      document.dispatchEvent(new CustomEvent("tb:close-presets"));
+      this.settingsView.classList.add("open");
+      this.settingsView.setAttribute("aria-hidden", "false");
+      this.app.classList.add("settings-open");
+      this.settingsBtn?.setAttribute("aria-expanded", "true");
+      this.settingsBtn?.setAttribute("aria-label", "Close settings");
+      this.settingsState = "open";
+      const focusFirst = () => {
+        const first = this.settingsView.querySelector(".elastic-slider, button, [tabindex]");
+        first?.focus?.({ preventScroll: true });
+      };
+      if (typeof queueMicrotask === "function") queueMicrotask(focusFirst);
+      else setTimeout(focusFirst, 0);
+    } else {
+      this.settingsView.classList.remove("open");
+      this.settingsView.setAttribute("aria-hidden", "true");
+      this.app.classList.remove("settings-open");
+      this.settingsBtn?.setAttribute("aria-expanded", "false");
+      this.settingsBtn?.setAttribute("aria-label", "Open settings");
+      this.settingsState = "closed";
+      if (suppressToggleMs > 0) {
+        this.settingsSuppressToggleUntil = performance.now() + suppressToggleMs;
+      }
+      const focusBtn = () => this.settingsBtn?.focus?.({ preventScroll: true });
+      if (deferFocusToBtn) {
+        if (typeof queueMicrotask === "function") queueMicrotask(focusBtn);
+        else setTimeout(focusBtn, 0);
+      } else {
+        focusBtn();
+      }
+    }
+  }
+  update(state = {}) {
+    let nextX = this.state.puckX;
+    let nextY = this.state.puckY;
+    const incomingX = normalizeCoord(state.puckX);
+    const incomingY = normalizeCoord(state.puckY, true);
+    const resolvedX = incomingX !== null ? incomingX : nextX;
+    const resolvedY = incomingY !== null ? incomingY : nextY;
+    const hasIncoming = incomingX !== null || incomingY !== null;
+    if (this.isDragging || this.inertiaFrame) {
+      nextX = this.state.puckX;
+      nextY = this.state.puckY;
+    } else {
+      const isAnimating = Boolean(this.puckAnimationFrame);
+      let allowIncoming = !isAnimating;
+      if (!allowIncoming && hasIncoming) {
+        const dx = Math.abs(resolvedX - this.state.puckX);
+        const dy = Math.abs(resolvedY - this.state.puckY);
+        if (dx > 0.15 || dy > 0.15) {
+          this.stopPuckAnimation();
+          allowIncoming = true;
+        }
+      }
+      if (allowIncoming && hasIncoming) {
+        nextX = resolvedX;
+        nextY = resolvedY;
+      }
+    }
+    if (!this.isDragging && !this.inertiaFrame) {
+      const dx = Math.abs(nextX - this.state.puckX);
+      const dy = Math.abs(nextY - this.state.puckY);
+      const significantChange = dx > 0.05 || dy > 0.05;
+      if (significantChange && !this.inertiaFrame) {
+        this.animatePuckTo(nextX, nextY);
+      } else if (!this.puckAnimationFrame) {
+        this.setPuckPositionImmediate(nextX, nextY);
+      }
+    }
+    if (!this.isDragging) {
+      this.applyInertiaIfNeeded();
+    }
+    if (typeof state.looperState !== "undefined") {
+      const stateMap = ["idle", "recording", "looping"];
+      const newLooperState = stateMap[state.looperState] || "idle";
+      if (newLooperState !== this.looperState) {
+        const wasLooping = this.looperState === "looping";
+        const nowLooping = newLooperState === "looping";
+        if (!wasLooping && nowLooping) {
+          this._savedPuckX = this.state.puckX;
+          this._savedPuckY = this.state.puckY;
+          this._loopingPuckTarget = { x: 0.5, y: 0.5 };
+          this.animatePuckTo(0.5, 0.5);
+        }
+        if (wasLooping && !nowLooping && this._savedPuckX !== void 0) {
+          this.animatePuckTo(this._savedPuckX, this._savedPuckY);
+          this._savedPuckX = void 0;
+          this._savedPuckY = void 0;
+        }
+        this.looperState = newLooperState;
+        this.updateLooperVisual();
+        this.updateAxisLabels();
+      }
+    }
+    if (typeof state.isPlaying !== "undefined") {
+      this.isPlaying = Boolean(state.isPlaying);
+    }
+    if (this.isLooperArmed && this.isPlaying && this.looperState === "idle") {
+      this.setLooperArmed(false);
+      this.triggerLooperStart();
+    }
+    if (typeof state.freeze !== "undefined") {
+      if (this.looperState === "idle") {
+        this.setFreezeVisual(Boolean(state.freeze));
+      }
+    }
+    const stateMapping = {
+      "decay": "decaySeconds",
+      // Backend sends decaySeconds
+      "erPreDelay": "erPreDelay",
+      "size": "size",
+      "tone": "tone",
+      "drift": "drift",
+      "ghost": "ghost",
+      "glitch": "glitch",
+      "duck": "duck",
+      "mix": "mix",
+      "output": "output"
+    };
+    Object.keys(this.elasticSliders).forEach((id) => {
+      const stateKey = stateMapping[id] || id;
+      if (typeof state[stateKey] !== "undefined") {
+        const metadata = this.paramMetadata[id];
+        if (!metadata) return;
+        const actualValue = state[stateKey];
+        const normValue = clamp((actualValue - metadata.min) / (metadata.max - metadata.min));
+        const elasticSlider = this.elasticSliders[id];
+        if (elasticSlider && !elasticSlider.isDragging) {
+          elasticSlider.setValue(normValue, true);
+        }
+      }
+    });
+    if (!this.isDragging) {
+      this.renderReadoutsFromNorm(nextX, nextY);
+    }
+  }
+  refresh() {
+    this.refreshBounds();
+  }
+  renderReadoutsFromNorm(normX = this.state.puckX, normY = this.state.puckY) {
+    const clampedX = clamp(normX);
+    const clampedY = clamp(normY);
+    if (this.readoutDecay) {
+      this.readoutDecay.textContent = to11Scale(clampedX, SIZE_RANGE);
+    }
+    if (this.readoutSize) {
+      this.readoutSize.textContent = to11Scale(1 - clampedY, DECAY_RANGE);
+    }
+  }
+  applyInertiaIfNeeded() {
+    if (this.velocity && (Math.abs(this.velocity.x) > 1e-4 || Math.abs(this.velocity.y) > 1e-4)) {
+      this.startInertia();
+    }
+  }
+  startInertia() {
+    if (this.inertiaFrame) return;
+    const now = performance.now();
+    const historyWindow = PUCK_MOTION.inertiaHistoryMs;
+    let bestVelocity = this.velocity;
+    let bestSpeed = Math.hypot(bestVelocity.x, bestVelocity.y);
+    for (const v of this.velocityHistory) {
+      if (now - v.time > historyWindow) continue;
+      const speed = Math.hypot(v.x, v.y);
+      if (speed > bestSpeed) {
+        bestSpeed = speed;
+        bestVelocity = v;
+      }
+    }
+    if (this.positionHistory.length >= 2) {
+      let oldest = null;
+      for (const p of this.positionHistory) {
+        if (now - p.time <= historyWindow) {
+          oldest = p;
+          break;
+        }
+      }
+      if (oldest) {
+        const newest = this.positionHistory[this.positionHistory.length - 1];
+        const dt = (newest.time - oldest.time) / 1e3;
+        if (dt > 0.016) {
+          const frameTime = 1 / 60;
+          const spanVelocity = {
+            x: (newest.x - oldest.x) / dt * frameTime,
+            y: (newest.y - oldest.y) / dt * frameTime
+          };
+          const spanSpeed = Math.hypot(spanVelocity.x, spanVelocity.y);
+          if (spanSpeed > bestSpeed) {
+            bestSpeed = spanSpeed;
+            bestVelocity = spanVelocity;
+          }
+        }
+      }
+    }
+    this.velocity = { x: bestVelocity.x, y: bestVelocity.y };
+    this.velocityHistory = [];
+    this.positionHistory = [];
+    if (bestSpeed < PUCK_MOTION.inertiaThreshold) {
+      this.velocity = { x: 0, y: 0 };
+      this.resetPuckMotionStyles();
+      return;
+    }
+    this.inertiaFrame = requestAnimationFrame(this.applyInertiaStep);
+  }
+  stopInertia() {
+    if (this.inertiaFrame) {
+      cancelAnimationFrame(this.inertiaFrame);
+      this.inertiaFrame = null;
+    }
+    this.velocity = { x: 0, y: 0 };
+    this.resetPuckMotionStyles();
+  }
+  applyInertiaStep() {
+    if (this.isDragging) {
+      this.stopInertia();
+      return;
+    }
+    this.velocity.x *= PUCK_MOTION.inertiaFriction;
+    this.velocity.y *= PUCK_MOTION.inertiaFriction;
+    const speed = Math.hypot(this.velocity.x, this.velocity.y);
+    if (speed < PUCK_MOTION.inertiaThreshold) {
+      this.stopInertia();
+      return;
+    }
+    let nextX = this.state.puckX + this.velocity.x;
+    let nextY = this.state.puckY + this.velocity.y;
+    if (nextX <= 0 || nextX >= 1) {
+      nextX = clamp(nextX);
+      this.velocity.x *= PUCK_MOTION.inertiaBounce;
+    }
+    if (nextY <= 0 || nextY >= 1) {
+      nextY = clamp(nextY);
+      this.velocity.y *= PUCK_MOTION.inertiaBounce;
+    }
+    this.setPuckPositionImmediate(nextX, nextY);
+    this.setPuckMotionStyles(this.velocity);
+    this.sendParam("puckX", toDsp(nextX));
+    this.sendParam("puckY", toDsp(1 - nextY));
+    this.lastSentPosition = { x: nextX, y: nextY, time: performance.now() };
+    this.onPuckChange({ puckX: nextX, puckY: nextY });
+    this.renderReadoutsFromNorm(nextX, nextY);
+    this.inertiaFrame = requestAnimationFrame(this.applyInertiaStep);
+  }
+  // === VALUE FORMATTING HELPERS ===
+  formatDecay(seconds) {
+    if (seconds < 1) {
+      return `${(seconds * 1e3).toFixed(0)}ms`;
+    }
+    return `${seconds.toFixed(1)}s`;
+  }
+  formatPredelay(ms) {
+    return `${Math.round(ms)}ms`;
+  }
+  formatSize(scalar) {
+    return scalar.toFixed(1);
+  }
+  formatTone(bipolar) {
+    const scaled = (bipolar + 1) / 2 * 11;
+    return scaled.toFixed(2);
+  }
+  formatPercent(normalized) {
+    const scaled = normalized * 11;
+    return scaled.toFixed(2);
+  }
+  formatDb(db) {
+    const rounded = Math.round(db);
+    return rounded >= 0 ? `+${rounded}dB` : `${rounded}dB`;
+  }
+}
+class Presets {
+  constructor(options = {}) {
+    this.getNativeFn = options.getNativeFn || (() => null);
+    this.presetPill = document.querySelector(".preset-pill");
+    this.presetDropdown = document.querySelector(".preset-dropdown");
+    this.presetName = document.querySelector(".preset-name");
+    this.app = document.getElementById("app");
+    this.currentPresetIndex = 0;
+    this.presetList = [];
+    this.initialized = false;
+    this.state = "closed";
+    this.activePointerId = null;
+    this.downOption = null;
+    this.downWasOnOption = false;
+    this.downStartedInPillToggleRegion = false;
+    this.suppressToggleUntil = 0;
+    this.ignorePillClickUntil = 0;
+    this.handleOptionClick = this.handleOptionClick.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.handleClickOutside = this.handleClickOutside.bind(this);
+    this.handlePillClick = this.handlePillClick.bind(this);
+    this.toggleDropdown = this.toggleDropdown.bind(this);
+    this.onDocPointerDownCapture = this.onDocPointerDownCapture.bind(this);
+    this.onDocPointerUpCapture = this.onDocPointerUpCapture.bind(this);
+    this.onPillPointerUp = this.onPillPointerUp.bind(this);
+    this.onPillPointerDown = this.onPillPointerDown.bind(this);
+    setTimeout(() => this.init(), 0);
+  }
+  async init() {
+    if (this.initialized) return;
+    this.initialized = true;
+    const getPresetListFn = this.getNativeFn("getPresetList");
+    if (typeof getPresetListFn === "function") {
+      try {
+        const presets = await getPresetListFn();
+        this.presetList = presets || [];
+        this.populatePresets();
+        console.log("Presets loaded:", this.presetList);
+      } catch (error) {
+        console.error("Failed to load presets:", error);
+      }
+    } else {
+      console.warn("Native getPresetList not available");
+      this.presetList = [
+        "unravel",
+        "close",
+        "tether",
+        "pulse",
+        "bloom",
+        "mist",
+        "rewind",
+        "halation",
+        "stasis",
+        "shiver"
+      ];
+      this.populatePresets();
+    }
+    this.attachEvents();
+  }
+  attachEvents() {
+    const supportsPointer = typeof window !== "undefined" && "PointerEvent" in window;
+    if (this.presetPill) {
+      if (supportsPointer) {
+        this.presetPill.addEventListener("pointerdown", this.onPillPointerDown);
+        this.presetPill.addEventListener("pointerup", this.onPillPointerUp);
+      } else {
+        this.presetPill.addEventListener("mousedown", this.onPillPointerDown);
+        this.presetPill.addEventListener("mouseup", this.onPillPointerUp);
+      }
+      this.presetPill.addEventListener("click", this.handlePillClick);
+      this.presetPill.addEventListener("keydown", this.handleKeyDown);
+    }
+    if (supportsPointer) {
+      document.addEventListener("pointerdown", this.onDocPointerDownCapture, { capture: true });
+      document.addEventListener("pointerup", this.onDocPointerUpCapture, { capture: true });
+    } else {
+      document.addEventListener("mousedown", this.onDocPointerDownCapture, { capture: true });
+      document.addEventListener("mouseup", this.onDocPointerUpCapture, { capture: true });
+    }
+    document.addEventListener("click", this.handleClickOutside);
+    document.addEventListener("tb:close-presets", () => {
+      if (this.state !== "open") return;
+      this.closeDropdown({ reason: "external", deferFocusToPill: true, suppressToggleMs: 250 });
+    });
+  }
+  handlePillClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (performance.now() < this.ignorePillClickUntil) {
+      return;
+    }
+    if (performance.now() < this.suppressToggleUntil) return;
+    if (e.target.closest(".preset-option")) return;
+    this.toggleDropdown();
+  }
+  handleOptionClick(e) {
+    const option = e.target.closest(".preset-option");
+    if (!option) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const index = parseInt(option.dataset.index, 10);
+    this.selectWithEffect(index);
+  }
+  handleKeyDown(e) {
+    switch (e.key) {
+      case "Enter":
+        e.preventDefault();
+        if (this.state === "closed") {
+          this.openDropdown();
+        } else {
+          this.closeDropdown();
+        }
+        break;
+      case "ArrowDown":
+        e.preventDefault();
+        if (this.state === "open") {
+          this.focusNextOption(1);
+        } else {
+          this.openDropdown();
+        }
+        break;
+      case "ArrowUp":
+        if (this.state === "open") {
+          e.preventDefault();
+          this.focusNextOption(-1);
+        }
+        break;
+    }
+  }
+  handleClickOutside(e) {
+    if (this.state !== "open") return;
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement;
+    if (!t) return;
+    if (this.presetPill?.contains(t)) return;
+    if (this.presetDropdown?.contains(t)) return;
+    this.closeDropdown({ reason: "outside-click", deferFocusToPill: true, suppressToggleMs: 250 });
+  }
+  toggleDropdown() {
+    if (this.state === "open") {
+      this.closeDropdown({ reason: "pill-toggle", deferFocusToPill: false, suppressToggleMs: 0 });
+    } else {
+      this.openDropdown();
+    }
+  }
+  openDropdown() {
+    if (!this.presetPill || !this.presetDropdown || !this.app) return;
+    if (this.state === "open") return;
+    document.dispatchEvent(new CustomEvent("tb:close-settings"));
+    this.state = "open";
+    this.app.classList.add("presets-open");
+    this.presetPill.classList.add("open");
+    this.presetPill.classList.add("has-opened");
+    this.presetPill.setAttribute("aria-expanded", "true");
+    const currentOption = this.presetDropdown.querySelector(".preset-option.selected");
+    if (currentOption) {
+      setTimeout(() => currentOption.focus(), 10);
+    }
+  }
+  closeDropdown({ reason = "unknown", deferFocusToPill = false, suppressToggleMs = 0 } = {}) {
+    if (!this.presetPill || !this.app) return;
+    if (this.state === "closed") return;
+    this.state = "closed";
+    this.app.classList.remove("presets-open");
+    this.presetPill.classList.remove("open");
+    this.presetPill.setAttribute("aria-expanded", "false");
+    if (suppressToggleMs > 0) {
+      this.suppressToggleUntil = performance.now() + suppressToggleMs;
+    }
+    const focusPill = () => this.presetPill?.focus({ preventScroll: true });
+    if (deferFocusToPill) {
+      if (typeof queueMicrotask === "function") queueMicrotask(focusPill);
+      else setTimeout(focusPill, 0);
+    } else {
+      focusPill();
+    }
+    this.activePointerId = null;
+    this.downOption = null;
+    this.downWasOnOption = false;
+    this.downStartedInPillToggleRegion = false;
+  }
+  // =====================
+  // Pointer / Capture model
+  // =====================
+  _isOptionEl(target) {
+    const t = target && target.nodeType === 1 ? target : target?.parentElement;
+    if (!t || typeof t.closest !== "function") return null;
+    return t.closest(".preset-option");
+  }
+  onDocPointerDownCapture(e) {
+    if (this.state !== "open") return;
+    const option = this._isOptionEl(e.target);
+    if (option) {
+      this.activePointerId = e.pointerId ?? "mouse";
+      this.downOption = option;
+      this.downWasOnOption = true;
+      return;
+    }
+    const t = e.target && e.target.nodeType === 1 ? e.target : e.target?.parentElement;
+    const isOnPill = !!(t && this.presetPill && this.presetPill.contains(t));
+    if (isOnPill) {
+      return;
+    }
+    const isOnDropdown = !!(t && this.presetDropdown && this.presetDropdown.contains(t));
+    if (isOnDropdown) {
+      this.closeDropdown({ reason: "overlay", deferFocusToPill: true, suppressToggleMs: 250 });
+      return;
+    }
+    this.closeDropdown({ reason: "outside", deferFocusToPill: true, suppressToggleMs: 250 });
+  }
+  onDocPointerUpCapture(e) {
+    if (this.state !== "open") {
+      this.activePointerId = null;
+      this.downOption = null;
+      this.downWasOnOption = false;
+      return;
+    }
+    if (!this.downWasOnOption || !this.downOption) return;
+    const pointerId = e.pointerId ?? "mouse";
+    if (this.activePointerId != null && pointerId !== this.activePointerId) return;
+    const upOption = this._isOptionEl(e.target);
+    if (upOption && upOption === this.downOption) {
+      const index = parseInt(upOption.dataset.index, 10);
+      if (!Number.isNaN(index)) {
+        this.selectWithEffect(index);
+      }
+    } else {
+      this.downOption = null;
+      this.downWasOnOption = false;
+      this.activePointerId = null;
+    }
+  }
+  onPillPointerDown(e) {
+    const onOption = !!this._isOptionEl(e.target);
+    this.downStartedInPillToggleRegion = !onOption;
+  }
+  onPillPointerUp(e) {
+    if (!this.downStartedInPillToggleRegion) return;
+    if (performance.now() < this.suppressToggleUntil) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.ignorePillClickUntil = performance.now() + 400;
+    this.toggleDropdown();
+  }
+  focusNextOption(direction) {
+    const options = Array.from(this.presetDropdown?.querySelectorAll(".preset-option") || []);
+    if (options.length === 0) return;
+    const currentFocused = document.activeElement;
+    const currentIndex = options.indexOf(currentFocused);
+    let nextIndex;
+    if (currentIndex === -1) {
+      nextIndex = direction > 0 ? 0 : options.length - 1;
+    } else {
+      nextIndex = currentIndex + direction;
+      if (nextIndex < 0) nextIndex = options.length - 1;
+      if (nextIndex >= options.length) nextIndex = 0;
+    }
+    options[nextIndex]?.focus();
+  }
+  populatePresets() {
+    if (!this.presetDropdown) return;
+    this.presetDropdown.innerHTML = "";
+    this.presetList.forEach((name, index) => {
+      const option = document.createElement("li");
+      option.className = "preset-option";
+      option.setAttribute("role", "option");
+      option.setAttribute("tabindex", "-1");
+      option.dataset.index = index;
+      option.style.setProperty("--i", String(index));
+      option.textContent = name;
+      if (index === this.currentPresetIndex) {
+        option.classList.add("selected");
+        option.setAttribute("aria-selected", "true");
+      }
+      option.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          this.selectWithEffect(index);
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          this.focusNextOption(1);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          this.focusNextOption(-1);
+        }
+      });
+      option.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.downWasOnOption) {
+          this.selectWithEffect(index);
+        }
+      });
+      this.presetDropdown.appendChild(option);
+    });
+    this.updatePresetName();
+  }
+  selectPreset(index) {
+    this.loadPreset(index);
+    this.updateSelectedOption(index);
+  }
+  /**
+   * Select preset with visual "memory lock-in" effect
+   * Adds selecting classes, waits for effect, then closes
+   */
+  selectWithEffect(index) {
+    if (!this.app || !this.presetDropdown) {
+      this.selectPreset(index);
+      this.closeDropdown({ reason: "option-fallback", deferFocusToPill: true, suppressToggleMs: 250 });
+      return;
+    }
+    const targetOption = this.presetDropdown.querySelector(`[data-index="${index}"]`);
+    if (!targetOption) {
+      this.selectPreset(index);
+      this.closeDropdown({ reason: "option-no-target", deferFocusToPill: true, suppressToggleMs: 250 });
+      return;
+    }
+    this.app.classList.add("selecting");
+    targetOption.classList.add("selecting-target");
+    this.selectPreset(index);
+    setTimeout(() => {
+      this.app.classList.remove("selecting");
+      targetOption.classList.remove("selecting-target");
+      this.closeDropdown({ reason: "option-effect", deferFocusToPill: true, suppressToggleMs: 250 });
+    }, 120);
+  }
+  updateSelectedOption(index) {
+    if (!this.presetDropdown) return;
+    this.presetDropdown.querySelectorAll(".preset-option").forEach((opt) => {
+      opt.classList.remove("selected");
+      opt.setAttribute("aria-selected", "false");
+    });
+    const option = this.presetDropdown.querySelector(`[data-index="${index}"]`);
+    if (option) {
+      option.classList.add("selected");
+      option.setAttribute("aria-selected", "true");
+    }
+  }
+  async loadPreset(index) {
+    const loadPresetFn = this.getNativeFn("loadPreset");
+    if (typeof loadPresetFn === "function") {
+      try {
+        const success = await loadPresetFn(index);
+        if (success) {
+          this.currentPresetIndex = index;
+          this.updatePresetName();
+          console.log("Loaded preset:", this.presetList[index]);
+        } else {
+          console.error("Failed to load preset:", index);
+        }
+      } catch (error) {
+        console.error("Error loading preset:", error);
+      }
+    } else {
+      this.currentPresetIndex = index;
+      this.updatePresetName();
+      console.warn("Native loadPreset not available, updated locally");
+    }
+  }
+  updatePresetName() {
+    if (this.presetName && this.presetList[this.currentPresetIndex]) {
+      this.presetName.textContent = this.presetList[this.currentPresetIndex];
+    }
+  }
+  update(state = {}) {
+    if (typeof state.currentPreset !== "undefined" && state.currentPreset !== this.currentPresetIndex) {
+      this.currentPresetIndex = state.currentPreset;
+      this.updateSelectedOption(this.currentPresetIndex);
+      this.updatePresetName();
+    }
+  }
+}
+function applyThemeTokens(themeTokens) {
+  if (!themeTokens || typeof themeTokens !== "object") return;
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(themeTokens)) {
+    const varName = key.startsWith("--") ? key : `--${key}`;
+    root.style.setProperty(varName, value);
+  }
+}
+function initShell(options = {}) {
+  const {
+    VizClass,
+    params,
+    paramOrder,
+    themeTokens,
+    axisLabels,
+    getNativeFn = () => null,
+    sendParam: sendParam2 = () => {
+    },
+    sendLooperTrigger = null,
+    onStateUpdate
+  } = options;
+  if (themeTokens) {
+    applyThemeTokens(themeTokens);
+  }
+  document.getElementById("viz-slot") || document.getElementById("orb")?.parentElement;
+  const canvas = document.getElementById("orb");
+  const shell2 = document.querySelector(".tb-canvas-shell");
+  if (!canvas || !shell2) {
+    console.error("Threadbare Shell: Required DOM elements not found!");
+    return null;
+  }
+  let viz = null;
+  let controls = null;
+  let presets = null;
+  let uiState = null;
+  let currentState = {};
+  if (VizClass && canvas) {
+    viz = new VizClass(canvas);
+  }
+  controls = new Controls({
+    params,
+    paramOrder,
+    sendParam: sendParam2,
+    sendLooperTrigger,
+    axisLabels,
+    onPuckChange: ({ puckX, puckY }) => {
+      currentState = { ...currentState, puckX, puckY };
+      viz?.update(currentState);
+    },
+    onFreezeChange: (isFrozen) => {
+      currentState = { ...currentState, freeze: isFrozen };
+    }
+  });
+  presets = new Presets({
+    getNativeFn
+  });
+  uiState = {
+    frozen: false,
+    canvasRect: shell2.getBoundingClientRect()
+  };
+  currentState = {
+    inLevel: 0.35,
+    tailLevel: 0.4,
+    puckX: 0.5,
+    puckY: 0.5,
+    drift: 0.2,
+    ghost: 0.2,
+    decay: 0.4,
+    size: 0.6,
+    freeze: false
+  };
+  const resizeCanvas = () => {
+    uiState.canvasRect = shell2.getBoundingClientRect();
+    viz?.resize();
+    controls?.refresh();
+  };
+  window.addEventListener("resize", resizeCanvas);
+  let rafId = null;
+  const animate = () => {
+    viz?.update(currentState);
+    viz?.draw();
+    rafId = requestAnimationFrame(animate);
+  };
+  resizeCanvas();
+  controls?.update(currentState);
+  rafId = requestAnimationFrame(animate);
+  const onKeydown = (event) => {
+    const isSpace = event.code === "Space" || event.key === " ";
+    if (!isSpace) return;
+    const active = document.activeElement;
+    if (active && active !== document.body) {
+      active.blur?.();
+    }
+  };
+  document.addEventListener("keydown", onKeydown, true);
+  const updateState = (payload) => {
+    if (payload == null) return;
+    if (!viz || !controls || !presets) return;
+    let parsed = payload;
+    if (typeof payload === "string") {
+      try {
+        parsed = JSON.parse(payload);
+      } catch (error) {
+        console.warn("Invalid updateState payload", error);
+        return;
+      }
+    }
+    if (typeof parsed !== "object") return;
+    if (controls?.isDragging) {
+      const { puckX, puckY, ...rest } = parsed;
+      currentState = { ...currentState, ...rest };
+    } else {
+      currentState = { ...currentState, ...parsed };
+    }
+    viz.update(currentState);
+    controls.update(currentState);
+    presets.update(currentState);
+    onStateUpdate?.(currentState);
+  };
+  return {
+    viz,
+    controls,
+    presets,
+    updateState,
+    getCurrentState: () => ({ ...currentState }),
+    setUiState: (updates) => {
+      uiState = { ...uiState, ...updates };
+    },
+    destroy() {
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      window.removeEventListener("resize", resizeCanvas);
+      document.removeEventListener("keydown", onKeydown, true);
+      viz?.dispose?.();
+      viz = null;
+      controls = null;
+      presets = null;
+    }
+  };
+}
+class PromiseHandler {
+  constructor() {
+    this.lastPromiseId = 0;
+    this.promises = /* @__PURE__ */ new Map();
+    if (window.__JUCE__?.backend?.addEventListener) {
+      window.__JUCE__.backend.addEventListener("__juce__complete", ({ promiseId, result }) => {
+        if (this.promises.has(promiseId)) {
+          this.promises.get(promiseId).resolve(result);
+          this.promises.delete(promiseId);
+        }
+      });
+    }
+  }
+  createPromise() {
+    const promiseId = this.lastPromiseId++;
+    const result = new Promise((resolve, reject) => {
+      this.promises.set(promiseId, { resolve, reject });
+    });
+    return [promiseId, result];
+  }
+}
+const createNativeFunctionBridge = () => {
+  let promiseHandler = null;
+  if (window.__JUCE__?.backend) {
+    promiseHandler = new PromiseHandler();
+  }
+  const getNativeFunction2 = (name) => {
+    const registeredFunctions = window.__JUCE__?.initialisationData?.__juce__functions || [];
+    if (!registeredFunctions.includes(name)) {
+      return null;
+    }
+    if (!promiseHandler || !window.__JUCE__?.backend?.emitEvent) {
+      return null;
+    }
+    return function() {
+      const [promiseId, result] = promiseHandler.createPromise();
+      window.__JUCE__.backend.emitEvent("__juce__invoke", {
+        name,
+        params: Array.prototype.slice.call(arguments),
+        resultId: promiseId
+      });
+      return result;
+    };
+  };
+  window.__getNativeFunction = getNativeFunction2;
+  return getNativeFunction2;
+};
+const createParamSender = (getNativeFn) => {
+  let nativeSetParameter = null;
+  return (id, val) => {
+    if (!nativeSetParameter && typeof getNativeFn === "function") {
+      nativeSetParameter = getNativeFn("setParameter");
+    }
+    if (typeof nativeSetParameter === "function") {
+      nativeSetParameter(id, val);
+    }
+  };
+};
+const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108;
+const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51;
+const TRAIL_COUNT = 3;
+const POINT_COUNT = 80;
+const OVERSHOOT = 30;
+class WaverViz {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext("2d");
+    this.state = {};
+    this.smoothRms = 0;
+    this.smoothPeak = 0;
+    this.phase = Math.random() * Math.PI * 2;
+    this.driftPhase = Math.random() * Math.PI * 2;
+    this.breathPhase = Math.random() * Math.PI * 2;
+    this.momentFlash = 0;
+    this.trails = [];
+    for (let i = 0; i < TRAIL_COUNT; i++) {
+      this.trails.push({ phase: this.phase, driftPhase: this.driftPhase, waveH: 0, energy: 0 });
+    }
+    this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    this.lastSnapshotTime = 0;
+    this._colorCache = "";
+    this._glowCache = "";
+    this._lastColorKey = -1;
+    this.resize();
+  }
+  resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = this.canvas.clientWidth || 400;
+    const h = this.canvas.clientHeight || 400;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = w;
+    this.h = h;
+  }
+  update(state) {
+    this.state = state || {};
+    const rms = state?.rms ?? 0;
+    const peak = state?.peak ?? 0;
+    this.smoothRms += (rms - this.smoothRms) * 0.12;
+    this.smoothPeak += (peak - this.smoothPeak) * 0.15;
+  }
+  draw() {
+    const ctx = this.ctx;
+    const w = this.w;
+    const h = this.h;
+    const now = performance.now();
+    if (this.reducedMotion && now - this.lastSnapshotTime < 1e3) return;
+    this.lastSnapshotTime = now;
+    ctx.clearRect(0, 0, w, h);
+    const age = this._age();
+    const rms = this.smoothRms;
+    const peak = this.smoothPeak;
+    const dbRms = 20 * Math.log10(Math.max(rms, 1e-4));
+    const energy = Math.max(0, Math.min(1, (dbRms + 48) / 48));
+    const crest = rms > 1e-3 ? peak / rms : 1;
+    const transientKick = Math.pow(Math.max(0, (crest - 2) / 8), 0.6);
+    this.phase += 3e-3 + energy * 0.025;
+    this.driftPhase += 11e-4 + energy * 8e-4;
+    this.breathPhase += 3e-3;
+    if (this.momentFlash > 0.01) {
+      this.momentFlash *= 0.92;
+    } else {
+      this.momentFlash = 0;
+    }
+    this._updateColors(age, energy);
+    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02;
+    const baseAmp = h * 0.025;
+    const signalAmp = h * 0.3 * energy;
+    const peakAmp = h * 0.12 * transientKick;
+    const waveH = baseAmp + signalAmp + peakAmp;
+    const breathMod = 1 + Math.sin(this.breathPhase) * 0.15;
+    const lineWidth = 1.5 + age * 1 + transientKick * 0.8;
+    for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
+      this.trails[t].phase = this.trails[t - 1].phase;
+      this.trails[t].driftPhase = this.trails[t - 1].driftPhase;
+      this.trails[t].waveH = this.trails[t - 1].waveH;
+      this.trails[t].energy = this.trails[t - 1].energy;
+    }
+    this.trails[0].phase = this.phase;
+    this.trails[0].driftPhase = this.driftPhase;
+    this.trails[0].waveH = waveH * breathMod;
+    this.trails[0].energy = energy;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
+      const trail = this.trails[t];
+      if (trail.waveH < 0.5) continue;
+      const alpha = 0.03 + (TRAIL_COUNT - 1 - t) * 0.03;
+      ctx.beginPath();
+      this._tracePath(ctx, w, centerY, trail);
+      ctx.strokeStyle = this._glowCache;
+      ctx.lineWidth = lineWidth + 2;
+      ctx.globalAlpha = alpha;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    this._tracePath(ctx, w, centerY, this.trails[0]);
+    ctx.strokeStyle = this._glowCache;
+    ctx.lineWidth = lineWidth + 4;
+    ctx.globalAlpha = 0.1 + energy * 0.2 + this.momentFlash * 0.25;
+    ctx.stroke();
+    ctx.beginPath();
+    this._tracePath(ctx, w, centerY, this.trails[0]);
+    ctx.strokeStyle = this._colorCache;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.8;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  triggerMoment() {
+    this.momentFlash = 1;
+  }
+  dispose() {
+  }
+  _tracePath(ctx, w, centerY, trail) {
+    for (let i = -1; i <= POINT_COUNT + 1; i++) {
+      const t = i / POINT_COUNT;
+      const x = -OVERSHOOT + t * (w + OVERSHOOT * 2);
+      const y = centerY + this._wave(t, trail.waveH, trail.energy, trail.phase, trail.driftPhase);
+      if (i === -1) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  }
+  _wave(t, amplitude, energy, phase, drift) {
+    const p = phase;
+    const d = drift;
+    const b = this.breathPhase;
+    const fundamental = Math.sin(t * Math.PI * 2 + p) * 0.5;
+    const second = Math.sin(t * Math.PI * 3.7 + p * 0.7 + d) * (0.12 + energy * 0.18);
+    const third = Math.sin(t * Math.PI * 5.3 + p * 0.4 + d * 0.8) * (0.05 + energy * 0.15);
+    const shimmer = Math.sin(t * Math.PI * 9.1 + p * 0.25 + d * 1.6) * energy * 0.12;
+    const lowDrift = Math.sin(t * Math.PI * 1.1 + b * 0.5) * 0.08;
+    return (fundamental + second + third + shimmer + lowDrift) * amplitude;
+  }
+  _age() {
+    const puckY = this.state.puckY ?? 0;
+    return Math.max(0, Math.min(1, (puckY + 1) / 2));
+  }
+  _updateColors(age, energy) {
+    const quantAge = Math.round(age * 20) / 20;
+    const quantEnergy = Math.round(energy * 10) / 10;
+    const shift = Math.min(1, quantAge * 0.4 + this.momentFlash * 0.5);
+    const key = shift * 100 + quantEnergy;
+    if (key === this._lastColorKey) return;
+    this._lastColorKey = key;
+    const r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
+    const g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
+    const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
+    this._colorCache = `rgb(${r},${g},${b})`;
+    this._glowCache = `rgba(${r},${g},${b},0.3)`;
+  }
+}
+const PARAMS = {
+  puckX: {
+    id: "puckX",
+    name: "presence",
+    type: "float",
+    min: -1,
+    max: 1,
+    default: 0
+  },
+  puckY: {
+    id: "puckY",
+    name: "age",
+    type: "float",
+    min: -1,
+    max: 1,
+    default: 0
+  },
+  blend: {
+    id: "blend",
+    name: "blend",
+    type: "float",
+    min: 0.15,
+    max: 0.6,
+    default: 0.35
+  },
+  momentSeed: {
+    id: "momentSeed",
+    name: "moment",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  momentTrigger: {
+    id: "momentTrigger",
+    name: "moment trigger",
+    type: "bool",
+    default: false
+  },
+  arpEnabled: {
+    id: "arpEnabled",
+    name: "arp",
+    type: "bool",
+    default: false
+  },
+  outputGain: {
+    id: "outputGain",
+    name: "output",
+    type: "float",
+    min: -24,
+    max: 12,
+    default: 0,
+    unit: "dB"
+  },
+  filterCutoff: {
+    id: "filterCutoff",
+    name: "cutoff",
+    type: "float",
+    min: 20,
+    max: 2e4,
+    default: 8e3,
+    skewCentre: 1e3,
+    unit: "Hz"
+  },
+  filterRes: {
+    id: "filterRes",
+    name: "resonance",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.15
+  },
+  filterMode: {
+    id: "filterMode",
+    name: "filter",
+    type: "choice",
+    options: ["OTA", "Ladder"],
+    default: 0
+  },
+  filterKeyTrack: {
+    id: "filterKeyTrack",
+    name: "tracking",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  envToFilter: {
+    id: "envToFilter",
+    name: "envelope",
+    type: "float",
+    min: -1,
+    max: 1,
+    default: 0.3
+  },
+  macroShape: {
+    id: "macroShape",
+    name: "shape",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  dcoSubLevel: {
+    id: "dcoSubLevel",
+    name: "sub",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.2
+  },
+  dcoSubOctave: {
+    id: "dcoSubOctave",
+    name: "sub octave",
+    type: "choice",
+    options: ["-1", "-2"],
+    default: 0
+  },
+  noiseLevel: {
+    id: "noiseLevel",
+    name: "noise",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.1
+  },
+  noiseColor: {
+    id: "noiseColor",
+    name: "color",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.35
+  },
+  toyIndex: {
+    id: "toyIndex",
+    name: "fm depth",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.25
+  },
+  toyRatio: {
+    id: "toyRatio",
+    name: "fm ratio",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.5
+  },
+  layerDco: {
+    id: "layerDco",
+    name: "analog",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.7
+  },
+  layerToy: {
+    id: "layerToy",
+    name: "toy",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.2
+  },
+  layerOrgan: {
+    id: "layerOrgan",
+    name: "organ",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.3
+  },
+  organ16: {
+    id: "organ16",
+    name: "16'",
+    type: "float",
+    min: 0,
+    max: 8,
+    default: 5
+  },
+  organ8: {
+    id: "organ8",
+    name: "8'",
+    type: "float",
+    min: 0,
+    max: 8,
+    default: 4
+  },
+  organ4: {
+    id: "organ4",
+    name: "4'",
+    type: "float",
+    min: 0,
+    max: 8,
+    default: 2
+  },
+  organMix: {
+    id: "organMix",
+    name: "mixture",
+    type: "float",
+    min: 0,
+    max: 8,
+    default: 3
+  },
+  lfoRate: {
+    id: "lfoRate",
+    name: "rate",
+    type: "float",
+    min: 0.1,
+    max: 30,
+    default: 3,
+    unit: "Hz"
+  },
+  lfoShape: {
+    id: "lfoShape",
+    name: "shape",
+    type: "choice",
+    options: ["Tri", "Sin", "Sq", "S&H"],
+    default: 0
+  },
+  lfoToVibrato: {
+    id: "lfoToVibrato",
+    name: "vibrato",
+    type: "float",
+    min: 0,
+    max: 50,
+    default: 0,
+    unit: "cents"
+  },
+  lfoToPwm: {
+    id: "lfoToPwm",
+    name: "pwm",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0
+  },
+  chorusMode: {
+    id: "chorusMode",
+    name: "chorus",
+    type: "choice",
+    options: ["Off", "I", "II", "I+II"],
+    default: 1
+  },
+  driftAmount: {
+    id: "driftAmount",
+    name: "drift",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.3
+  },
+  stereoWidth: {
+    id: "stereoWidth",
+    name: "width",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.8
+  },
+  portaTime: {
+    id: "portaTime",
+    name: "glide",
+    type: "float",
+    min: 0,
+    max: 2e3,
+    default: 0,
+    unit: "ms"
+  },
+  portaMode: {
+    id: "portaMode",
+    name: "glide mode",
+    type: "choice",
+    options: ["Legato", "Always"],
+    default: 0
+  },
+  envAttack: {
+    id: "envAttack",
+    name: "attack",
+    type: "float",
+    min: 1e-3,
+    max: 5,
+    default: 0.01,
+    skewCentre: 0.05,
+    unit: "s"
+  },
+  envDecay: {
+    id: "envDecay",
+    name: "decay",
+    type: "float",
+    min: 1e-3,
+    max: 10,
+    default: 0.2,
+    skewCentre: 0.08,
+    unit: "s"
+  },
+  envSustain: {
+    id: "envSustain",
+    name: "sustain",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.7
+  },
+  envRelease: {
+    id: "envRelease",
+    name: "release",
+    type: "float",
+    min: 1e-3,
+    max: 15,
+    default: 0.4,
+    skewCentre: 0.2,
+    unit: "s"
+  },
+  driveGain: {
+    id: "driveGain",
+    name: "grit",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.2
+  },
+  tapeSat: {
+    id: "tapeSat",
+    name: "saturation",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.3
+  },
+  wowDepth: {
+    id: "wowDepth",
+    name: "wow",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.15
+  },
+  flutterDepth: {
+    id: "flutterDepth",
+    name: "flutter",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.1
+  },
+  hissLevel: {
+    id: "hissLevel",
+    name: "hiss",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.1
+  },
+  humFreq: {
+    id: "humFreq",
+    name: "mains",
+    type: "choice",
+    options: ["50", "60"],
+    default: 1
+  },
+  printMix: {
+    id: "printMix",
+    name: "print mix",
+    type: "float",
+    min: 0,
+    max: 1,
+    default: 0.75
+  }
+};
+const PARAM_IDS = [
+  "puckX",
+  "puckY",
+  "blend",
+  "momentSeed",
+  "momentTrigger",
+  "arpEnabled",
+  "outputGain",
+  "filterCutoff",
+  "filterRes",
+  "filterMode",
+  "filterKeyTrack",
+  "envToFilter",
+  "macroShape",
+  "dcoSubLevel",
+  "dcoSubOctave",
+  "noiseLevel",
+  "noiseColor",
+  "toyIndex",
+  "toyRatio",
+  "layerDco",
+  "layerToy",
+  "layerOrgan",
+  "organ16",
+  "organ8",
+  "organ4",
+  "organMix",
+  "lfoRate",
+  "lfoShape",
+  "lfoToVibrato",
+  "lfoToPwm",
+  "chorusMode",
+  "driftAmount",
+  "stereoWidth",
+  "portaTime",
+  "portaMode",
+  "envAttack",
+  "envDecay",
+  "envSustain",
+  "envRelease",
+  "driveGain",
+  "tapeSat",
+  "wowDepth",
+  "flutterDepth",
+  "hissLevel",
+  "humFreq",
+  "printMix"
+];
+const LOG_PARAMS = /* @__PURE__ */ new Set([
+  "filterCutoff",
+  "lfoRate"
+]);
+const LOG_TIME_PARAMS = /* @__PURE__ */ new Set([
+  "envAttack",
+  "envDecay",
+  "envRelease"
+]);
+const LOG_MS_PARAMS = /* @__PURE__ */ new Set(["portaTime"]);
+const CHOICE_PARAMS = /* @__PURE__ */ new Set([
+  "filterMode",
+  "lfoShape",
+  "chorusMode",
+  "portaMode",
+  "humFreq",
+  "dcoSubOctave"
+]);
+function toPerceptual(id, raw) {
+  if (LOG_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6));
+  if (LOG_TIME_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6));
+  if (LOG_MS_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-3));
+  return raw;
+}
+function fromPerceptual(id, val) {
+  if (LOG_PARAMS.has(id)) return Math.exp(val);
+  if (LOG_TIME_PARAMS.has(id)) return Math.exp(val);
+  if (LOG_MS_PARAMS.has(id)) return Math.exp(val);
+  return val;
+}
+function rbfWeight(px, py, lx, ly, sigma) {
+  const dx = px - lx;
+  const dy = py - ly;
+  const distSq = dx * dx + dy * dy;
+  return Math.exp(-distSq / (2 * sigma * sigma));
+}
+function interpolate(puckX, puckY, landmarks, sigma, sigmaOffsets2) {
+  if (!landmarks || landmarks.length === 0) return {};
+  const allParamIds = /* @__PURE__ */ new Set();
+  for (const lm of landmarks) {
+    if (lm.params) {
+      for (const id of Object.keys(lm.params)) allParamIds.add(id);
+    }
+  }
+  const weights = [];
+  let totalWeight = 0;
+  for (let i = 0; i < landmarks.length; i++) {
+    const lm = landmarks[i];
+    const s = sigma + (sigmaOffsets2?.[i] ?? 0);
+    const w = rbfWeight(puckX, puckY, lm.x, lm.y, Math.max(s, 0.05));
+    weights.push(w);
+    totalWeight += w;
+  }
+  if (totalWeight < 1e-12) {
+    return landmarks[0]?.params ? { ...landmarks[0].params } : {};
+  }
+  const result = {};
+  for (const paramId of allParamIds) {
+    if (CHOICE_PARAMS.has(paramId)) {
+      let bestIdx = 0;
+      let bestW = -1;
+      for (let i = 0; i < landmarks.length; i++) {
+        if (landmarks[i].params?.[paramId] !== void 0 && weights[i] > bestW) {
+          bestW = weights[i];
+          bestIdx = i;
+        }
+      }
+      result[paramId] = landmarks[bestIdx].params[paramId];
+      continue;
+    }
+    let sum = 0;
+    let wSum = 0;
+    for (let i = 0; i < landmarks.length; i++) {
+      const raw = landmarks[i].params?.[paramId];
+      if (raw === void 0) continue;
+      const perceptual = toPerceptual(paramId, raw);
+      sum += weights[i] / totalWeight * perceptual;
+      wSum += weights[i] / totalWeight;
+    }
+    if (wSum > 1e-12) {
+      result[paramId] = fromPerceptual(paramId, sum / wSum);
+    }
+  }
+  return result;
+}
+function generateSigmaOffsets(count, seed) {
+  let s = seed >>> 0 || 1;
+  const offsets = [];
+  for (let i = 0; i < count; i++) {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    const norm = (s >>> 0) / 4294967295 * 2 - 1;
+    offsets.push(norm * 0.06);
+  }
+  return offsets;
+}
+const FACTORY_SURFACES = [
+  {
+    name: "Settle",
+    category: "amber",
+    sigma: 0.32,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "warm center",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 2200,
+          filterRes: 0.12,
+          layerDco: 0.85,
+          layerToy: 0.05,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.01,
+          lfoRate: 1.5,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 0.5,
+          envDecay: 2,
+          envSustain: 0.75,
+          envRelease: 3,
+          driveGain: 0.02,
+          tapeSat: 0.1,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.03,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "soft bright",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 5e3,
+          filterRes: 0.18,
+          layerDco: 0.8,
+          layerToy: 0.1,
+          layerOrgan: 0.05,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.02,
+          lfoRate: 2,
+          lfoToPwm: 0.12,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.4,
+          envDecay: 1.8,
+          envSustain: 0.7,
+          envRelease: 2.5,
+          driveGain: 0.05,
+          tapeSat: 0.12,
+          wowDepth: 0.06,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.55,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "present shimmer",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 8e3,
+          filterRes: 0.22,
+          layerDco: 0.7,
+          layerToy: 0.2,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.03,
+          lfoRate: 2.5,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 5,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.65,
+          envRelease: 2,
+          driveGain: 0.08,
+          tapeSat: 0.15,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "muffled warmth",
+        params: {
+          macroShape: 0.08,
+          filterCutoff: 1500,
+          filterRes: 0.1,
+          layerDco: 0.8,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 5,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.02,
+          lfoRate: 0.8,
+          lfoToPwm: 0.05,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.35,
+          envAttack: 0.8,
+          envDecay: 2.5,
+          envSustain: 0.7,
+          envRelease: 4,
+          driveGain: 0.03,
+          tapeSat: 0.2,
+          wowDepth: 0.1,
+          flutterDepth: 0.03,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "golden drive",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 6e3,
+          filterRes: 0.28,
+          layerDco: 0.65,
+          layerToy: 0.2,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.04,
+          lfoRate: 3,
+          lfoToPwm: 0.25,
+          lfoToVibrato: 6,
+          chorusMode: 2,
+          driftAmount: 0.4,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.6,
+          envRelease: 2.5,
+          driveGain: 0.12,
+          tapeSat: 0.25,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.07,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "dusty lullaby",
+        params: {
+          macroShape: 0.05,
+          filterCutoff: 1200,
+          filterRes: 0.08,
+          layerDco: 0.7,
+          layerToy: 0,
+          layerOrgan: 0.3,
+          organ16: 6,
+          organ8: 5,
+          organ4: 2,
+          organMix: 3,
+          dcoSubLevel: 0.45,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.6,
+          envAttack: 1.2,
+          envDecay: 3,
+          envSustain: 0.65,
+          envRelease: 5,
+          driveGain: 0.05,
+          tapeSat: 0.35,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "worn amber",
+        params: {
+          macroShape: 0.25,
+          filterCutoff: 2800,
+          filterRes: 0.18,
+          layerDco: 0.6,
+          layerToy: 0.1,
+          layerOrgan: 0.25,
+          organ16: 4,
+          organ8: 5,
+          organ4: 2,
+          organMix: 3,
+          dcoSubLevel: 0.35,
+          noiseLevel: 0.05,
+          lfoRate: 1.2,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 4,
+          chorusMode: 3,
+          driftAmount: 0.7,
+          envAttack: 0.8,
+          envDecay: 2.5,
+          envSustain: 0.6,
+          envRelease: 4.5,
+          driveGain: 0.1,
+          tapeSat: 0.4,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "golden decay",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 4500,
+          filterRes: 0.25,
+          layerDco: 0.55,
+          layerToy: 0.15,
+          layerOrgan: 0.2,
+          organ16: 3,
+          organ8: 4,
+          organ4: 2,
+          organMix: 2,
+          dcoSubLevel: 0.25,
+          noiseLevel: 0.06,
+          lfoRate: 2,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 8,
+          chorusMode: 3,
+          driftAmount: 0.8,
+          envAttack: 0.6,
+          envDecay: 2,
+          envSustain: 0.55,
+          envRelease: 4,
+          driveGain: 0.15,
+          tapeSat: 0.45,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -2
+        }
+      }
+    ]
+  },
+  {
+    name: "Wander",
+    category: "drift",
+    sigma: 0.35,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "steady saw",
+        params: {
+          macroShape: 0.15,
+          filterCutoff: 4e3,
+          filterRes: 0.25,
+          layerDco: 0.9,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.02,
+          lfoRate: 0.3,
+          lfoToPwm: 0.15,
+          lfoToVibrato: 5,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          portaTime: 150,
+          portaMode: 0,
+          envAttack: 0.4,
+          envDecay: 1.5,
+          envSustain: 0.65,
+          envRelease: 2.5,
+          driveGain: 0.03,
+          tapeSat: 0.1,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.04,
+          printMix: 0.55,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "pulse drift",
+        params: {
+          macroShape: 0.45,
+          filterCutoff: 5500,
+          filterRes: 0.3,
+          layerDco: 0.85,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.03,
+          lfoRate: 2,
+          lfoToPwm: 0.35,
+          lfoToVibrato: 10,
+          chorusMode: 2,
+          driftAmount: 0.55,
+          portaTime: 200,
+          portaMode: 0,
+          envAttack: 0.3,
+          envDecay: 1.2,
+          envSustain: 0.55,
+          envRelease: 2,
+          driveGain: 0.08,
+          tapeSat: 0.15,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.6,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "bright motion",
+        params: {
+          macroShape: 0.7,
+          filterCutoff: 8e3,
+          filterRes: 0.35,
+          layerDco: 0.75,
+          layerToy: 0.2,
+          layerOrgan: 0,
+          dcoSubLevel: 0.05,
+          noiseLevel: 0.04,
+          lfoRate: 4,
+          lfoToPwm: 0.45,
+          lfoToVibrato: 15,
+          chorusMode: 2,
+          driftAmount: 0.65,
+          portaTime: 250,
+          portaMode: 0,
+          envAttack: 0.2,
+          envDecay: 1,
+          envSustain: 0.5,
+          envRelease: 1.5,
+          driveGain: 0.12,
+          tapeSat: 0.2,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.07,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "slow chorus",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 3e3,
+          filterRes: 0.2,
+          layerDco: 0.8,
+          layerToy: 0.05,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.25,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 8,
+          chorusMode: 3,
+          driftAmount: 0.6,
+          portaTime: 200,
+          portaMode: 0,
+          envAttack: 0.6,
+          envDecay: 2,
+          envSustain: 0.6,
+          envRelease: 3.5,
+          driveGain: 0.05,
+          tapeSat: 0.2,
+          wowDepth: 0.15,
+          flutterDepth: 0.05,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "swirl",
+        params: {
+          macroShape: 0.6,
+          filterCutoff: 7e3,
+          filterRes: 0.35,
+          layerDco: 0.65,
+          layerToy: 0.25,
+          layerOrgan: 0.05,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.05,
+          lfoRate: 5,
+          lfoToPwm: 0.5,
+          lfoToVibrato: 20,
+          chorusMode: 3,
+          driftAmount: 0.75,
+          portaTime: 350,
+          portaMode: 0,
+          envAttack: 0.2,
+          envDecay: 1,
+          envSustain: 0.45,
+          envRelease: 2,
+          driveGain: 0.15,
+          tapeSat: 0.3,
+          wowDepth: 0.18,
+          flutterDepth: 0.07,
+          hissLevel: 0.08,
+          printMix: 0.75,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "deep wander",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 1800,
+          filterRes: 0.15,
+          layerDco: 0.7,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 5,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.04,
+          lfoRate: 0.3,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 6,
+          chorusMode: 3,
+          driftAmount: 0.85,
+          portaTime: 300,
+          portaMode: 0,
+          envAttack: 1,
+          envDecay: 3,
+          envSustain: 0.55,
+          envRelease: 5,
+          driveGain: 0.06,
+          tapeSat: 0.35,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "detuned haze",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 3500,
+          filterRes: 0.3,
+          layerDco: 0.6,
+          layerToy: 0.15,
+          layerOrgan: 0.15,
+          organ16: 4,
+          organ8: 3,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.06,
+          lfoRate: 1.5,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 12,
+          chorusMode: 3,
+          driftAmount: 0.9,
+          portaTime: 350,
+          portaMode: 0,
+          envAttack: 0.7,
+          envDecay: 2.5,
+          envSustain: 0.5,
+          envRelease: 4.5,
+          driveGain: 0.1,
+          tapeSat: 0.4,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "bright decay",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 6e3,
+          filterRes: 0.4,
+          layerDco: 0.55,
+          layerToy: 0.2,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.08,
+          lfoRate: 3.5,
+          lfoToPwm: 0.4,
+          lfoToVibrato: 18,
+          chorusMode: 3,
+          driftAmount: 0.95,
+          portaTime: 400,
+          portaMode: 0,
+          envAttack: 0.4,
+          envDecay: 2,
+          envSustain: 0.4,
+          envRelease: 3.5,
+          driveGain: 0.18,
+          tapeSat: 0.5,
+          wowDepth: 0.35,
+          flutterDepth: 0.12,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -2
+        }
+      }
+    ]
+  },
+  {
+    name: "Close",
+    category: "hush",
+    sigma: 0.3,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "bare whisper",
+        params: {
+          macroShape: 0,
+          filterCutoff: 1500,
+          filterRes: 0.05,
+          filterMode: 1,
+          layerDco: 0.6,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0,
+          lfoRate: 0.4,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 0,
+          driftAmount: 0.1,
+          envAttack: 0.06,
+          envDecay: 0.6,
+          envSustain: 0.3,
+          envRelease: 1.2,
+          driveGain: 0,
+          tapeSat: 0.05,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.35,
+          outputGain: -3
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "lo-fi keys",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 2500,
+          filterRes: 0.1,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.35,
+          noiseLevel: 0.01,
+          lfoRate: 0.8,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 0,
+          driftAmount: 0.15,
+          envAttack: 0.03,
+          envDecay: 0.8,
+          envSustain: 0.25,
+          envRelease: 1,
+          driveGain: 0.02,
+          tapeSat: 0.08,
+          wowDepth: 0.03,
+          flutterDepth: 0.01,
+          hissLevel: 0.03,
+          printMix: 0.4,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "thin signal",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 4e3,
+          filterRes: 0.12,
+          filterMode: 0,
+          layerDco: 0.45,
+          layerToy: 0.15,
+          layerOrgan: 0,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.02,
+          lfoRate: 1.5,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 3,
+          chorusMode: 0,
+          driftAmount: 0.2,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.2,
+          envRelease: 0.8,
+          driveGain: 0.04,
+          tapeSat: 0.1,
+          wowDepth: 0.04,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.45,
+          outputGain: -2
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "intimate pad",
+        params: {
+          macroShape: 0.05,
+          filterCutoff: 1200,
+          filterRes: 0.08,
+          filterMode: 1,
+          layerDco: 0.55,
+          layerToy: 0,
+          layerOrgan: 0.15,
+          organ16: 3,
+          organ8: 4,
+          organ4: 0,
+          organMix: 1,
+          dcoSubLevel: 0.45,
+          noiseLevel: 0.01,
+          lfoRate: 0.3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1.5,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 1,
+          envDecay: 2,
+          envSustain: 0.5,
+          envRelease: 3,
+          driveGain: 0.01,
+          tapeSat: 0.12,
+          wowDepth: 0.06,
+          flutterDepth: 0.02,
+          hissLevel: 0.05,
+          printMix: 0.5,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "bright hush",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 3500,
+          filterRes: 0.15,
+          filterMode: 0,
+          layerDco: 0.4,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.02,
+          lfoRate: 2,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 4,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.02,
+          envDecay: 0.5,
+          envSustain: 0.2,
+          envRelease: 0.6,
+          driveGain: 0.05,
+          tapeSat: 0.12,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: -3
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "worn tape",
+        params: {
+          macroShape: 0,
+          filterCutoff: 900,
+          filterRes: 0.06,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 4,
+          organ8: 3,
+          organ4: 0,
+          organMix: 1,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0.02,
+          lfoRate: 0.2,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          envAttack: 1.5,
+          envDecay: 3,
+          envSustain: 0.45,
+          envRelease: 5,
+          driveGain: 0.02,
+          tapeSat: 0.25,
+          wowDepth: 0.15,
+          flutterDepth: 0.04,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "cassette hymn",
+        params: {
+          macroShape: 0.15,
+          filterCutoff: 1800,
+          filterRes: 0.1,
+          filterMode: 1,
+          layerDco: 0.4,
+          layerToy: 0,
+          layerOrgan: 0.25,
+          organ16: 4,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.5,
+          envAttack: 1,
+          envDecay: 2.5,
+          envSustain: 0.5,
+          envRelease: 5,
+          driveGain: 0.04,
+          tapeSat: 0.3,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.75,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "fading signal",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 2500,
+          filterRes: 0.12,
+          filterMode: 0,
+          layerDco: 0.35,
+          layerToy: 0.1,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.05,
+          lfoRate: 1.2,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 4,
+          chorusMode: 1,
+          driftAmount: 0.55,
+          envAttack: 0.5,
+          envDecay: 1.5,
+          envSustain: 0.35,
+          envRelease: 3,
+          driveGain: 0.06,
+          tapeSat: 0.35,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.75,
+          outputGain: -3
+        }
+      }
+    ]
+  },
+  {
+    name: "Flicker",
+    category: "signal",
+    sigma: 0.3,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "clean toy",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 8e3,
+          filterRes: 0.1,
+          layerDco: 0.2,
+          layerToy: 0.75,
+          layerOrgan: 0,
+          toyIndex: 0.3,
+          toyRatio: 0.3,
+          dcoSubLevel: 0,
+          noiseLevel: 0,
+          lfoRate: 4,
+          lfoToPwm: 0,
+          lfoToVibrato: 0,
+          chorusMode: 0,
+          driftAmount: 0.1,
+          envAttack: 3e-3,
+          envDecay: 0.3,
+          envSustain: 0.15,
+          envRelease: 0.2,
+          driveGain: 0.02,
+          tapeSat: 0.08,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.4,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "fm bell",
+        params: {
+          macroShape: 0.6,
+          filterCutoff: 12e3,
+          filterRes: 0.15,
+          layerDco: 0.15,
+          layerToy: 0.8,
+          layerOrgan: 0,
+          toyIndex: 0.6,
+          toyRatio: 0.5,
+          dcoSubLevel: 0,
+          noiseLevel: 0.01,
+          lfoRate: 5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 0,
+          driftAmount: 0.12,
+          envAttack: 1e-3,
+          envDecay: 0.8,
+          envSustain: 0,
+          envRelease: 0.6,
+          driveGain: 0.05,
+          tapeSat: 0.1,
+          wowDepth: 0.03,
+          flutterDepth: 0.01,
+          hissLevel: 0.03,
+          printMix: 0.45,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "sharp lead",
+        params: {
+          macroShape: 0.85,
+          filterCutoff: 1e4,
+          filterRes: 0.4,
+          layerDco: 0.8,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0,
+          lfoRate: 6,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 5,
+          chorusMode: 0,
+          driftAmount: 0.15,
+          envAttack: 5e-3,
+          envDecay: 0.4,
+          envSustain: 0.6,
+          envRelease: 0.3,
+          driveGain: 0.15,
+          tapeSat: 0.08,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.35,
+          outputGain: 1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "muted pluck",
+        params: {
+          macroShape: 0.3,
+          filterCutoff: 3500,
+          filterRes: 0.12,
+          layerDco: 0.3,
+          layerToy: 0.6,
+          layerOrgan: 0,
+          toyIndex: 0.4,
+          toyRatio: 0.4,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.01,
+          lfoRate: 3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 2e-3,
+          envDecay: 0.5,
+          envSustain: 0.1,
+          envRelease: 0.4,
+          driveGain: 0.04,
+          tapeSat: 0.15,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "bright fm",
+        params: {
+          macroShape: 0.75,
+          filterCutoff: 14e3,
+          filterRes: 0.2,
+          layerDco: 0.1,
+          layerToy: 0.85,
+          layerOrgan: 0,
+          toyIndex: 0.7,
+          toyRatio: 0.6,
+          dcoSubLevel: 0,
+          noiseLevel: 0.02,
+          lfoRate: 7,
+          lfoToPwm: 0,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 1e-3,
+          envDecay: 0.6,
+          envSustain: 0.25,
+          envRelease: 0.5,
+          driveGain: 0.1,
+          tapeSat: 0.15,
+          wowDepth: 0.04,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "dusty toy",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 2500,
+          filterRes: 0.1,
+          layerDco: 0.2,
+          layerToy: 0.65,
+          layerOrgan: 0.1,
+          toyIndex: 0.5,
+          toyRatio: 0.4,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.03,
+          lfoRate: 2,
+          lfoToPwm: 0,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.45,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.15,
+          envRelease: 0.5,
+          driveGain: 0.06,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.04,
+          hissLevel: 0.08,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "worn bell",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 5e3,
+          filterRes: 0.18,
+          layerDco: 0.15,
+          layerToy: 0.7,
+          layerOrgan: 0.05,
+          toyIndex: 0.6,
+          toyRatio: 0.5,
+          dcoSubLevel: 0.05,
+          noiseLevel: 0.04,
+          lfoRate: 3.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 5,
+          chorusMode: 1,
+          driftAmount: 0.5,
+          envAttack: 2e-3,
+          envDecay: 1,
+          envSustain: 0,
+          envRelease: 0.8,
+          driveGain: 0.08,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "glitched lead",
+        params: {
+          macroShape: 0.8,
+          filterCutoff: 7e3,
+          filterRes: 0.35,
+          layerDco: 0.5,
+          layerToy: 0.35,
+          layerOrgan: 0,
+          toyIndex: 0.8,
+          toyRatio: 0.7,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.05,
+          lfoRate: 8,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 8,
+          chorusMode: 2,
+          driftAmount: 0.6,
+          envAttack: 3e-3,
+          envDecay: 0.3,
+          envSustain: 0.5,
+          envRelease: 0.3,
+          driveGain: 0.2,
+          tapeSat: 0.35,
+          wowDepth: 0.15,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      }
+    ]
+  },
+  {
+    name: "Anchor",
+    category: "weight",
+    sigma: 0.35,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "deep organ",
+        params: {
+          macroShape: 0,
+          filterCutoff: 1e3,
+          filterRes: 0.2,
+          filterMode: 1,
+          layerDco: 0.3,
+          layerToy: 0,
+          layerOrgan: 0.8,
+          organ16: 8,
+          organ8: 6,
+          organ4: 2,
+          organMix: 4,
+          dcoSubLevel: 0.6,
+          noiseLevel: 0,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.1,
+          envDecay: 1,
+          envSustain: 0.85,
+          envRelease: 2,
+          driveGain: 0.1,
+          tapeSat: 0.2,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "full organ",
+        params: {
+          macroShape: 0,
+          filterCutoff: 2500,
+          filterRes: 0.15,
+          filterMode: 0,
+          layerDco: 0.1,
+          layerToy: 0,
+          layerOrgan: 0.9,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0,
+          lfoRate: 0.8,
+          lfoToPwm: 0,
+          lfoToVibrato: 0,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.9,
+          envRelease: 1.5,
+          driveGain: 0.08,
+          tapeSat: 0.25,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "bright foundation",
+        params: {
+          macroShape: 0.3,
+          filterCutoff: 5e3,
+          filterRes: 0.25,
+          filterMode: 0,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.6,
+          organ16: 6,
+          organ8: 7,
+          organ4: 4,
+          organMix: 5,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.01,
+          lfoRate: 1.5,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 2,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.05,
+          envDecay: 0.8,
+          envSustain: 0.8,
+          envRelease: 1.5,
+          driveGain: 0.12,
+          tapeSat: 0.2,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: 0
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "sub drone",
+        params: {
+          macroShape: 0,
+          filterCutoff: 600,
+          filterRes: 0.3,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.7,
+          organ16: 8,
+          organ8: 5,
+          organ4: 1,
+          organMix: 3,
+          dcoSubLevel: 0.7,
+          noiseLevel: 0,
+          lfoRate: 0.2,
+          lfoToPwm: 0,
+          lfoToVibrato: 0.5,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.9,
+          envRelease: 3,
+          driveGain: 0.15,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "gritty organ",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 4e3,
+          filterRes: 0.2,
+          filterMode: 0,
+          layerDco: 0.3,
+          layerToy: 0.05,
+          layerOrgan: 0.75,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.02,
+          lfoRate: 1,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 2,
+          driftAmount: 0.45,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.9,
+          envRelease: 1,
+          driveGain: 0.2,
+          tapeSat: 0.35,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "worn floor",
+        params: {
+          macroShape: 0,
+          filterCutoff: 800,
+          filterRes: 0.15,
+          filterMode: 1,
+          layerDco: 0.4,
+          layerToy: 0,
+          layerOrgan: 0.7,
+          organ16: 8,
+          organ8: 6,
+          organ4: 2,
+          organMix: 4,
+          dcoSubLevel: 0.65,
+          noiseLevel: 0.02,
+          lfoRate: 0.3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.6,
+          envAttack: 0.5,
+          envDecay: 2,
+          envSustain: 0.8,
+          envRelease: 4,
+          driveGain: 0.12,
+          tapeSat: 0.4,
+          wowDepth: 0.2,
+          flutterDepth: 0.07,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "aged mass",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 1500,
+          filterRes: 0.2,
+          filterMode: 1,
+          layerDco: 0.2,
+          layerToy: 0,
+          layerOrgan: 0.85,
+          organ16: 8,
+          organ8: 7,
+          organ4: 4,
+          organMix: 5,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 2,
+          driftAmount: 0.7,
+          envAttack: 0.2,
+          envDecay: 1.5,
+          envSustain: 0.85,
+          envRelease: 3.5,
+          driveGain: 0.15,
+          tapeSat: 0.45,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "heavy print",
+        params: {
+          macroShape: 0.25,
+          filterCutoff: 3e3,
+          filterRes: 0.25,
+          filterMode: 0,
+          layerDco: 0.35,
+          layerToy: 0.05,
+          layerOrgan: 0.7,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.05,
+          lfoRate: 1,
+          lfoToPwm: 0.05,
+          lfoToVibrato: 2,
+          chorusMode: 3,
+          driftAmount: 0.8,
+          envAttack: 0.1,
+          envDecay: 1,
+          envSustain: 0.85,
+          envRelease: 3,
+          driveGain: 0.25,
+          tapeSat: 0.5,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -3
+        }
+      }
+    ]
+  }
+];
+function getSurfaceByIndex(index) {
+  return FACTORY_SURFACES[index] ?? null;
+}
+const GROUPS = [
+  {
+    label: "tone",
+    ids: ["filterCutoff", "filterRes", "filterMode", "filterKeyTrack", "envToFilter"]
+  },
+  {
+    label: "shape",
+    ids: [
+      "macroShape",
+      "dcoSubLevel",
+      "dcoSubOctave",
+      "noiseLevel",
+      "noiseColor",
+      "toyIndex",
+      "toyRatio",
+      "layerDco",
+      "layerToy",
+      "layerOrgan",
+      "organ16",
+      "organ8",
+      "organ4",
+      "organMix"
+    ]
+  },
+  {
+    label: "motion",
+    ids: [
+      "lfoRate",
+      "lfoShape",
+      "lfoToVibrato",
+      "lfoToPwm",
+      "chorusMode",
+      "driftAmount",
+      "stereoWidth",
+      "portaTime",
+      "portaMode",
+      "envAttack",
+      "envDecay",
+      "envSustain",
+      "envRelease"
+    ]
+  },
+  {
+    label: "print",
+    ids: [
+      "driveGain",
+      "tapeSat",
+      "wowDepth",
+      "flutterDepth",
+      "hissLevel",
+      "humFreq",
+      "printMix",
+      "outputGain"
+    ]
+  }
+];
+function normalise(id, value) {
+  const p = PARAMS[id];
+  if (!p || p.type === "choice" || p.type === "bool") return 0;
+  return Math.max(0, Math.min(1, (value - p.min) / (p.max - p.min)));
+}
+function denormalise(id, norm) {
+  const p = PARAMS[id];
+  if (!p) return norm;
+  return p.min + norm * (p.max - p.min);
+}
+function formatValue(id, raw) {
+  const p = PARAMS[id];
+  if (!p) return String(raw);
+  if (p.unit === "Hz") return raw >= 1e3 ? `${(raw / 1e3).toFixed(1)}k` : `${Math.round(raw)}`;
+  if (p.unit === "dB") return raw >= 0 ? `+${raw.toFixed(1)}` : raw.toFixed(1);
+  if (p.unit === "s") return raw < 1 ? `${(raw * 1e3).toFixed(0)}ms` : `${raw.toFixed(2)}s`;
+  if (p.unit === "ms") return `${Math.round(raw)}ms`;
+  if (p.unit === "cents") return `${Math.round(raw)}c`;
+  if (p.max <= 1 && p.min >= -1) return `${(raw * 100).toFixed(0)}%`;
+  if (p.max <= 8 && p.min >= 0 && Number.isInteger(p.max)) return String(Math.round(raw));
+  return raw.toFixed(2);
+}
+function buildDrawer(container, sendParam2) {
+  const sliderInstances = {};
+  const choiceInstances = {};
+  for (const group of GROUPS) {
+    const heading = document.createElement("h3");
+    heading.className = "drawer-group-heading";
+    heading.textContent = group.label;
+    container.appendChild(heading);
+    for (const id of group.ids) {
+      const p = PARAMS[id];
+      if (!p) continue;
+      if (p.type === "choice") {
+        const row = buildChoiceRow(id, p, sendParam2);
+        container.appendChild(row.el);
+        choiceInstances[id] = row;
+      } else {
+        const row = buildSliderRow(id, p, sendParam2);
+        container.appendChild(row.el);
+        sliderInstances[id] = row;
+      }
+    }
+  }
+  return {
+    update(stateMap) {
+      for (const [id, inst] of Object.entries(sliderInstances)) {
+        const val = stateMap[id];
+        if (val !== void 0 && !inst.dragging) {
+          inst.setNorm(normalise(id, val));
+        }
+      }
+      for (const [id, inst] of Object.entries(choiceInstances)) {
+        const val = stateMap[id];
+        if (val !== void 0) {
+          inst.setIndex(Math.round(val));
+        }
+      }
+    }
+  };
+}
+function buildSliderRow(id, param, sendParam2) {
+  const el = document.createElement("div");
+  el.className = "control-row";
+  el.dataset.param = id;
+  const label = document.createElement("label");
+  label.className = "param-label";
+  label.textContent = param.name;
+  const valueDisplay = document.createElement("span");
+  valueDisplay.className = "param-value";
+  valueDisplay.textContent = formatValue(id, param.default ?? 0);
+  const track = document.createElement("div");
+  track.className = "waver-slider";
+  track.setAttribute("role", "slider");
+  track.setAttribute("tabindex", "0");
+  track.setAttribute("aria-label", param.name);
+  track.setAttribute("aria-valuemin", "0");
+  track.setAttribute("aria-valuemax", "1");
+  const fill = document.createElement("div");
+  fill.className = "waver-slider__fill";
+  const thumb = document.createElement("div");
+  thumb.className = "waver-slider__thumb";
+  track.appendChild(fill);
+  track.appendChild(thumb);
+  el.appendChild(label);
+  el.appendChild(track);
+  el.appendChild(valueDisplay);
+  let dragging = false;
+  let norm = normalise(id, param.default ?? param.min ?? 0);
+  function render(n) {
+    const pct = `${(n * 100).toFixed(1)}%`;
+    fill.style.width = pct;
+    thumb.style.left = pct;
+    const raw = denormalise(id, n);
+    valueDisplay.textContent = formatValue(id, raw);
+    track.setAttribute("aria-valuenow", n.toFixed(3));
+  }
+  render(norm);
+  function onMove(clientX) {
+    const rect = track.getBoundingClientRect();
+    const n = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    norm = n;
+    render(n);
+    sendParam2(id, denormalise(id, n));
+  }
+  track.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    track.setPointerCapture(e.pointerId);
+    onMove(e.clientX);
+  });
+  track.addEventListener("pointermove", (e) => {
+    if (dragging) onMove(e.clientX);
+  });
+  track.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+  track.addEventListener("pointercancel", () => {
+    dragging = false;
+  });
+  track.addEventListener("keydown", (e) => {
+    let step = 0.02;
+    if (e.shiftKey) step = 0.1;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      norm = Math.min(1, norm + step);
+      render(norm);
+      sendParam2(id, denormalise(id, norm));
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      norm = Math.max(0, norm - step);
+      render(norm);
+      sendParam2(id, denormalise(id, norm));
+      e.preventDefault();
+    }
+  });
+  return {
+    el,
+    get dragging() {
+      return dragging;
+    },
+    setNorm(n) {
+      norm = n;
+      render(n);
+    }
+  };
+}
+function buildChoiceRow(id, param, sendParam2) {
+  const el = document.createElement("div");
+  el.className = "control-row control-row--choice";
+  el.dataset.param = id;
+  const label = document.createElement("label");
+  label.className = "param-label";
+  label.textContent = param.name;
+  const group = document.createElement("div");
+  group.className = "choice-group";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", param.name);
+  const options = param.options || [];
+  let currentIndex = param.default ?? 0;
+  const buttons = options.map((opt, i) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.type = "button";
+    btn.textContent = opt;
+    btn.setAttribute("role", "radio");
+    btn.setAttribute("aria-checked", i === currentIndex ? "true" : "false");
+    if (i === currentIndex) btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      currentIndex = i;
+      buttons.forEach((b, j) => {
+        b.classList.toggle("active", j === i);
+        b.setAttribute("aria-checked", j === i ? "true" : "false");
+      });
+      sendParam2(id, i);
+    });
+    group.appendChild(btn);
+    return btn;
+  });
+  el.appendChild(label);
+  el.appendChild(group);
+  return {
+    el,
+    setIndex(idx) {
+      currentIndex = idx;
+      buttons.forEach((b, j) => {
+        b.classList.toggle("active", j === idx);
+        b.setAttribute("aria-checked", j === idx ? "true" : "false");
+      });
+    }
+  };
+}
+const getNativeFunction = createNativeFunctionBridge();
+const sendHostParam = createParamSender(getNativeFunction);
+const sendMorphSnapshotNative = getNativeFunction("setMorphSnapshot");
+const enqueueUiEventNative = getNativeFunction("enqueueUiEvent");
+let morphState = {
+  puckX: 0,
+  puckY: 0,
+  blend: 0.35
+};
+let activeSurface = FACTORY_SURFACES.length > 0 ? FACTORY_SURFACES[0] : null;
+let momentSeed = 42;
+let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.length, momentSeed) : [];
+let rbfThrottle = 0;
+let lastLoadedPresetIndex = -1;
+const PRESET_TO_SURFACE_INDEX = [
+  0,
+  0,
+  0,
+  // Amber
+  1,
+  1,
+  1,
+  // Drift
+  2,
+  2,
+  2,
+  // Hush
+  3,
+  3,
+  3,
+  // Signal
+  4,
+  4,
+  4,
+  // Weight
+  0,
+  3,
+  0,
+  1
+  // Showcase / hybrid
+];
+function applyRbfInterpolation(puckX, puckY) {
+  if (!activeSurface) return;
+  const now = performance.now();
+  if (now - rbfThrottle < 100) return;
+  rbfThrottle = now;
+  const sigma = activeSurface.sigma ?? 0.32;
+  const result = interpolate(
+    puckX,
+    puckY,
+    activeSurface.landmarks,
+    sigma,
+    sigmaOffsets
+  );
+  for (const [id, value] of Object.entries(result)) {
+    if (PARAMS[id]) {
+      sendHostParam(id, value);
+    }
+  }
+}
+const sendParam = (id, value) => {
+  if (id === "puckX" || id === "puckY" || id === "blend") {
+    morphState = { ...morphState, [id]: value };
+    if (typeof sendMorphSnapshotNative === "function") {
+      sendMorphSnapshotNative(morphState.puckX, morphState.puckY, morphState.blend);
+    }
+    if (id === "puckX" || id === "puckY") {
+      applyRbfInterpolation(morphState.puckX, morphState.puckY);
+    }
+    return;
+  }
+  if (id === "momentTrigger") {
+    momentSeed = momentSeed * 1664525 + 1013904223 >>> 0;
+    if (activeSurface) {
+      sigmaOffsets = generateSigmaOffsets(activeSurface.landmarks.length, momentSeed);
+    }
+    if (typeof enqueueUiEventNative === "function") {
+      enqueueUiEventNative("moment");
+    }
+    if (shell?.viz) {
+      shell.viz.triggerMoment?.();
+    }
+    applyRbfInterpolation(morphState.puckX, morphState.puckY);
+    return;
+  }
+  if (id === "arpEnabled" && typeof enqueueUiEventNative === "function") {
+    enqueueUiEventNative("arp", Boolean(value));
+  }
+  sendHostParam(id, value);
+};
+const THEME = {
+  bg: "#241D19",
+  text: "#D3C7BB",
+  accent: "#C4A46C",
+  "accent-hover": "#D4B87C"
+};
+let shell = null;
+let drawer = null;
+function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
+  if (index === lastLoadedPresetIndex) return;
+  lastLoadedPresetIndex = index;
+  const mappedSurfaceIndex = PRESET_TO_SURFACE_INDEX[index] ?? 0;
+  const surface = getSurfaceByIndex(mappedSurfaceIndex);
+  if (surface) {
+    activeSurface = surface;
+    sigmaOffsets = generateSigmaOffsets(
+      activeSurface.landmarks.length,
+      momentSeed
+    );
+    const clampedX = Math.max(-1, Math.min(1, Number(presetPuckX) || 0));
+    const clampedY = Math.max(-1, Math.min(1, Number(presetPuckY) || 0));
+    const normX = (clampedX + 1) * 0.5;
+    const normY = (1 - clampedY) * 0.5;
+    morphState = { ...morphState, puckX: clampedX, puckY: clampedY };
+    if (typeof sendMorphSnapshotNative === "function") {
+      sendMorphSnapshotNative(clampedX, clampedY, morphState.blend);
+    }
+    shell?.controls?.animatePuckTo(normX, normY);
+    rbfThrottle = 0;
+    applyRbfInterpolation(clampedX, clampedY);
+  }
+}
+function initApp() {
+  shell = initShell({
+    VizClass: WaverViz,
+    params: PARAMS,
+    paramOrder: PARAM_IDS,
+    themeTokens: THEME,
+    axisLabels: {
+      normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" }
+    },
+    getNativeFn: getNativeFunction,
+    sendParam
+  });
+  const drawerContent = document.getElementById("drawer-content");
+  if (drawerContent) {
+    drawer = buildDrawer(drawerContent, sendParam);
+  }
+  applyRbfInterpolation(morphState.puckX, morphState.puckY);
+}
+function handleBackendState(payload) {
+  let parsed = payload;
+  if (typeof payload === "string") {
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return;
+    }
+  }
+  if (parsed?.currentPreset !== void 0) {
+    onPresetLoaded(parsed.currentPreset, parsed?.presetPuckX, parsed?.presetPuckY);
+  }
+  shell?.updateState(payload);
+  if (typeof parsed === "object" && parsed !== null) {
+    drawer?.update(parsed);
+  }
+}
+if (window.__JUCE__?.backend?.addEventListener) {
+  window.__JUCE__.backend.addEventListener("updateState", handleBackendState);
+}
+window.updateState = handleBackendState;
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp);
+} else {
+  initApp();
+}</script>
+    <style rel="stylesheet" crossorigin>/* =============================================================================
+ * THREADBARE UI SHELL - Shared Styles
+ * 
+ * Theme tokens can be overridden by setting CSS variables on :root before
+ * this stylesheet loads, or by calling applyThemeTokens() from initShell().
+ * ============================================================================= */
+
+:root {
+  /* Default theme (Unravel) - can be overridden per-plugin */
+  --bg: #31312b;
+  --text: #C8C7B8;
+  --accent: #E0E993;
+  --accent-hover: #E8B8A8;
+  --focus-ring-color: var(--accent);
+  --focus-ring-inset: inset 0 0 0 1px var(--focus-ring-color);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus-ring-color);
+  --focus-ring-strong: 0 0 0 3px var(--bg), 0 0 0 5px var(--focus-ring-color);
+  /* Subtle by default; pressed uses a tighter, "closer to surface" shadow */
+  --puck-shadow:
+    0 10px 16px -10px rgba(0, 0, 0, 0.20),
+    0 4px 7px -6px rgba(0, 0, 0, 0.18),
+    0 1px 2px -1px rgba(0, 0, 0, 0.16);
+  --puck-shadow-pressed:
+    0 4px 8px -7px rgba(0, 0, 0, 0.26),
+    0 1px 2px -1px rgba(0, 0, 0, 0.22);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', 'Inter',
+    sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background-color: var(--bg);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ===== FOCUS STATES ===== */
+.preset-pill:focus-visible,
+.btn-freeze:focus-visible,
+.btn-settings:focus-visible,
+.pupil-toggle:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Focus uses hover styling (no ring) */
+.preset-pill:focus-visible::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.02);
+}
+
+.btn-freeze:focus-visible::before,
+.btn-settings:focus-visible::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.tb-app.settings-open .btn-settings:focus-visible::before {
+  transform: scale(0.96);
+  animation: none;
+  background: var(--accent);
+}
+
+/* Elastic slider focus state */
+.elastic-slider:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.elastic-slider:focus-visible .slider-path {
+  stroke: var(--accent);
+}
+
+.elastic-slider:focus-visible .slider-thumb {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+/* ===== APP LOAD ANIMATION ===== */
+@keyframes app-reveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tb-app {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Staggered reveal for main UI sections */
+.tb-top-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+.tb-canvas-shell {
+  opacity: 0;
+  animation: app-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+.tb-bottom-bar {
+  opacity: 0;
+  animation: app-reveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.25s forwards;
+}
+
+.tb-canvas-shell {
+  position: absolute;
+  top: 60px;
+  bottom: 80px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1;
+  overflow: hidden;
+}
+
+#orb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+  background: transparent;
+}
+
+#puck {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  /* Puck styling - designed to look good without backdrop-filter (not supported in JUCE WebView) */
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(200, 200, 195, 0.06) 100%
+  );
+  box-shadow: 
+    var(--puck-shadow),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  --puck-press: 1;
+  --puck-motion-angle: 0deg;
+  --puck-stretch: 1;
+  --puck-squash: 1;
+  --pupil-offset-x: 0px;
+  --pupil-offset-y: 0px;
+  --puck-glass-blur: 20px; /* driven by JS */
+  --puck-grain: 0.18;      /* driven by JS */
+  /* Directional stretch: rotate to velocity direction, scale, rotate back */
+  transform: translate(-50%, -50%) scale(var(--puck-press)) rotate(var(--puck-motion-angle)) scale(var(--puck-stretch), var(--puck-squash)) rotate(calc(-1 * var(--puck-motion-angle)));
+  /* NOTE: No transform transition here - motion effects (stretch/squash) are applied per-frame via JS.
+     Only transition box-shadow and background for smooth state changes. */
+  transition: box-shadow 0.1s ease-out, background 0.2s ease-out;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+  /* NOTE: backdrop-filter and will-change disabled - caused rendering artifacts in JUCE WebView */
+  /* CSS fallback: center puck before JS positions it */
+  left: 50%;
+  top: 50%;
+}
+
+/* NOTE: SVG backdrop-filter url(#tb-frosted) disabled - causes rendering artifacts in JUCE WebView.
+   Using standard blur backdrop-filter instead which works reliably across all targets. */
+
+#puck.active,
+.puck.active {
+  cursor: grabbing;
+  --puck-press: 0.97;
+  /* Pressed: tighter shadow = closer to surface */
+  box-shadow: var(--puck-shadow-pressed);
+}
+
+/* Outer frosted ring effect */
+#puck::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    rgba(255, 255, 255, 0.05) 50%,
+    rgba(200, 200, 195, 0.1) 100%
+  );
+  z-index: 1;
+}
+
+#puck::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 17px;
+  background: linear-gradient(
+    145deg, 
+    #FAFAF7 0%, 
+    #F5F5F0 40%,
+    #EEEEE8 100%
+  );
+  box-shadow: 
+    inset 0 1px 2px rgba(255, 255, 255, 0.8),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.03);
+  pointer-events: none;
+  z-index: 0;
+}
+
+
+
+@keyframes puck-idle-breathe {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+#puck.idle::after,
+.puck.idle::after {
+  animation: puck-idle-breathe 2.5s ease-in-out infinite;
+}
+
+.puck-pupil {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #969588;
+  display: block;
+  position: relative;
+  z-index: 1;
+  box-shadow:
+    1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+    0 0 6px rgba(175, 211, 228, 0.4);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+  transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1);
+}
+
+#puck.active .puck-pupil,
+.puck.active .puck-pupil {
+  background-color: #9EAE5A;
+  box-shadow: 0 0 8px #C5CC7A;
+}
+
+/* === AXIS LABELS (visible when dragging puck) === */
+.tb-canvas-shell .axis-label {
+  position: absolute;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+/* Show labels when puck is being dragged */
+.tb-canvas-shell.puck-dragging .axis-label {
+  opacity: 0.45;
+}
+
+/* Label positioning */
+.tb-canvas-shell .axis-label-left {
+  left: 24px;
+  right: auto;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(-90deg);
+  transform-origin: center center;
+}
+
+.tb-canvas-shell .axis-label-right {
+  right: 24px;
+  left: auto;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(90deg);
+  transform-origin: center center;
+}
+
+.tb-canvas-shell .axis-label-top {
+  top: 24px;
+  bottom: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.tb-canvas-shell .axis-label-bottom {
+  bottom: 24px;
+  top: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+/* === DISINTEGRATION LOOPER: Pupil States === */
+
+/* Recording state: pupil turns salmon/coral to match button */
+#puck.recording .puck-pupil,
+.puck.recording .puck-pupil {
+  background-color: #CC8A7E;
+  box-shadow: 
+    1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+    0 0 8px rgba(204, 138, 126, 0.6);
+  animation: pupil-recording-pulse 1.1s ease-in-out infinite;
+}
+
+/* Looping state: pupil breathing + blinking animation */
+@keyframes pupil-breathe {
+  0%, 100% { 
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1); 
+    background-color: #969588;  /* Dimmed grayish-green (blink off) */
+    box-shadow: 
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 4px rgba(154, 154, 122, 0.2);
+  }
+  50% { 
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1.3); 
+    background-color: #C5CC7A;  /* Full green (blink on) */
+    box-shadow: 
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 14px rgba(197, 204, 122, 0.8);
+  }
+}
+
+@keyframes pupil-recording-pulse {
+  0%, 100% {
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1);
+    background-color: #CC8A7E;
+    box-shadow:
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 6px rgba(204, 138, 126, 0.4);
+  }
+  50% {
+    transform: translate(var(--pupil-offset-x), var(--pupil-offset-y)) scale(1.25);
+    background-color: #CC8A7E;
+    box-shadow:
+      1px 1px 3px -1px rgba(0, 0, 0, 0.3) inset,
+      0 0 12px rgba(204, 138, 126, 0.75);
+  }
+}
+
+#puck.looping .puck-pupil,
+.puck.looping .puck-pupil {
+  animation: pupil-breathe 2s ease-in-out infinite;
+}
+
+/* === Ring Ripple: Mode Change Cue === */
+/* One-time expanding ring when entering looping mode */
+@keyframes puck-ripple {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+    border-width: 2px;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.5);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+/* Ripple pseudo-element - only shows during looping transition */
+#puck.looping::before,
+.puck.looping::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #C5CC7A;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+  animation: puck-ripple 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
+}
+
+/* Recording state: coral ripple when starting to record */
+@keyframes puck-ripple-record {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.5;
+    border-width: 2px;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+#puck.recording::before,
+.puck.recording::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid #CC8A7E;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+  animation: puck-ripple-record 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  z-index: 0;
+}
+
+.tb-top-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 16px;
+  pointer-events: none;
+  z-index: 400; /* Ensure top bar stays above canvas but below dropdown */
+}
+
+.tb-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 24px 24px 32px;
+  pointer-events: none;
+  z-index: 200;
+  background: var(--bg);
+}
+
+.preset-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 21px;
+  text-transform: lowercase;
+  cursor: pointer;
+  pointer-events: auto;
+  padding: 0 20px 0 12px;
+  border-radius: 21px;
+  transition: color 160ms ease;
+  z-index: 1;
+}
+
+/* Background pseudo-element for hover effects */
+.preset-pill::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.preset-pill:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1.02);
+}
+
+.preset-pill:active::before {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Active/open styling (consistency): preset pill uses accent background while dropdown is open */
+.tb-app.presets-open .preset-pill {
+  color: var(--bg);
+}
+
+.tb-app.presets-open .preset-pill::before {
+  background: var(--accent);
+  transform: scale(1.02);
+}
+
+.tb-app.presets-open .preset-pill:hover::before,
+.tb-app.presets-open .preset-pill:active::before {
+  background: var(--accent);
+}
+
+/* ===== PRESET DROPDOWN ===== */
+/* 
+ * Spectral blur materialization - elements emerge from ghostly blur
+ * Slow, dreamy timing with organic stagger
+ */
+.preset-dropdown {
+  position: fixed;
+  top: 80px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow-y: auto;
+  background: rgba(49, 49, 43, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  z-index: 500;
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: ghostly blur, faded, scaled down */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px) scale(0.988);
+  filter: blur(28px);
+  
+  /* Close: slow, lingering fade into blur */
+  transition: 
+    opacity 520ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 560ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 600ms;
+}
+
+.tb-app.presets-open .preset-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
+  pointer-events: auto;
+  
+  /* Open: emerge from blur, still unhurried */
+  transition: 
+    opacity 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 460ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms;
+}
+
+/* Preset options - spectral cascade with organic stagger */
+.preset-option {
+  padding: 13px 16px 14px 58px;
+  font-size: 21px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 0;
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: blurred and faded */
+  opacity: 0;
+  transform: translateY(-4px);
+  filter: blur(14px);
+  
+  /* Close: gentle simultaneous fade */
+  transition:
+    opacity 280ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 340ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 300ms cubic-bezier(0.4, 0, 0.1, 1),
+    background 120ms ease;
+}
+
+/* Open: organic stagger - slower reveal, varied timing */
+.tb-app.presets-open .preset-option {
+  opacity: 1;
+  transform: translateY(0) translateX(0);
+  filter: blur(0px);
+  
+  transition:
+    opacity 380ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 520ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    background 120ms ease;
+}
+
+/* Organic stagger: accelerating then decelerating rhythm */
+.tb-app.presets-open .preset-option:nth-child(1) { transition-delay: 40ms; }
+.tb-app.presets-open .preset-option:nth-child(2) { transition-delay: 75ms; }
+.tb-app.presets-open .preset-option:nth-child(3) { transition-delay: 105ms; }
+.tb-app.presets-open .preset-option:nth-child(4) { transition-delay: 130ms; }
+.tb-app.presets-open .preset-option:nth-child(5) { transition-delay: 150ms; }
+.tb-app.presets-open .preset-option:nth-child(6) { transition-delay: 168ms; }
+.tb-app.presets-open .preset-option:nth-child(7) { transition-delay: 184ms; }
+.tb-app.presets-open .preset-option:nth-child(8) { transition-delay: 198ms; }
+.tb-app.presets-open .preset-option:nth-child(9) { transition-delay: 210ms; }
+.tb-app.presets-open .preset-option:nth-child(10) { transition-delay: 220ms; }
+
+/* ===== PRESET HOVER - "Focusing Attention" Effect ===== */
+/* 
+ * Hovering = directing attention to a memory
+ * Non-hovered items blur and fade (defocus)
+ * Hovered item drifts slightly into focus
+ * Asymmetric timing: fast in, slow out (lingering)
+ * Note: Only hover triggers defocus (not focus) to avoid blur on initial open
+ */
+
+/* Hovered/focused item: drifts right, soft radial glow background */
+.tb-app.presets-open .preset-option:hover,
+.tb-app.presets-open .preset-option:focus-visible {
+  transform: translateX(3px) translateY(0);
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.07) 0%, transparent 70%);
+  filter: blur(0px);
+  opacity: 1;
+  outline: none;
+  
+  /* Fast focus IN */
+  transition:
+    opacity 160ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 200ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 180ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    background 150ms ease;
+}
+
+/* Sibling defocus: only on hover (not focus) to prevent blur on initial open */
+.tb-app.presets-open .preset-dropdown:has(.preset-option:hover) .preset-option:not(:hover) {
+  filter: blur(2px);
+  opacity: 0.7;
+  
+  /* Slow defocus OUT (lingering) */
+  transition:
+    opacity 500ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 550ms cubic-bezier(0.4, 0, 0.1, 1),
+    background 120ms ease;
+}
+
+.preset-option.selected {
+  color: var(--accent);
+}
+
+.tb-app.presets-open .preset-option:active {
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
+  transform: translateX(3px) scale(0.995);
+}
+
+/* ===== SELECTION EFFECT - "Memory Lock-In" ===== */
+/*
+ * When selecting a preset:
+ * 1. Selected item pulses briefly (scale)
+ * 2. Non-selected items dissolve (blur + fade + drift up)
+ * 3. Brief linger moment
+ * 4. Then normal close animation
+ */
+
+/* Selected item during selection - pulse and stay sharp */
+.tb-app.presets-open.selecting .preset-option.selecting-target {
+  transform: translateX(3px) translateY(0) scale(1.01);
+  filter: blur(0px);
+  opacity: 1;
+  background: radial-gradient(ellipse at 20% 50%, rgba(255, 255, 255, 0.08) 0%, transparent 70%);
+  
+  transition:
+    transform 100ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 80ms ease,
+    opacity 80ms ease,
+    background 100ms ease;
+}
+
+/* Non-selected items dissolve away - quick and airy */
+.tb-app.presets-open.selecting .preset-option:not(.selecting-target) {
+  filter: blur(6px);
+  opacity: 0.3;
+  transform: translateY(-2px) translateX(0);
+  
+  transition:
+    filter 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 100ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Chevron rotation when open with bounce */
+@keyframes chevron-flip {
+  0% { transform: rotate(0deg); }
+  50% { transform: rotate(200deg); }
+  75% { transform: rotate(170deg); }
+  100% { transform: rotate(180deg); }
+}
+
+@keyframes chevron-unflip {
+  0% { transform: rotate(180deg); }
+  50% { transform: rotate(-20deg); }
+  75% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.preset-pill .chevron {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tb-app.presets-open .preset-pill .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Only animate unflip if it was previously opened (has-opened class) */
+.preset-pill.has-opened:not(.open) .chevron {
+  animation: chevron-unflip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.tb-app.presets-open .preset-pill.has-opened .chevron {
+  animation: chevron-flip 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.preset-pill .chevron {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+
+.preset-pill .chevron svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.preset-name {
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+
+.logo-glyph {
+  width: 48px;
+  height: 48px;
+  display: none;
+  justify-content: center;
+  align-items: center;
+}
+
+.logo-glyph svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+  color: var(--text);
+}
+
+.tb-bottom-bar .readouts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tb-bottom-bar .readouts span {
+  display: block;
+}
+
+.tb-control-cluster {
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.btn-freeze,
+.btn-settings {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+/* Background pseudo-element for hover/active effects */
+.btn-freeze::before,
+.btn-settings::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 21px;
+  background: rgba(255, 255, 255, 0);
+  transform: scale(1);
+  transition: 
+    background 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-freeze:hover::before,
+.btn-settings:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.btn-freeze:active::before,
+.btn-settings:active::before {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Bounce animation for background on state toggle */
+@keyframes btn-bg-bounce {
+  0% { transform: scale(0.95); }
+  35% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+/* Armed state: waiting for transport */
+.btn-freeze.armed-waiting::before {
+  background: var(--accent);
+  opacity: 0.18;
+  transform: scale(1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DISINTEGRATION LOOPER STATES
+   Button color is controlled ONLY by looper state classes (recording/looping)
+   No default active state - prevents "extra" lime green state
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Recording state: pulsating dusty coral glow */
+@keyframes recording-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(204, 138, 126, 0.7); }
+  70% { box-shadow: 0 0 0 12px rgba(204, 138, 126, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(204, 138, 126, 0); }
+}
+
+.btn-freeze.recording,
+.btn-freeze.recording[aria-pressed='true'] {
+  color: var(--bg);
+}
+
+.btn-freeze.recording::before,
+.btn-freeze.recording[aria-pressed='true']::before {
+  background: #CC8A7E !important; /* Dusty coral for recording */
+  animation: recording-pulse 1.2s ease-out infinite, btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards !important;
+}
+
+/* Looping state: puck pupil green for harmonious playback indicator */
+.btn-freeze.looping,
+.btn-freeze.looping[aria-pressed='true'],
+.btn-freeze.looping[aria-pressed='false'] {
+  color: var(--bg);
+}
+
+.btn-freeze.looping::before,
+.btn-freeze.looping[aria-pressed='true']::before,
+.btn-freeze.looping[aria-pressed='false']::before {
+  background: #C5CC7A !important;  /* Puck pupil green */
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Disable preset and settings controls during looping (can't affect captured buffer) */
+.tb-app.looping .preset-pill,
+.tb-app.looping .btn-settings {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.btn-freeze svg,
+.btn-settings .icon-settings {
+  width: 24px;
+  height: 24px;
+  display: block;
+  fill: currentColor;
+}
+
+/* Settings button icon toggle */
+.btn-settings .icon-close {
+  width: 24px;
+  height: 24px;
+  display: none;
+  fill: currentColor;
+}
+
+/* When settings is open, show close icon and hide settings icon */
+.tb-app.settings-open .btn-settings .icon-settings {
+  display: none;
+}
+
+.tb-app.settings-open .btn-settings .icon-close {
+  display: block;
+}
+
+/* Settings button transforms to close button when open (matches freeze active state) */
+.tb-app.settings-open .btn-settings {
+  color: var(--bg);
+}
+
+.tb-app.settings-open .btn-settings::before {
+  background: var(--accent);
+  animation: btn-bg-bounce 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Hover state when settings is open - consistent with other buttons */
+.tb-app.settings-open .btn-settings:hover::before {
+  transform: scale(0.96);
+  animation: none;
+  background: var(--accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== SETTINGS VIEW (Overlay with fade + slide from bottom) ===== */
+
+/* 
+ * Overlay transition: Settings fades in over main content.
+ * Matches preset dropdown style but from the bottom.
+ * 
+ * TUNING: Adjust --settings-slide-distance to change how far it slides up.
+ *         Larger = more dramatic entrance, smaller = more subtle.
+ */
+
+/* 
+ * Settings drawer - spectral blur materialization
+ * Slow, dreamy emergence from deep blur
+ */
+.settings-view {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 80px;
+  background: rgba(49, 49, 43, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  will-change: transform, opacity, filter;
+  overflow: visible;
+  
+  /* Hidden: deep blur, faded, shifted */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(16px) scale(0.985);
+  filter: blur(36px);
+  
+  /* Close: slow, spectral fade into blur */
+  transition: 
+    opacity 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 680ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 640ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 680ms;
+}
+
+.settings-view.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
+  pointer-events: auto;
+  
+  /* Open: unhurried emergence from ghostly blur */
+  transition: 
+    opacity 480ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 540ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms;
+}
+
+/* Settings Body */
+.settings-body {
+  flex: 1;
+  overflow-x: visible;
+  overflow-y: auto;
+  padding: 0 32px 32px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Settings Title */
+.settings-title {
+  position: absolute;
+  top: 24px;   /* matches .tb-top-bar padding-top */
+  left: 24px;  /* matches .tb-top-bar padding-left */
+
+  height: 48px; /* matches .preset-pill height */
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0 60px 0 0; /* matches .preset-pill padding */
+  border-radius: 21px;    /* matches .preset-pill radius */
+
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  color: var(--text);
+  margin: 0;
+  flex-shrink: 0;
+  
+  /* Always visible (settings view handles its own show/hide) */
+  opacity: 1;
+}
+
+/* Clear old padding hack (title is now absolutely positioned) */
+#settings-title { padding-bottom: 0; padding-left: 8px; }
+
+/* Settings Content - holds the control rows */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  padding-top: 72px;
+  overflow: visible;
+}
+
+/* ===== SETTINGS CASCADE - Spectral blur materialization ===== */
+.settings-title,
+.settings-content > .control-row {
+  will-change: transform, opacity, filter;
+  
+  /* Hidden: blurred and shifted */
+  opacity: 0;
+  transform: translateY(6px);
+  filter: blur(18px);
+  
+  /* Close: gentle fade */
+  transition:
+    opacity 260ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 320ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 280ms cubic-bezier(0.4, 0, 0.1, 1);
+}
+
+/* Open: slower spectral materialization */
+.settings-view.open .settings-title,
+.settings-view.open .settings-content > .control-row {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0px);
+  
+  transition:
+    opacity 400ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+/* Title materializes first */
+.settings-view.open .settings-title {
+  transition-delay: 50ms;
+}
+
+/* Organic stagger: accelerating then decelerating rhythm (matches preset menu) */
+.settings-view.open .settings-content > .control-row:nth-child(1) { transition-delay: 80ms; }
+.settings-view.open .settings-content > .control-row:nth-child(2) { transition-delay: 115ms; }
+.settings-view.open .settings-content > .control-row:nth-child(3) { transition-delay: 145ms; }
+.settings-view.open .settings-content > .control-row:nth-child(4) { transition-delay: 170ms; }
+.settings-view.open .settings-content > .control-row:nth-child(5) { transition-delay: 192ms; }
+.settings-view.open .settings-content > .control-row:nth-child(6) { transition-delay: 212ms; }
+.settings-view.open .settings-content > .control-row:nth-child(7) { transition-delay: 230ms; }
+.settings-view.open .settings-content > .control-row:nth-child(8) { transition-delay: 246ms; }
+.settings-view.open .settings-content > .control-row:nth-child(9) { transition-delay: 260ms; }
+.settings-view.open .settings-content > .control-row:nth-child(10) { transition-delay: 272ms; }
+
+/* ===== CONTROL ROWS ===== */
+/* Control rows (no cascade animation - DAW-friendly) */
+.control-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  row-gap: 24px;
+  column-gap: 24px;
+  align-items: center;
+  overflow: visible;
+}
+
+.param-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.param-label svg {
+  width: 24px;
+  height: 24px;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+/* Hover effect for visual feedback */
+.control-row:hover .param-label svg {
+  opacity: 1;
+}
+
+/* ===== ICON TOOLTIPS ===== */
+/* Minimal tooltip using readout text styles, appears on hover after delay */
+.param-label {
+  position: relative;
+}
+
+.param-label[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  top: calc(100%);
+  transform: translateX(-50%);
+  z-index: 10;
+  
+  /* Readout text style */
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+  
+  /* Subtle background for legibility */
+  background: rgba(49, 49, 43, 0.9);
+  padding: 4px 8px;
+  border-radius: 4px;
+  
+  /* Invisible by default */
+  opacity: 0;
+  pointer-events: none;
+  
+  /* Delay before appearing */
+  transition: opacity 180ms ease 400ms;
+}
+
+/* Show tooltip on hover (after delay) */
+.control-row:hover .param-label[data-tooltip]::after {
+  opacity: 0.6;
+}
+
+/* Edge protection: if tooltip would overflow right, position left instead */
+/* (Using CSS container queries would be ideal but fallback to JS if needed) */
+
+/* Screen reader only - keeps text accessible but visually hidden */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== ELASTIC SLIDER (Organic Curve Design) ===== */
+.elastic-slider {
+  position: relative;
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: visible;
+}
+
+/* Fine control mode indicator (when holding Shift) */
+.elastic-slider.fine-control {
+  cursor: ew-resize;
+}
+
+/* Invisible track for pointer hit-testing */
+.elastic-slider__track {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+/* SVG container for organic curve */
+.slider-svg {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Curved path - 2pt stroke */
+.slider-path {
+  stroke: var(--text);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  fill: none;
+  transition: stroke 0.2s ease;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Circular thumb (16x16) - vertically centered with line */
+.slider-thumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text);
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: pointer;
+  /* Only transition background color, not position/transform */
+  transition: background 0.2s ease;
+}
+
+/* Hover state - lime accent */
+.elastic-slider:hover .slider-path,
+.control-row:hover .slider-path {
+  stroke: var(--accent);
+}
+
+.elastic-slider:hover .slider-thumb,
+.control-row:hover .slider-thumb {
+  background: var(--accent);
+}
+
+/* Active/dragging state - no transition for immediate response */
+.elastic-slider.active .slider-path,
+.elastic-slider.active .slider-thumb {
+  transition: none;
+}
+
+/* Hide legacy slider elements */
+.slider-container {
+  display: none;
+}
+
+.slider-track-bg,
+.slider-track-base,
+.slider-track-macro,
+.param-slider {
+  display: none;
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Disable blur and stagger effects under reduced motion */
+  .preset-dropdown,
+  .settings-view,
+  .settings-title,
+  .settings-content > .control-row,
+  .preset-option {
+    transition-delay: 0ms !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+.drawer-group-heading {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent, #C4A46C);
+  opacity: 0.7;
+  margin: 18px 0 8px;
+  padding: 0 4px;
+  border-bottom: 1px solid rgba(196, 164, 108, 0.15);
+  padding-bottom: 4px;
+}
+
+.drawer-group-heading:first-child {
+  margin-top: 4px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  min-height: 32px;
+}
+
+.control-row--choice {
+  grid-template-columns: 72px 1fr;
+}
+
+.param-label {
+  font-size: 11px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.param-value {
+  font-size: 10px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.waver-slider {
+  position: relative;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.waver-slider:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent, #C4A46C);
+}
+
+.waver-slider__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--accent, #C4A46C);
+  opacity: 0.2;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.waver-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  background: var(--accent, #C4A46C);
+  border-radius: 1.5px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: height 0.1s ease;
+}
+
+.waver-slider:active .waver-slider__thumb {
+  height: 20px;
+}
+
+.choice-group {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.choice-btn {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.choice-btn:hover {
+  opacity: 0.7;
+}
+
+.choice-btn.active {
+  opacity: 1;
+  background: var(--accent, #C4A46C);
+  color: var(--bg, #241D19);
+}</style>
+  </head>
+  <body>
+    <div id="app" class="tb-app">
+      <header class="tb-top-bar">
+        <div class="preset-pill" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0">
+          <span class="chevron" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18.5675 9.06754L12.3175 15.3175C12.2595 15.3756 12.1906 15.4217 12.1147 15.4532C12.0388 15.4847 11.9575 15.5008 11.8753 15.5008C11.7932 15.5008 11.7119 15.4847 11.636 15.4532C11.5601 15.4217 11.4912 15.3756 11.4332 15.3175L5.18316 9.06754C5.06588 8.95026 5 8.7912 5 8.62535C5 8.4595 5.06588 8.30044 5.18316 8.18316C5.30044 8.06588 5.4595 8 5.62535 8C5.7912 8 5.95026 8.06588 6.06753 8.18316L11.8753 13.9918L17.6832 8.18316C17.7412 8.12509 17.8102 8.07903 17.886 8.0476C17.9619 8.01617 18.0432 8 18.1253 8C18.2075 8 18.2888 8.01617 18.3647 8.0476C18.4405 8.07903 18.5095 8.12509 18.5675 8.18316C18.6256 8.24123 18.6717 8.31017 18.7031 8.38604C18.7345 8.46191 18.7507 8.54323 18.7507 8.62535C18.7507 8.70747 18.7345 8.78879 18.7031 8.86466C18.6717 8.94053 18.6256 9.00947 18.5675 9.06754Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="preset-name">waver</span>
+        </div>
+        <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24V21.6C8.93482 21.6 6.45 19.1152 6.45 16.05C6.45 12.9848 8.93482 10.5 12 10.5V8.1C7.60934 8.1 4.05 11.6593 4.05 16.05C4.05 16.58 4.10186 17.0978 4.20077 17.5987C3.06745 16.0228 2.4 14.0893 2.4 12C2.4 6.69807 6.69807 2.4 12 2.4V0Z" fill="currentColor" />
+            <path d="M13.2 23.9408C19.264 23.3387 24 18.2224 24 12C24 5.77758 19.264 0.66132 13.2 0.0592503V23.9408Z" fill="currentColor" />
+          </svg>
+        </span>
+      </header>
+
+      <ul class="preset-dropdown" role="listbox" aria-label="Select preset"></ul>
+
+      <main class="tb-canvas-shell" aria-label="Waveform scope">
+        <canvas id="orb" width="1200" height="1600"></canvas>
+        <div id="puck" role="presentation">
+          <span class="puck-pupil"></span>
+        </div>
+        <div class="axis-label axis-label-left">bright</div>
+        <div class="axis-label axis-label-right">dark</div>
+        <div class="axis-label axis-label-top">worn</div>
+        <div class="axis-label axis-label-bottom">clean</div>
+      </main>
+
+      <footer class="tb-bottom-bar">
+        <div class="readouts" aria-live="polite">
+          <span data-readout="x">0.000</span>
+          <span data-readout="y">0.000</span>
+        </div>
+        <div class="tb-control-cluster">
+          <button class="btn-settings" type="button" aria-label="Open settings" aria-expanded="false">
+            <svg class="icon-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M21 12C21 12.1989 20.921 12.3897 20.7803 12.5303C20.6397 12.671 20.4489 12.75 20.25 12.75H3.75C3.55109 12.75 3.36032 12.671 3.21967 12.5303C3.07902 12.3897 3 12.1989 3 12C3 11.8011 3.07902 11.6103 3.21967 11.4697C3.36032 11.329 3.55109 11.25 3.75 11.25H20.25C20.4489 11.25 20.6397 11.329 20.7803 11.4697C20.921 11.6103 21 11.8011 21 12ZM3.75 6.75H16.25C16.4489 6.75 16.6397 6.67098 16.7803 6.53033C16.921 6.38968 17 6.19891 17 6C17 5.80109 16.921 5.61032 16.7803 5.46967C16.6397 5.32902 16.4489 5.25 16.25 5.25H3.75C3.55109 5.25 3.36032 5.32902 3.21967 5.46967C3.07902 5.61032 3 5.80109 3 6C3 6.19891 3.07902 6.38968 3.21967 6.53033C3.36032 6.67098 3.55109 6.75 3.75 6.75ZM11.25 17.25H3.75C3.55109 17.25 3.36032 17.329 3.21967 17.4697C3.07902 17.6103 3 17.8011 3 18C3 18.1989 3.07902 18.3897 3.21967 18.5303C3.36032 18.671 3.55109 18.75 3.75 18.75H11.25C11.4489 18.75 11.6397 18.671 11.7803 18.5303C11.921 18.3897 12 18.1989 12 18C12 17.8011 11.921 17.6103 11.7803 17.4697C11.6397 17.329 11.4489 17.25 11.25 17.25Z" fill="currentColor" />
+            </svg>
+            <svg class="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M19.281 18.2194C19.3507 18.2891 19.406 18.3718 19.4437 18.4628C19.4814 18.5539 19.5008 18.6515 19.5008 18.75C19.5008 18.8486 19.4814 18.9461 19.4437 19.0372C19.406 19.1282 19.3507 19.2109 19.281 19.2806C19.2114 19.3503 19.1286 19.4056 19.0376 19.4433C18.9465 19.481 18.849 19.5004 18.7504 19.5004C18.6519 19.5004 18.5543 19.481 18.4632 19.4433C18.3722 19.4056 18.2895 19.3503 18.2198 19.2806L12.0004 13.0603L5.78104 19.2806C5.64031 19.4214 5.44944 19.5004 5.25042 19.5004C5.05139 19.5004 4.86052 19.4214 4.71979 19.2806C4.57906 19.1399 4.5 18.949 4.5 18.75C4.5 18.551 4.57906 18.3601 4.71979 18.2194L10.9401 12L4.71979 5.78063C4.57906 5.6399 4.5 5.44903 4.5 5.25001C4.5 5.05098 4.57906 4.86011 4.71979 4.71938C4.86052 4.57865 5.05139 4.49959 5.25042 4.49959C5.44944 4.49959 5.64031 4.57865 5.78104 4.71938L12.0004 10.9397L18.2198 4.71938C18.3605 4.57865 18.5514 4.49959 18.7504 4.49959C18.9494 4.49959 19.1403 4.57865 19.281 4.71938C19.4218 4.86011 19.5008 5.05098 19.5008 5.25001C19.5008 5.44903 19.4218 5.6399 19.281 5.78063L13.0607 12L19.281 18.2194Z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </footer>
+
+      <aside class="settings-view" id="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+        <div class="settings-body">
+          <h2 class="settings-title" id="settings-title">advanced</h2>
+          <div class="settings-content" id="drawer-content">
+          </div>
+        </div>
+      </aside>
+    </div>
+
+  </body>
+</html>

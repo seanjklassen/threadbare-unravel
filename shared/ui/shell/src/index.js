@@ -50,6 +50,7 @@ export function initShell(options = {}) {
     params,
     paramOrder,
     themeTokens,
+    axisLabels,
     getNativeFn = () => null,
     sendParam = () => {},
     sendLooperTrigger = null,
@@ -89,6 +90,7 @@ export function initShell(options = {}) {
     paramOrder,
     sendParam,
     sendLooperTrigger,
+    axisLabels,
     onPuckChange: ({ puckX, puckY }) => {
       currentState = { ...currentState, puckX, puckY }
       viz?.update(currentState)

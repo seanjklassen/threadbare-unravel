@@ -109,10 +109,13 @@ export class Controls {
       top: document.querySelector('.axis-label-top'),
       bottom: document.querySelector('.axis-label-bottom'),
     }
-    this.axisLabelText = {
+    const defaultLabels = {
       normal: { left: 'vivid', right: 'hazy', top: 'distant', bottom: 'recent' },
       loop: { left: 'spectral', right: 'diffuse', top: 'fleeting', bottom: 'lingering' },
     }
+    this.axisLabelText = options.axisLabels
+      ? { normal: { ...defaultLabels.normal, ...options.axisLabels.normal }, loop: { ...defaultLabels.loop, ...(options.axisLabels.loop || {}) } }
+      : defaultLabels
     
     this.isDragging = false
     this.pointerId = null

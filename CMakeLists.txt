@@ -33,3 +33,4 @@ add_subdirectory(shared/core)
 # PLUGINS
 # ==============================================================================
 add_subdirectory(plugins/unravel)
+add_subdirectory(plugins/waver)

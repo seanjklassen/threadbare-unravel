@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Waver</title>
+  </head>
+  <body>
+    <div id="app" class="tb-app">
+      <header class="tb-top-bar">
+        <div class="preset-pill" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0">
+          <span class="chevron" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18.5675 9.06754L12.3175 15.3175C12.2595 15.3756 12.1906 15.4217 12.1147 15.4532C12.0388 15.4847 11.9575 15.5008 11.8753 15.5008C11.7932 15.5008 11.7119 15.4847 11.636 15.4532C11.5601 15.4217 11.4912 15.3756 11.4332 15.3175L5.18316 9.06754C5.06588 8.95026 5 8.7912 5 8.62535C5 8.4595 5.06588 8.30044 5.18316 8.18316C5.30044 8.06588 5.4595 8 5.62535 8C5.7912 8 5.95026 8.06588 6.06753 8.18316L11.8753 13.9918L17.6832 8.18316C17.7412 8.12509 17.8102 8.07903 17.886 8.0476C17.9619 8.01617 18.0432 8 18.1253 8C18.2075 8 18.2888 8.01617 18.3647 8.0476C18.4405 8.07903 18.5095 8.12509 18.5675 8.18316C18.6256 8.24123 18.6717 8.31017 18.7031 8.38604C18.7345 8.46191 18.7507 8.54323 18.7507 8.62535C18.7507 8.70747 18.7345 8.78879 18.7031 8.86466C18.6717 8.94053 18.6256 9.00947 18.5675 9.06754Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="preset-name">waver</span>
+        </div>
+        <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24V21.6C8.93482 21.6 6.45 19.1152 6.45 16.05C6.45 12.9848 8.93482 10.5 12 10.5V8.1C7.60934 8.1 4.05 11.6593 4.05 16.05C4.05 16.58 4.10186 17.0978 4.20077 17.5987C3.06745 16.0228 2.4 14.0893 2.4 12C2.4 6.69807 6.69807 2.4 12 2.4V0Z" fill="currentColor" />
+            <path d="M13.2 23.9408C19.264 23.3387 24 18.2224 24 12C24 5.77758 19.264 0.66132 13.2 0.0592503V23.9408Z" fill="currentColor" />
+          </svg>
+        </span>
+      </header>
+
+      <ul class="preset-dropdown" role="listbox" aria-label="Select preset"></ul>
+
+      <main class="tb-canvas-shell" aria-label="Waveform scope">
+        <canvas id="orb" width="1200" height="1600"></canvas>
+        <div id="puck" role="presentation">
+          <span class="puck-pupil"></span>
+        </div>
+        <div class="axis-label axis-label-left">bright</div>
+        <div class="axis-label axis-label-right">dark</div>
+        <div class="axis-label axis-label-top">worn</div>
+        <div class="axis-label axis-label-bottom">clean</div>
+      </main>
+
+      <footer class="tb-bottom-bar">
+        <div class="readouts" aria-live="polite">
+          <span data-readout="x">0.000</span>
+          <span data-readout="y">0.000</span>
+        </div>
+        <div class="tb-control-cluster">
+          <button class="btn-settings" type="button" aria-label="Open settings" aria-expanded="false">
+            <svg class="icon-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M21 12C21 12.1989 20.921 12.3897 20.7803 12.5303C20.6397 12.671 20.4489 12.75 20.25 12.75H3.75C3.55109 12.75 3.36032 12.671 3.21967 12.5303C3.07902 12.3897 3 12.1989 3 12C3 11.8011 3.07902 11.6103 3.21967 11.4697C3.36032 11.329 3.55109 11.25 3.75 11.25H20.25C20.4489 11.25 20.6397 11.329 20.7803 11.4697C20.921 11.6103 21 11.8011 21 12ZM3.75 6.75H16.25C16.4489 6.75 16.6397 6.67098 16.7803 6.53033C16.921 6.38968 17 6.19891 17 6C17 5.80109 16.921 5.61032 16.7803 5.46967C16.6397 5.32902 16.4489 5.25 16.25 5.25H3.75C3.55109 5.25 3.36032 5.32902 3.21967 5.46967C3.07902 5.61032 3 5.80109 3 6C3 6.19891 3.07902 6.38968 3.21967 6.53033C3.36032 6.67098 3.55109 6.75 3.75 6.75ZM11.25 17.25H3.75C3.55109 17.25 3.36032 17.329 3.21967 17.4697C3.07902 17.6103 3 17.8011 3 18C3 18.1989 3.07902 18.3897 3.21967 18.5303C3.36032 18.671 3.55109 18.75 3.75 18.75H11.25C11.4489 18.75 11.6397 18.671 11.7803 18.5303C11.921 18.3897 12 18.1989 12 18C12 17.8011 11.921 17.6103 11.7803 17.4697C11.6397 17.329 11.4489 17.25 11.25 17.25Z" fill="currentColor" />
+            </svg>
+            <svg class="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M19.281 18.2194C19.3507 18.2891 19.406 18.3718 19.4437 18.4628C19.4814 18.5539 19.5008 18.6515 19.5008 18.75C19.5008 18.8486 19.4814 18.9461 19.4437 19.0372C19.406 19.1282 19.3507 19.2109 19.281 19.2806C19.2114 19.3503 19.1286 19.4056 19.0376 19.4433C18.9465 19.481 18.849 19.5004 18.7504 19.5004C18.6519 19.5004 18.5543 19.481 18.4632 19.4433C18.3722 19.4056 18.2895 19.3503 18.2198 19.2806L12.0004 13.0603L5.78104 19.2806C5.64031 19.4214 5.44944 19.5004 5.25042 19.5004C5.05139 19.5004 4.86052 19.4214 4.71979 19.2806C4.57906 19.1399 4.5 18.949 4.5 18.75C4.5 18.551 4.57906 18.3601 4.71979 18.2194L10.9401 12L4.71979 5.78063C4.57906 5.6399 4.5 5.44903 4.5 5.25001C4.5 5.05098 4.57906 4.86011 4.71979 4.71938C4.86052 4.57865 5.05139 4.49959 5.25042 4.49959C5.44944 4.49959 5.64031 4.57865 5.78104 4.71938L12.0004 10.9397L18.2198 4.71938C18.3605 4.57865 18.5514 4.49959 18.7504 4.49959C18.9494 4.49959 19.1403 4.57865 19.281 4.71938C19.4218 4.86011 19.5008 5.05098 19.5008 5.25001C19.5008 5.44903 19.4218 5.6399 19.281 5.78063L13.0607 12L19.281 18.2194Z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </footer>
+
+      <aside class="settings-view" id="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+        <div class="settings-body">
+          <h2 class="settings-title" id="settings-title">advanced</h2>
+          <div class="settings-content" id="drawer-content">
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

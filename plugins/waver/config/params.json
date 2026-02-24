@@ -1,0 +1,375 @@
+{
+  "plugin": "waver",
+  "parameters": [
+    {
+      "id": "puckX",
+      "name": "presence",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "puckY",
+      "name": "age",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "blend",
+      "name": "blend",
+      "type": "float",
+      "min": 0.15,
+      "max": 0.60,
+      "default": 0.35
+    },
+    {
+      "id": "momentSeed",
+      "name": "moment",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "momentTrigger",
+      "name": "moment trigger",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "id": "arpEnabled",
+      "name": "arp",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "id": "outputGain",
+      "name": "output",
+      "type": "float",
+      "min": -24.0,
+      "max": 12.0,
+      "default": 0.0,
+      "unit": "dB"
+    },
+    {
+      "id": "filterCutoff",
+      "name": "cutoff",
+      "type": "float",
+      "min": 20.0,
+      "max": 20000.0,
+      "default": 8000.0,
+      "skewCentre": 1000.0,
+      "unit": "Hz"
+    },
+    {
+      "id": "filterRes",
+      "name": "resonance",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.15
+    },
+    {
+      "id": "filterMode",
+      "name": "filter",
+      "type": "choice",
+      "options": ["OTA", "Ladder"],
+      "default": 0
+    },
+    {
+      "id": "filterKeyTrack",
+      "name": "tracking",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "envToFilter",
+      "name": "envelope",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0.3
+    },
+    {
+      "id": "macroShape",
+      "name": "shape",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "dcoSubLevel",
+      "name": "sub",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.2
+    },
+    {
+      "id": "dcoSubOctave",
+      "name": "sub octave",
+      "type": "choice",
+      "options": ["-1", "-2"],
+      "default": 0
+    },
+    {
+      "id": "noiseLevel",
+      "name": "noise",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.1
+    },
+    {
+      "id": "noiseColor",
+      "name": "color",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.35
+    },
+    {
+      "id": "toyIndex",
+      "name": "fm depth",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.25
+    },
+    {
+      "id": "toyRatio",
+      "name": "fm ratio",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "layerDco",
+      "name": "analog",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.7
+    },
+    {
+      "id": "layerToy",
+      "name": "toy",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.2
+    },
+    {
+      "id": "layerOrgan",
+      "name": "organ",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.3
+    },
+    {
+      "id": "organ16",
+      "name": "16'",
+      "type": "float",
+      "min": 0.0,
+      "max": 8.0,
+      "default": 5.0
+    },
+    {
+      "id": "organ8",
+      "name": "8'",
+      "type": "float",
+      "min": 0.0,
+      "max": 8.0,
+      "default": 4.0
+    },
+    {
+      "id": "organ4",
+      "name": "4'",
+      "type": "float",
+      "min": 0.0,
+      "max": 8.0,
+      "default": 2.0
+    },
+    {
+      "id": "organMix",
+      "name": "mixture",
+      "type": "float",
+      "min": 0.0,
+      "max": 8.0,
+      "default": 3.0
+    },
+    {
+      "id": "lfoRate",
+      "name": "rate",
+      "type": "float",
+      "min": 0.1,
+      "max": 30.0,
+      "default": 3.0,
+      "unit": "Hz"
+    },
+    {
+      "id": "lfoShape",
+      "name": "shape",
+      "type": "choice",
+      "options": ["Tri", "Sin", "Sq", "S&H"],
+      "default": 0
+    },
+    {
+      "id": "lfoToVibrato",
+      "name": "vibrato",
+      "type": "float",
+      "min": 0.0,
+      "max": 50.0,
+      "default": 0.0,
+      "unit": "cents"
+    },
+    {
+      "id": "lfoToPwm",
+      "name": "pwm",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0
+    },
+    {
+      "id": "chorusMode",
+      "name": "chorus",
+      "type": "choice",
+      "options": ["Off", "I", "II", "I+II"],
+      "default": 1
+    },
+    {
+      "id": "driftAmount",
+      "name": "drift",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.3
+    },
+    {
+      "id": "stereoWidth",
+      "name": "width",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.8
+    },
+    {
+      "id": "portaTime",
+      "name": "glide",
+      "type": "float",
+      "min": 0.0,
+      "max": 2000.0,
+      "default": 0.0,
+      "unit": "ms"
+    },
+    {
+      "id": "portaMode",
+      "name": "glide mode",
+      "type": "choice",
+      "options": ["Legato", "Always"],
+      "default": 0
+    },
+    {
+      "id": "envAttack",
+      "name": "attack",
+      "type": "float",
+      "min": 0.001,
+      "max": 5.0,
+      "default": 0.01,
+      "skewCentre": 0.05,
+      "unit": "s"
+    },
+    {
+      "id": "envDecay",
+      "name": "decay",
+      "type": "float",
+      "min": 0.001,
+      "max": 10.0,
+      "default": 0.2,
+      "skewCentre": 0.08,
+      "unit": "s"
+    },
+    {
+      "id": "envSustain",
+      "name": "sustain",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.7
+    },
+    {
+      "id": "envRelease",
+      "name": "release",
+      "type": "float",
+      "min": 0.001,
+      "max": 15.0,
+      "default": 0.4,
+      "skewCentre": 0.2,
+      "unit": "s"
+    },
+    {
+      "id": "driveGain",
+      "name": "grit",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.2
+    },
+    {
+      "id": "tapeSat",
+      "name": "saturation",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.3
+    },
+    {
+      "id": "wowDepth",
+      "name": "wow",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.15
+    },
+    {
+      "id": "flutterDepth",
+      "name": "flutter",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.1
+    },
+    {
+      "id": "hissLevel",
+      "name": "hiss",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.1
+    },
+    {
+      "id": "humFreq",
+      "name": "mains",
+      "type": "choice",
+      "options": ["50", "60"],
+      "default": 1
+    },
+    {
+      "id": "printMix",
+      "name": "print mix",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.75
+    }
+  ]
+}
