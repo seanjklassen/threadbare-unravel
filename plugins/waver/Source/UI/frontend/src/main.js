@@ -175,6 +175,21 @@ function initApp() {
   }
 
   applyRbfInterpolation(morphState.puckX, morphState.puckY)
+
+  const arpBtn = document.querySelector(".btn-arp")
+  if (arpBtn) {
+    arpBtn.addEventListener("click", () => {
+      const next = !arpEnabled
+      sendHostParam("arpEnabled", next ? 1 : 0)
+    })
+  }
+}
+
+function syncArpButton(enabled) {
+  const btn = document.querySelector(".btn-arp")
+  if (!btn) return
+  btn.classList.toggle("active", enabled)
+  btn.setAttribute("aria-pressed", String(enabled))
 }
 
 function onArpStateChanged(nowEnabled) {
@@ -187,6 +202,7 @@ function onArpStateChanged(nowEnabled) {
       shell.controls.toggleSettingsView(false, { reason: "arp-lock" })
     }
     arpEnabled = nowEnabled
+    syncArpButton(arpEnabled)
     applyAxisLabels()
     return
   } else if (!nowEnabled && arpEnabled) {
@@ -208,6 +224,7 @@ function onArpStateChanged(nowEnabled) {
     }
   }
   arpEnabled = nowEnabled
+  syncArpButton(arpEnabled)
   applyAxisLabels()
 }
 

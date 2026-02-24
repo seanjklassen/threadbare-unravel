@@ -239,6 +239,71 @@
   color: var(--waver-text-lower);
 }
 
+/* ===== ARP BUTTON ===== */
+
+.btn-arp {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  border: none;
+  background: transparent;
+  color: var(--waver-text-lower);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.btn-arp::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  transform: scale(0.92);
+  transition:
+    background 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-arp:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.btn-arp:active::before {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-arp.active {
+  color: var(--waver-panel-ink);
+}
+
+.btn-arp.active::before {
+  background: var(--waver-surface-base-hover);
+  transform: scale(1);
+}
+
+.btn-arp svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+/* ===== ARP MODE UI LOCK ===== */
+
+.tb-app.arping .preset-pill,
+.tb-app.arping .btn-settings {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
 /* ===== AXIS LABEL READABILITY ===== */
 
 .tb-canvas-shell .axis-label {
