@@ -1,5 +1,8 @@
-const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108
-const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51
+import { WAVER_PALETTE, hexToRgb } from "./palette.js"
+
+const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase)
+const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift)
+const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft)
 
 const TRAIL_COUNT = 3
 const POINT_COUNT = 80
@@ -29,6 +32,8 @@ export class WaverViz {
 
     this._colorCache = ""
     this._glowCache = ""
+    this._skyFillCache = ""
+    this._groundFillCache = ""
     this._lastColorKey = -1
 
     this.resize()
@@ -85,6 +90,8 @@ export class WaverViz {
     }
 
     this._updateColors(age, energy)
+    ctx.fillStyle = this._skyFillCache
+    ctx.fillRect(0, 0, w, h)
 
     const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02
     const baseAmp = h * 0.025
@@ -105,13 +112,19 @@ export class WaverViz {
     this.trails[0].waveH = waveH * breathMod
     this.trails[0].energy = energy
 
+    ctx.beginPath()
+    this._traceFillPath(ctx, w, h, centerY, this.trails[0])
+    ctx.fillStyle = this._groundFillCache
+    ctx.globalAlpha = 0.96
+    ctx.fill()
+
     ctx.lineJoin = "round"
     ctx.lineCap = "round"
 
     for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
       const trail = this.trails[t]
       if (trail.waveH < 0.5) continue
-      const alpha = 0.03 + (TRAIL_COUNT - 1 - t) * 0.03
+      const alpha = 0.02 + (TRAIL_COUNT - 1 - t) * 0.02
       ctx.beginPath()
       this._tracePath(ctx, w, centerY, trail)
       ctx.strokeStyle = this._glowCache
@@ -153,6 +166,13 @@ export class WaverViz {
     }
   }
 
+  _traceFillPath(ctx, w, h, centerY, trail) {
+    this._tracePath(ctx, w, centerY, trail)
+    ctx.lineTo(w + OVERSHOOT, h + OVERSHOOT)
+    ctx.lineTo(-OVERSHOOT, h + OVERSHOOT)
+    ctx.closePath()
+  }
+
   _wave(t, amplitude, energy, phase, drift) {
     const p = phase
     const d = drift
@@ -185,5 +205,23 @@ export class WaverViz {
     const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
     this._colorCache = `rgb(${r},${g},${b})`
     this._glowCache = `rgba(${r},${g},${b},0.3)`
+    const skyLift = Math.round(quantEnergy * 6 + this.momentFlash * 10)
+    const skyR = Math.min(255, AMBER_R + skyLift)
+    const skyG = Math.min(255, AMBER_G + skyLift)
+    const skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65))
+    this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`
+    const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32
+    const groundR = Math.round(BG_R + (r - BG_R) * groundMix)
+    const groundG = Math.round(BG_G + (g - BG_G) * groundMix)
+    const groundB = Math.round(BG_B + (b - BG_B) * groundMix)
+    this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`
+
+    const compR = Math.round(groundR * 0.96 + skyR * 0.04)
+    const compG = Math.round(groundG * 0.96 + skyG * 0.04)
+    const compB = Math.round(groundB * 0.96 + skyB * 0.04)
+    document.documentElement.style.setProperty(
+      "--waver-ground-fill",
+      `rgb(${compR},${compG},${compB})`,
+    )
   }
 }

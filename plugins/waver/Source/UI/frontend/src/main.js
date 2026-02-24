@@ -8,6 +8,7 @@ import { PARAMS, PARAM_IDS } from "./generated/params.js"
 import { interpolate, generateSigmaOffsets } from "./rbf.js"
 import { FACTORY_SURFACES, getSurfaceByIndex } from "./preset-surfaces.js"
 import { buildDrawer } from "./drawer.js"
+import { WAVER_PALETTE, applyWaverPaletteCssVars } from "./palette.js"
 
 const getNativeFunction = createNativeFunctionBridge()
 const sendHostParam = createParamSender(getNativeFunction)
@@ -95,10 +96,10 @@ const sendParam = (id, value) => {
 }
 
 const THEME = {
-  bg: "#241D19",
-  text: "#D3C7BB",
-  accent: "#C4A46C",
-  "accent-hover": "#D4B87C",
+  bg: WAVER_PALETTE.panelInk,
+  text: WAVER_PALETTE.textUpper,
+  accent: WAVER_PALETTE.surfaceBaseHover,
+  "accent-hover": WAVER_PALETTE.panelInkSoft,
 }
 
 let shell = null
@@ -134,6 +135,8 @@ function onPresetLoaded(index, presetPuckX = 0.0, presetPuckY = 0.0) {
 }
 
 function initApp() {
+  applyWaverPaletteCssVars()
+
   shell = initShell({
     VizClass: WaverViz,
     params: PARAMS,
@@ -142,6 +145,7 @@ function initApp() {
     axisLabels: {
       normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" },
     },
+    puckBoundsInsetY: 84,
     getNativeFn: getNativeFunction,
     sendParam,
   })

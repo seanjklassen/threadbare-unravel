@@ -390,7 +390,7 @@ void WaverProcessor::initialiseFactoryPresets()
     factoryPresets = {
 
         // --- AMBER (warm pads, lush, breathing) ---
-        {"Amber Pad", {
+        {"A.M. Pad", {
             {"macroShape", 0.15f}, {"layerDco", 0.85f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 3200.0f}, {"filterRes", 0.2f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.3f}, {"noiseLevel", 0.02f},
@@ -401,7 +401,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
         }, -0.35f, -0.15f},
 
-        {"Golden Hour", {
+        {"Summer Here Pad", {
             {"macroShape", 0.35f}, {"layerDco", 0.7f}, {"layerToy", 0.15f}, {"layerOrgan", 0.1f},
             {"filterCutoff", 4500.0f}, {"filterRes", 0.25f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.2f}, {"noiseLevel", 0.04f},
@@ -412,7 +412,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.08f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
         }, 0.25f, 0.0f},
 
-        {"Soft Focus", {
+        {"Dial-A-View Focus", {
             {"macroShape", 0.05f}, {"layerDco", 0.9f}, {"layerToy", 0.0f}, {"layerOrgan", 0.15f},
             {"filterCutoff", 2000.0f}, {"filterRes", 0.1f}, {"filterMode", 1.0f},
             {"dcoSubLevel", 0.45f}, {"noiseLevel", 0.01f},
@@ -424,7 +424,7 @@ void WaverProcessor::initialiseFactoryPresets()
         }, -0.45f, 0.35f},
 
         // --- DRIFT (movement, modulation, evolving) ---
-        {"Slow Drift", {
+        {"Stray Dog Drift", {
             {"macroShape", 0.25f}, {"layerDco", 0.8f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 5000.0f}, {"filterRes", 0.35f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.15f}, {"noiseLevel", 0.03f},
@@ -435,7 +435,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.06f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
         }, -0.2f, 0.2f},
 
-        {"Wandering", {
+        {"Wandering Pilot", {
             {"macroShape", 0.5f}, {"layerDco", 0.6f}, {"layerToy", 0.2f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 6000.0f}, {"filterRes", 0.3f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.1f}, {"noiseLevel", 0.05f},
@@ -447,7 +447,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.07f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
         }, 0.45f, -0.05f},
 
-        {"Detuned Memory", {
+        {"Jed's Memory", {
             {"macroShape", 0.4f}, {"layerDco", 0.75f}, {"layerToy", 0.1f}, {"layerOrgan", 0.05f},
             {"filterCutoff", 3500.0f}, {"filterRes", 0.4f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.25f}, {"noiseLevel", 0.06f},
@@ -459,7 +459,7 @@ void WaverProcessor::initialiseFactoryPresets()
         }, 0.1f, 0.55f},
 
         // --- HUSH (quiet, intimate, barely there) ---
-        {"Whisper Keys", {
+        {"Hewlett's Keys", {
             {"macroShape", 0.0f}, {"layerDco", 0.5f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 1800.0f}, {"filterRes", 0.05f}, {"filterMode", 1.0f},
             {"dcoSubLevel", 0.5f}, {"noiseLevel", 0.0f},
@@ -470,7 +470,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.02f}, {"printMix", 0.4f}, {"outputGain", -3.0f}
         }, -0.45f, -0.55f},
 
-        {"Distant Hymn", {
+        {"Nature Anthem", {
             {"macroShape", 0.0f}, {"layerDco", 0.3f}, {"layerToy", 0.0f}, {"layerOrgan", 0.6f},
             {"organ16", 3.0f}, {"organ8", 5.0f}, {"organ4", 1.0f}, {"organMix", 2.0f},
             {"filterCutoff", 2500.0f}, {"filterRes", 0.1f}, {"filterMode", 0.0f},
@@ -482,7 +482,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.04f}, {"printMix", 0.55f}, {"outputGain", -2.0f}
         }, -0.2f, 0.1f},
 
-        {"Tape Lullaby", {
+        {"Willow Tape", {
             {"macroShape", 0.1f}, {"layerDco", 0.65f}, {"layerToy", 0.0f}, {"layerOrgan", 0.2f},
             {"organ16", 4.0f}, {"organ8", 3.0f}, {"organ4", 0.0f}, {"organMix", 1.0f},
             {"filterCutoff", 1500.0f}, {"filterRes", 0.15f}, {"filterMode", 1.0f},
@@ -495,7 +495,7 @@ void WaverProcessor::initialiseFactoryPresets()
         }, -0.35f, 0.65f},
 
         // --- SIGNAL (brighter, present, cutting through) ---
-        {"Toy Melody", {
+        {"Elson's Pocket Toy", {
             {"macroShape", 0.6f}, {"layerDco", 0.2f}, {"layerToy", 0.8f}, {"layerOrgan", 0.0f},
             {"toyIndex", 0.5f}, {"toyRatio", 0.3f},
             {"filterCutoff", 10000.0f}, {"filterRes", 0.15f}, {"filterMode", 0.0f},
@@ -507,7 +507,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.03f}, {"printMix", 0.5f}, {"outputGain", 0.0f}
         }, 0.35f, -0.55f},
 
-        {"Broken Bells", {
+        {"Broken Appliance Bells", {
             {"macroShape", 0.7f}, {"layerDco", 0.15f}, {"layerToy", 0.7f}, {"layerOrgan", 0.0f},
             {"toyIndex", 0.7f}, {"toyRatio", 0.6f},
             {"filterCutoff", 8000.0f}, {"filterRes", 0.2f}, {"filterMode", 0.0f},
@@ -519,7 +519,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.04f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
         }, 0.1f, -0.3f},
 
-        {"Pulse Lead", {
+        {"Humanoid Pulse", {
             {"macroShape", 0.85f}, {"layerDco", 0.9f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 6500.0f}, {"filterRes", 0.45f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.35f}, {"noiseLevel", 0.0f},
@@ -532,7 +532,7 @@ void WaverProcessor::initialiseFactoryPresets()
         }, 0.65f, -0.35f},
 
         // --- WEIGHT (deep, heavy, grounding) ---
-        {"Deep Foundation", {
+        {"Vacant Foundation", {
             {"macroShape", 0.0f}, {"layerDco", 0.7f}, {"layerToy", 0.0f}, {"layerOrgan", 0.5f},
             {"organ16", 8.0f}, {"organ8", 6.0f}, {"organ4", 2.0f}, {"organMix", 4.0f},
             {"filterCutoff", 1200.0f}, {"filterRes", 0.3f}, {"filterMode", 1.0f},
@@ -544,7 +544,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.06f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
         }, -0.55f, -0.35f},
 
-        {"Worn Organ", {
+        {"Saddest Organ", {
             {"macroShape", 0.0f}, {"layerDco", 0.0f}, {"layerToy", 0.0f}, {"layerOrgan", 0.9f},
             {"organ16", 6.0f}, {"organ8", 8.0f}, {"organ4", 4.0f}, {"organMix", 5.0f},
             {"filterCutoff", 4000.0f}, {"filterRes", 0.1f}, {"filterMode", 0.0f},
@@ -556,7 +556,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.12f}, {"printMix", 0.85f}, {"outputGain", -2.0f}
         }, 0.0f, 0.35f},
 
-        {"Basement Tape", {
+        {"Fambly Tape", {
             {"macroShape", 0.2f}, {"layerDco", 0.6f}, {"layerToy", 0.1f}, {"layerOrgan", 0.3f},
             {"organ16", 5.0f}, {"organ8", 4.0f}, {"organ4", 2.0f}, {"organMix", 3.0f},
             {"filterCutoff", 2800.0f}, {"filterRes", 0.2f}, {"filterMode", 0.0f},
@@ -569,7 +569,7 @@ void WaverProcessor::initialiseFactoryPresets()
         }, -0.2f, 0.7f},
 
         // --- SHOWCASE / HYBRID ---
-        {"Grandaddy Pad", {
+        {"Sophtware Pad", {
             {"macroShape", 0.3f}, {"layerDco", 0.65f}, {"layerToy", 0.15f}, {"layerOrgan", 0.2f},
             {"organ16", 4.0f}, {"organ8", 5.0f}, {"organ4", 2.0f}, {"organMix", 3.0f},
             {"toyIndex", 0.2f}, {"toyRatio", 0.4f},
@@ -582,7 +582,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.08f}, {"printMix", 0.75f}, {"outputGain", -1.0f}
         }, 0.0f, 0.1f},
 
-        {"PSS Nostalgia", {
+        {"Jed's PSS", {
             {"macroShape", 0.5f}, {"layerDco", 0.1f}, {"layerToy", 0.85f}, {"layerOrgan", 0.0f},
             {"toyIndex", 0.4f}, {"toyRatio", 0.5f},
             {"filterCutoff", 7000.0f}, {"filterRes", 0.1f}, {"filterMode", 0.0f},
@@ -594,7 +594,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
         }, 0.4f, -0.25f},
 
-        {"Juno Ghost", {
+        {"Pilot's Ghost", {
             {"macroShape", 0.2f}, {"layerDco", 1.0f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
             {"filterCutoff", 4000.0f}, {"filterRes", 0.3f}, {"filterMode", 0.0f},
             {"dcoSubLevel", 0.2f}, {"noiseLevel", 0.01f},
@@ -605,7 +605,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"hissLevel", 0.05f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
         }, 0.3f, 0.25f},
 
-        {"Glide Horizon", {
+        {"Skyward Glide", {
             {"macroShape", 0.45f}, {"layerDco", 0.7f}, {"layerToy", 0.2f}, {"layerOrgan", 0.1f},
             {"organ16", 3.0f}, {"organ8", 4.0f}, {"organ4", 1.0f}, {"organMix", 2.0f},
             {"toyIndex", 0.3f}, {"toyRatio", 0.4f},
