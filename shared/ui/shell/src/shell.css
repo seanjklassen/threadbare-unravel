@@ -598,30 +598,19 @@ body {
     background 120ms ease;
 }
 
-/* Open: organic stagger - slower reveal, varied timing */
+/* Open: organic stagger - slower reveal, varied timing.
+   Uses --i custom property set by JS on each option for dynamic list lengths. */
 .tb-app.presets-open .preset-option {
   opacity: 1;
   transform: translateY(0) translateX(0);
   filter: blur(0px);
-  
   transition:
     opacity 380ms cubic-bezier(0.16, 0.84, 0.44, 1),
     transform 520ms cubic-bezier(0.16, 0.84, 0.44, 1),
     filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
     background 120ms ease;
+  transition-delay: calc(40ms + var(--i, 0) * 20ms);
 }
-
-/* Organic stagger: accelerating then decelerating rhythm */
-.tb-app.presets-open .preset-option:nth-child(1) { transition-delay: 40ms; }
-.tb-app.presets-open .preset-option:nth-child(2) { transition-delay: 75ms; }
-.tb-app.presets-open .preset-option:nth-child(3) { transition-delay: 105ms; }
-.tb-app.presets-open .preset-option:nth-child(4) { transition-delay: 130ms; }
-.tb-app.presets-open .preset-option:nth-child(5) { transition-delay: 150ms; }
-.tb-app.presets-open .preset-option:nth-child(6) { transition-delay: 168ms; }
-.tb-app.presets-open .preset-option:nth-child(7) { transition-delay: 184ms; }
-.tb-app.presets-open .preset-option:nth-child(8) { transition-delay: 198ms; }
-.tb-app.presets-open .preset-option:nth-child(9) { transition-delay: 210ms; }
-.tb-app.presets-open .preset-option:nth-child(10) { transition-delay: 220ms; }
 
 /* ===== PRESET HOVER - "Focusing Attention" Effect ===== */
 /* 

@@ -57,14 +57,17 @@ export class WaverViz {
 
   update(state) {
     this.state = state || {}
-    const rms = state?.rms ?? 0
-    const peak = state?.peak ?? 0
+    const playing = state?.isPlaying ?? true
+    const playTarget = playing ? 1 : 0
+    this.playMix += (playTarget - this.playMix) * 0.06
+    if (this.playMix < 0.005) this.playMix = 0
+
+    const rms = playing ? (state?.rms ?? 0) : 0
+    const peak = playing ? (state?.peak ?? 0) : 0
     this.smoothRms += (rms - this.smoothRms) * 0.12
     this.smoothPeak += (peak - this.smoothPeak) * 0.15
     const arpTarget = state?.arpEnabled ? 1 : 0
     this.arpMix += (arpTarget - this.arpMix) * 0.08
-    const playTarget = (state?.isPlaying ?? true) ? 1 : 0
-    this.playMix += (playTarget - this.playMix) * 0.06
   }
 
   draw() {
@@ -244,7 +247,7 @@ export class WaverViz {
     const compB = Math.round(groundB * 0.96 + skyB * 0.04)
     document.documentElement.style.setProperty(
       "--waver-ground-fill",
-      `rgb(${compR},${compG},${compB})`,
+      `rgba(${compR},${compG},${compB},0.70)`,
     )
   }
 }

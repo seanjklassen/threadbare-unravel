@@ -72,7 +72,7 @@
 }
 
 .tb-app.presets-open .preset-dropdown {
-  background: var(--waver-panel-ink);
+  background: var(--waver-overlay-bg, rgba(228, 228, 216, 0.90));
   transition:
     opacity 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
     transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
@@ -299,9 +299,17 @@
 
 .tb-app.arping .preset-pill,
 .tb-app.arping .btn-settings {
-  opacity: 0.3;
+  opacity: 0.99;
   pointer-events: none;
   transition: opacity 0.3s ease;
+}
+
+.tb-canvas-shell .axis-label {
+  color: #969588;
+}
+
+.tb-canvas-shell.puck-dragging .axis-label {
+  opacity: 1;
 }
 
 .tb-canvas-shell .axis-label-top {

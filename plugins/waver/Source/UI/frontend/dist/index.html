@@ -1797,10 +1797,10 @@ const WAVER_PALETTE = Object.freeze({
   surfaceBaseHover: "#CC8A7E",
   textPrimary: "#31312B",
   panelInk: "#E4E4D8",
-  panelInkSoft: "#b8cac8",
+  panelInkSoft: "#31312B",
   waveformShadowDrift: "#b8cac8",
   textUpper: "#31312B",
-  textLower: "#31312B"
+  textLower: "#E4E4D8"
 });
 function hexToRgb(hex) {
   const normalized = hex.replace("#", "");
@@ -1829,6 +1829,7 @@ function applyWaverPaletteCssVars(target = document.documentElement) {
   target.style.setProperty("--waver-overlay-surface", alpha(WAVER_PALETTE.panelInkSoft, 0.3));
   target.style.setProperty("--waver-overlay-panel", alpha(WAVER_PALETTE.panelInk, 0.42));
   target.style.setProperty("--waver-border-soft", alpha(WAVER_PALETTE.panelInkSoft, 0.15));
+  target.style.setProperty("--waver-overlay-bg", alpha(WAVER_PALETTE.panelInk, 0.7));
 }
 const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase);
 const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift);
@@ -1875,14 +1876,16 @@ class WaverViz {
   }
   update(state) {
     this.state = state || {};
-    const rms = state?.rms ?? 0;
-    const peak = state?.peak ?? 0;
+    const playing = state?.isPlaying ?? true;
+    const playTarget = playing ? 1 : 0;
+    this.playMix += (playTarget - this.playMix) * 0.06;
+    if (this.playMix < 5e-3) this.playMix = 0;
+    const rms = playing ? state?.rms ?? 0 : 0;
+    const peak = playing ? state?.peak ?? 0 : 0;
     this.smoothRms += (rms - this.smoothRms) * 0.12;
     this.smoothPeak += (peak - this.smoothPeak) * 0.15;
     const arpTarget = state?.arpEnabled ? 1 : 0;
     this.arpMix += (arpTarget - this.arpMix) * 0.08;
-    const playTarget = state?.isPlaying ?? true ? 1 : 0;
-    this.playMix += (playTarget - this.playMix) * 0.06;
   }
   draw() {
     const ctx = this.ctx;
@@ -2033,7 +2036,7 @@ class WaverViz {
     const compB = Math.round(groundB * 0.96 + skyB * 0.04);
     document.documentElement.style.setProperty(
       "--waver-ground-fill",
-      `rgb(${compR},${compG},${compB})`
+      `rgba(${compR},${compG},${compB},0.70)`
     );
   }
 }
@@ -5030,30 +5033,19 @@ body {
     background 120ms ease;
 }
 
-/* Open: organic stagger - slower reveal, varied timing */
+/* Open: organic stagger - slower reveal, varied timing.
+   Uses --i custom property set by JS on each option for dynamic list lengths. */
 .tb-app.presets-open .preset-option {
   opacity: 1;
   transform: translateY(0) translateX(0);
   filter: blur(0px);
-  
   transition:
     opacity 380ms cubic-bezier(0.16, 0.84, 0.44, 1),
     transform 520ms cubic-bezier(0.16, 0.84, 0.44, 1),
     filter 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
     background 120ms ease;
+  transition-delay: calc(40ms + var(--i, 0) * 20ms);
 }
-
-/* Organic stagger: accelerating then decelerating rhythm */
-.tb-app.presets-open .preset-option:nth-child(1) { transition-delay: 40ms; }
-.tb-app.presets-open .preset-option:nth-child(2) { transition-delay: 75ms; }
-.tb-app.presets-open .preset-option:nth-child(3) { transition-delay: 105ms; }
-.tb-app.presets-open .preset-option:nth-child(4) { transition-delay: 130ms; }
-.tb-app.presets-open .preset-option:nth-child(5) { transition-delay: 150ms; }
-.tb-app.presets-open .preset-option:nth-child(6) { transition-delay: 168ms; }
-.tb-app.presets-open .preset-option:nth-child(7) { transition-delay: 184ms; }
-.tb-app.presets-open .preset-option:nth-child(8) { transition-delay: 198ms; }
-.tb-app.presets-open .preset-option:nth-child(9) { transition-delay: 210ms; }
-.tb-app.presets-open .preset-option:nth-child(10) { transition-delay: 220ms; }
 
 /* ===== PRESET HOVER - "Focusing Attention" Effect ===== */
 /* 
@@ -5805,7 +5797,7 @@ body {
 }
 
 .tb-app.presets-open .preset-dropdown {
-  background: var(--waver-panel-ink);
+  background: var(--waver-overlay-bg, rgba(228, 228, 216, 0.90));
   transition:
     opacity 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
     transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
@@ -6032,9 +6024,17 @@ body {
 
 .tb-app.arping .preset-pill,
 .tb-app.arping .btn-settings {
-  opacity: 0.3;
+  opacity: 0.99;
   pointer-events: none;
   transition: opacity 0.3s ease;
+}
+
+.tb-canvas-shell .axis-label {
+  color: #969588;
+}
+
+.tb-canvas-shell.puck-dragging .axis-label {
+  opacity: 1;
 }
 
 .tb-canvas-shell .axis-label-top {
@@ -6054,7 +6054,7 @@ body {
 }</style>
   </head>
   <body>
-    <div id="app" class="tb-app">
+    <div id="app" class="tb-app" style="opacity: 0">
       <header class="tb-top-bar">
         <div class="preset-pill" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0">
           <span class="chevron" aria-hidden="true">
