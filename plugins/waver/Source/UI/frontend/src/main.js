@@ -41,6 +41,25 @@ const PRESET_TO_SURFACE_INDEX = [
   0, 3, 0, 1, // Showcase / hybrid
 ]
 
+const SURFACE_LABELS = {
+  amber:  { left: "veiled",  right: "shimmering", top: "worn",      bottom: "tender" },
+  drift:  { left: "still",   right: "restless",   top: "fading",    bottom: "vivid" },
+  hush:   { left: "near",    right: "distant",    top: "ghosted",   bottom: "gentle" },
+  signal: { left: "soft",    right: "sharp",      top: "frayed",    bottom: "focused" },
+  weight: { left: "deep",    right: "hollow",     top: "weathered", bottom: "solid" },
+}
+
+const ARP_LABELS = { left: "patient", right: "scattered", top: "flowing", bottom: "clipped" }
+
+function applyAxisLabels() {
+  if (!shell?.controls?.setAxisLabels) return
+  if (arpEnabled) {
+    shell.controls.setAxisLabels(ARP_LABELS)
+  } else if (activeSurface?.category && SURFACE_LABELS[activeSurface.category]) {
+    shell.controls.setAxisLabels(SURFACE_LABELS[activeSurface.category])
+  }
+}
+
 function applyRbfInterpolation(puckX, puckY) {
   if (!activeSurface) return
 
@@ -130,6 +149,7 @@ function onPresetLoaded(index, presetPuckX = 0.0, presetPuckY = 0.0) {
 
     rbfThrottle = 0
     applyRbfInterpolation(clampedX, clampedY)
+    applyAxisLabels()
   }
 }
 
@@ -142,7 +162,7 @@ function initApp() {
     paramOrder: PARAM_IDS,
     themeTokens: THEME,
     axisLabels: {
-      normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" },
+      normal: SURFACE_LABELS[activeSurface?.category] ?? SURFACE_LABELS.amber,
     },
     puckBoundsInsetY: 84,
     getNativeFn: getNativeFunction,
@@ -166,6 +186,9 @@ function onArpStateChanged(nowEnabled) {
     if (shell?.controls?.toggleSettingsView) {
       shell.controls.toggleSettingsView(false, { reason: "arp-lock" })
     }
+    arpEnabled = nowEnabled
+    applyAxisLabels()
+    return
   } else if (!nowEnabled && arpEnabled) {
     app?.classList.remove("arping")
     if (savedPuckState) {
@@ -185,6 +208,7 @@ function onArpStateChanged(nowEnabled) {
     }
   }
   arpEnabled = nowEnabled
+  applyAxisLabels()
 }
 
 function handleBackendState(payload) {

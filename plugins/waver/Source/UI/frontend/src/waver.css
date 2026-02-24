@@ -238,3 +238,9 @@
   background: var(--waver-surface-base-hover);
   color: var(--waver-text-lower);
 }
+
+/* ===== AXIS LABEL READABILITY ===== */
+
+.tb-canvas-shell .axis-label {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
