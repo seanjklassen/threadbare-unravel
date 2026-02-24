@@ -113,8 +113,6 @@ threadbare::core::NativeFunctionMap createNativeFunctions(WaverProcessor& proces
                     const auto type = args[0].toString();
                     if (type == "moment")
                         processorPtr->enqueueMomentTrigger();
-                    else if (type == "arp" && args.size() >= 2)
-                        processorPtr->enqueueArpToggle(static_cast<bool>(args[1]));
                 }
                 completion({});
             }
@@ -185,6 +183,7 @@ void WaverEditor::handleUpdate()
     obj->setProperty("mix", state.mix);
     obj->setProperty("rms", state.rmsLevel);
     obj->setProperty("peak", state.peakLevel);
+    obj->setProperty("arpEnabled", state.arpEnabled);
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());
 
     webView.emitEventIfBrowserIsVisible("updateState", juce::JSON::toString(juce::var(obj)));

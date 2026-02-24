@@ -49,6 +49,7 @@ public:
         float outLevel = 0.0f;
         float rmsLevel = 0.0f;
         float peakLevel = 0.0f;
+        bool arpEnabled = false;
     };
 
     struct DeterminismState
@@ -62,7 +63,6 @@ public:
     bool popVisualState(WaverState& out) noexcept;
     void setMorphSnapshot(float puckX, float puckY, float blend) noexcept;
     void enqueueMomentTrigger() noexcept;
-    void enqueueArpToggle(bool enabled) noexcept;
 
 protected:
     void onSaveState(juce::ValueTree& state) override;
@@ -81,8 +81,7 @@ private:
 
     enum class EventType : std::uint8_t
     {
-        momentTrigger = 1,
-        arpToggle = 2
+        momentTrigger = 1
     };
 
     struct UiEvent
@@ -128,6 +127,8 @@ private:
     std::atomic<float> morphBlend { 0.35f };
     std::atomic<float> presetPuckX { 0.0f };
     std::atomic<float> presetPuckY { 0.0f };
+    float frozenAgeNorm = 0.5f;
+    bool prevArpOn = false;
     std::vector<Preset> factoryPresets;
     int currentProgramIndex = 0;
 

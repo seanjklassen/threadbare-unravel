@@ -93,13 +93,19 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
 
     const float ageNorm = (puckY + 1.0f) * 0.5f;
 
+    const bool arpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
+    if (arpOn && !prevArpOn)
+        frozenAgeNorm = ageNorm;
+    prevArpOn = arpOn;
+    latestState.arpEnabled = arpOn;
+
     engine.setPortamento(portaTimeMs, portaMode == 1);
     engine.setChorusMode(chorusMode);
     engine.setFilter(filterCutoff, filterRes, filterMode == 1);
     engine.setWaveBlend(macroShape);
     engine.setLfoToPwm(lfoToPwm);
     engine.setDriftAmount(driftAmt);
-    engine.setAge(ageNorm);
+    engine.setAge(arpOn ? frozenAgeNorm : ageNorm);
     engine.setSubLevel(dcoSubLvl);
     engine.setNoiseLevel(noiseLvl);
     engine.setLfoRate(lfoRateHz);
@@ -126,7 +132,6 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     engine.setOrganLevel(layOrgan);
     engine.setPrintParams(driveGn, tapeSt, wowDp, flutDp, hissLv, humHz, printMx);
 
-    const bool arpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
     engine.setArpEnabled(arpOn);
     if (arpOn)
         engine.setArpPuck(latestState.puckX, latestState.puckY);
@@ -306,11 +311,6 @@ void WaverProcessor::enqueueMomentTrigger() noexcept
     uiEventQueue.push(UiEvent { EventType::momentTrigger, 1.0f });
 }
 
-void WaverProcessor::enqueueArpToggle(bool enabled) noexcept
-{
-    uiEventQueue.push(UiEvent { EventType::arpToggle, enabled ? 1.0f : 0.0f });
-}
-
 void WaverProcessor::drainUiEvents() noexcept
 {
     UiEvent event;
@@ -320,10 +320,6 @@ void WaverProcessor::drainUiEvents() noexcept
         {
             case EventType::momentTrigger:
                 ++determinismState.prngCounter;
-                break;
-            case EventType::arpToggle:
-                if (auto* param = apvts.getRawParameterValue("arpEnabled"))
-                    juce::ignoreUnused(param);
                 break;
             default:
                 break;
