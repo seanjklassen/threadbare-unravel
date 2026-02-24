@@ -180,7 +180,7 @@ body {
   transition: box-shadow 0.1s ease-out, background 0.2s ease-out;
   cursor: grab;
   -webkit-tap-highlight-color: transparent;
-  z-index: 2;
+  z-index: 10;
   /* NOTE: backdrop-filter and will-change disabled - caused rendering artifacts in JUCE WebView */
   /* CSS fallback: center puck before JS positions it */
   left: 50%;
@@ -280,7 +280,7 @@ body {
   transition: opacity 0.2s ease-out;
   text-transform: lowercase;
   letter-spacing: 0.02em;
-  z-index: 10;
+  z-index: 2;
   white-space: nowrap;
 }
 

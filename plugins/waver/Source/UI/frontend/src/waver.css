@@ -304,8 +304,18 @@
   transition: opacity 0.3s ease;
 }
 
-/* ===== AXIS LABEL READABILITY ===== */
+.tb-canvas-shell .axis-label-top {
+  top: 84px;
+}
 
-.tb-canvas-shell .axis-label {
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+.tb-canvas-shell .axis-label-bottom {
+  margin-top: 60px;
+  margin-bottom: 60px;
+}
+
+.tb-canvas-shell .axis-label-right {
+  right: 6px;
+  top: 464px;
+  height: fit-content;
+  text-align: center;
 }

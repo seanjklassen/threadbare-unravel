@@ -39,11 +39,13 @@ public:
     void setGate(float ratio) noexcept;
     void setSwing(float amount) noexcept;
     void setPattern(Pattern p) noexcept;
+    void setHostTempo(double bpm) noexcept;
 
     void setPuckParams(float puckX, float puckY) noexcept;
 
     void noteOn(int noteNumber, float velocity) noexcept;
     void noteOff(int noteNumber) noexcept;
+    void allNotesOff() noexcept;
 
     NoteEvent advance(int numSamples) noexcept;
 
@@ -57,6 +59,7 @@ private:
     float gateRatio = 0.5f;
     float swingAmount = 0.0f;
     Pattern pattern = Pattern::up;
+    double hostBpm = 0.0;
 
     struct HeldNote
     {

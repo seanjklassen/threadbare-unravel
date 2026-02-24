@@ -58,23 +58,33 @@ void ArpEngine::setPattern(Pattern p) noexcept
     pattern = p;
 }
 
+void ArpEngine::setHostTempo(double bpm) noexcept
+{
+    hostBpm = bpm;
+}
+
 void ArpEngine::setPuckParams(float puckX, float puckY) noexcept
 {
     const float normX = (puckX + 1.0f) * 0.5f;
     const float normY = (puckY + 1.0f) * 0.5f;
 
-    setRate(0.5f + normX * 15.0f);
+    // 6 tempo-synced zones: slow (left) -> fast (right)
+    // Divisor = notes per beat (e.g. 2.0 = eighth notes)
+    static constexpr float kDivisors[] = {
+        0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 6.0f
+    };
+    static constexpr Pattern kPatterns[] = {
+        Pattern::up, Pattern::up, Pattern::upDown,
+        Pattern::upDown, Pattern::downUp, Pattern::random
+    };
 
-    if (normX < 0.25f)
-        setPattern(Pattern::up);
-    else if (normX < 0.5f)
-        setPattern(Pattern::upDown);
-    else if (normX < 0.75f)
-        setPattern(Pattern::downUp);
-    else
-        setPattern(Pattern::random);
+    const int zone = std::min(5, static_cast<int>(normX * 6.0f));
+    setPattern(kPatterns[zone]);
 
-    setGate(0.15f + normY * 0.7f);
+    const double bpm = hostBpm > 0.0 ? hostBpm : 120.0;
+    setRate(static_cast<float>(bpm / 60.0 * static_cast<double>(kDivisors[zone])));
+
+    setGate(0.15f + normY * 0.50f);
     setSwing(normY * 0.4f);
 }
 
@@ -141,12 +151,33 @@ void ArpEngine::noteOff(int noteNumber) noexcept
     }
 }
 
+void ArpEngine::allNotesOff() noexcept
+{
+    for (auto& n : heldNotes)
+        n.active = false;
+    heldCount = 0;
+    sortedCount = 0;
+}
+
 ArpEngine::NoteEvent ArpEngine::advance(int numSamples) noexcept
 {
     NoteEvent event;
 
-    if (!enabled || sortedCount == 0)
+    if (!enabled)
         return event;
+
+    if (sortedCount == 0)
+    {
+        if (noteIsOn && currentNote >= 0)
+        {
+            noteIsOn = false;
+            event.noteNumber = currentNote;
+            event.velocity = 0.0f;
+            event.isNoteOn = false;
+            currentNote = -1;
+        }
+        return event;
+    }
 
     const double stepDuration = sr / static_cast<double>(rateHz);
     const bool isSwungStep = (currentStep & 1) != 0;
@@ -225,8 +256,19 @@ int ArpEngine::nextPatternNote() noexcept
 
         case Pattern::random:
         {
-            const auto r = nextRandom();
-            idx = static_cast<int>(r % static_cast<std::uint32_t>(sortedCount));
+            if (sortedCount <= 1)
+            {
+                idx = 0;
+            }
+            else
+            {
+                for (int attempt = 0; attempt < 3; ++attempt)
+                {
+                    idx = static_cast<int>(nextRandom() % static_cast<std::uint32_t>(sortedCount));
+                    if (heldNotes[static_cast<std::size_t>(sortedIndices[static_cast<std::size_t>(idx)])].noteNumber != currentNote)
+                        break;
+                }
+            }
             break;
         }
     }

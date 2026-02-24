@@ -41,17 +41,17 @@ The puck is the instrument. The drawer is the workbench. Most of the time the pu
 
 ### three layers
 
-The sound engine runs three synthesis layers simultaneously, mixed before they hit the filter and print chain.
+The sound engine blends three synthesis layers simultaneously.
 
-**analog.** A digitally-controlled oscillator modeled on the Juno-60. Sawtooth and pulse with continuous crossfade between them, sub-oscillator, noise. The BBD ensemble chorus is here — three modes, all modeled with bandwidth limiting and compander noise that breathes harder as the age goes up. This is the pad layer. The warmth.
+**analog.** A digitally-controlled oscillator modeled on the one you can find in a Juno-60. The chorus you know is here. You can feel it breathing harder as its age goes up. 
 
-**toy.** A two-operator phase modulation engine modeled on the Yamaha PSS-270 and its YM2413 chip. 9-bit DAC quantization, stepped envelopes, snapped operator ratios. It sounds like a $40 keyboard from 1988, which is exactly the point. This is the melody layer. The charm.
+**toy.** A two-operator phase modulation engine modeled on the YM2413 chip. 9-bit DAC quantization, stepped envelopes, snapped operator ratios. It sounds like a $40 keyboard from 1988, which is exactly the point. 
 
-**organ.** A divide-down organ modeled on a Baldwin spinet. Four drawbars (16', 8', 4', mixture), formant filtering, key-click transients. Full polyphony with no voice stealing — every note you hold down plays, just like the real thing. As age increases, you get key-click bleed and oscillator leakage, the sound of a church organ that hasn't been serviced in decades. This is the foundation layer. The gravity.
+**organ.** A divide-down organ modeled on a Baldwin spinet As age increases, you get key-click bleed and oscillator leakage, the sound of a church organ that hasn't been serviced in decades. 
 
 ### tone
 
-The filter defaults to an IR3109 OTA model — the actual chip in the Juno-60. Softer resonance than a Moog ladder, warmer self-oscillation, a singing quality at high Q instead of a scream. A Moog ladder mode is there if you want it. Cutoff, resonance, key tracking, envelope depth.
+Softer resonance than a Moog ladder, warmer self-oscillation, a singing quality at high Q instead of a scream. A Moog-inspired ladder is there too if you want it. Cutoff, resonance, key tracking, envelope depth.
 
 ### shape
 
@@ -61,9 +61,9 @@ One macro that sweeps from saw-heavy analog pads through nasal toy leads to orga
 
 LFO with vibrato and pulse-width modulation. Chorus mode selection. Drift amount — how far the oscillators wander before they remember where they're supposed to be. Stereo width. Portamento with legato detection for the melodic lines that need it. Full ADSR envelope.
 
-### print
+### etc.
 
-This is not an optional effect chain. It's fundamental to what waver sounds like. Overdrive modeled on the SD-1 mid-push, cassette tape saturation with hysteresis, wow and flutter from a simulated transport mechanism, and a noise floor made of tape hiss, mains hum, and mechanical whir. As age increases, the tape gets worse — deeper wow, more flutter, dropout events where the oxide has shed. The print mix control lets you dial it back if you want, but I almost never do.
+Overdrive modeled on the SD-1 mid-push, cassette tape saturation with hysteresis, wow and flutter from a simulated transport mechanism, a noise floor made of tape hiss, mains hum, mechanical whir, and more buzzwords.
 
 ### moment
 

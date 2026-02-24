@@ -147,8 +147,6 @@ function onPresetLoaded(index, presetPuckX = 0.0, presetPuckY = 0.0) {
     }
     shell?.controls?.animatePuckTo(normX, normY)
 
-    rbfThrottle = 0
-    applyRbfInterpolation(clampedX, clampedY)
     applyAxisLabels()
   }
 }
@@ -180,6 +178,9 @@ function initApp() {
   if (arpBtn) {
     arpBtn.addEventListener("click", () => {
       const next = !arpEnabled
+      if (!next && savedPuckState && typeof sendMorphSnapshotNative === "function") {
+        sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend)
+      }
       sendHostParam("arpEnabled", next ? 1 : 0)
     })
   }

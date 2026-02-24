@@ -136,6 +136,17 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     if (arpOn)
         engine.setArpPuck(latestState.puckX, latestState.puckY);
 
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto pos = playHead->getPosition())
+        {
+            if (auto bpm = pos->getBpm())
+                engine.setArpHostTempo(*bpm);
+            else
+                engine.setArpHostTempo(0.0);
+        }
+    }
+
     const auto renderRange = [&](int startSample, int endSample)
     {
         if (endSample <= startSample)
@@ -172,6 +183,8 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             const int cc = message.getControllerNumber();
             if (cc == 64)
                 engine.setSustainPedal(message.getControllerValue() >= 64);
+            else if (cc == 123 || cc == 120)
+                engine.arpAllNotesOff();
         }
     };
 

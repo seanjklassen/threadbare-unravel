@@ -29,6 +29,7 @@ export class WaverViz {
     }
 
     this.arpMix = 0
+    this.playMix = 1
 
     this.reducedMotion =
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
@@ -62,6 +63,8 @@ export class WaverViz {
     this.smoothPeak += (peak - this.smoothPeak) * 0.15
     const arpTarget = state?.arpEnabled ? 1 : 0
     this.arpMix += (arpTarget - this.arpMix) * 0.08
+    const playTarget = (state?.isPlaying ?? true) ? 1 : 0
+    this.playMix += (playTarget - this.playMix) * 0.06
   }
 
   draw() {
@@ -85,9 +88,10 @@ export class WaverViz {
     const crest = rms > 0.001 ? peak / rms : 1.0
     const transientKick = Math.pow(Math.max(0, (crest - 2.0) / 8.0), 0.6)
 
-    this.phase += 0.003 + energy * 0.025
-    this.driftPhase += 0.0011 + energy * 0.0008
-    this.breathPhase += 0.003
+    const pm = this.playMix
+    this.phase += (0.003 + energy * 0.025) * pm
+    this.driftPhase += (0.0011 + energy * 0.0008) * pm
+    this.breathPhase += 0.003 * pm
 
     if (this.momentFlash > 0.01) {
       this.momentFlash *= 0.92
@@ -99,11 +103,11 @@ export class WaverViz {
     ctx.fillStyle = this._skyFillCache
     ctx.fillRect(0, 0, w, h)
 
-    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02
+    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02 * pm
     const baseAmp = h * 0.025
     const signalAmp = h * 0.30 * energy
     const peakAmp = h * 0.12 * transientKick
-    const waveH = baseAmp + signalAmp + peakAmp
+    const waveH = (baseAmp + signalAmp + peakAmp) * pm
     const breathMod = 1.0 + Math.sin(this.breathPhase) * 0.15
     const lineWidth = 1.5 + age * 1.0 + transientKick * 0.8
 

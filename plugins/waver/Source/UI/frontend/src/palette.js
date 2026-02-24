@@ -1,11 +1,11 @@
 const WAVER_PALETTE = Object.freeze({
-  surfaceBase: "#31312B",
-  surfaceBaseHover: "#DD8469",
-  textPrimary: "#D3C7BB",
-  panelInk: "#31312B",
-  panelInkSoft: "#7F9BA5",
-  waveformShadowDrift: "#7F9BA5",
-  textUpper: "#D3C7BB",
+  surfaceBase: "#E4E4D8",
+  surfaceBaseHover: "#CC8A7E",
+  textPrimary: "#31312B",
+  panelInk: "#E4E4D8",
+  panelInkSoft: "#b8cac8",
+  waveformShadowDrift: "#b8cac8",
+  textUpper: "#31312B",
   textLower: "#31312B",
 })
 

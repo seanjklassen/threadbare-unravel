@@ -48,8 +48,10 @@ public:
 
     void setArpEnabled(bool on) noexcept;
     void setArpPuck(float puckX, float puckY) noexcept;
+    void setArpHostTempo(double bpm) noexcept;
     void arpNoteOn(int midiNote, float velocity) noexcept;
     void arpNoteOff(int midiNote, float velocity) noexcept;
+    void arpAllNotesOff() noexcept;
 
 private:
     WaverVoiceAllocator voiceAllocator;

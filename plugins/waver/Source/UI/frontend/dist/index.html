@@ -916,6 +916,16 @@ class Controls {
     }
   }
   /**
+   * Replace the normal-mode axis labels at runtime.
+   * Opt-in API — callers that never invoke this get default behavior.
+   * @param {{ left?: string, right?: string, top?: string, bottom?: string }} labels
+   */
+  setAxisLabels(labels) {
+    if (!labels || typeof labels !== "object") return;
+    this.axisLabelText.normal = { ...this.axisLabelText.normal, ...labels };
+    this.updateAxisLabels();
+  }
+  /**
    * Update axis label text based on looper state
    * Labels show different descriptors for normal vs loop mode
    */
@@ -1783,13 +1793,13 @@ const createParamSender = (getNativeFn) => {
   };
 };
 const WAVER_PALETTE = Object.freeze({
-  surfaceBase: "#31312B",
-  surfaceBaseHover: "#DD8469",
-  textPrimary: "#D3C7BB",
-  panelInk: "#31312B",
-  panelInkSoft: "#7F9BA5",
-  waveformShadowDrift: "#7F9BA5",
-  textUpper: "#D3C7BB",
+  surfaceBase: "#E4E4D8",
+  surfaceBaseHover: "#CC8A7E",
+  textPrimary: "#31312B",
+  panelInk: "#E4E4D8",
+  panelInkSoft: "#b8cac8",
+  waveformShadowDrift: "#b8cac8",
+  textUpper: "#31312B",
   textLower: "#31312B"
 });
 function hexToRgb(hex) {
@@ -1823,6 +1833,7 @@ function applyWaverPaletteCssVars(target = document.documentElement) {
 const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase);
 const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift);
 const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft);
+const ARP_BLUE = { r: 106, g: 158, b: 181 };
 const TRAIL_COUNT = 3;
 const POINT_COUNT = 80;
 const OVERSHOOT = 30;
@@ -1841,6 +1852,8 @@ class WaverViz {
     for (let i = 0; i < TRAIL_COUNT; i++) {
       this.trails.push({ phase: this.phase, driftPhase: this.driftPhase, waveH: 0, energy: 0 });
     }
+    this.arpMix = 0;
+    this.playMix = 1;
     this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     this.lastSnapshotTime = 0;
     this._colorCache = "";
@@ -1866,6 +1879,10 @@ class WaverViz {
     const peak = state?.peak ?? 0;
     this.smoothRms += (rms - this.smoothRms) * 0.12;
     this.smoothPeak += (peak - this.smoothPeak) * 0.15;
+    const arpTarget = state?.arpEnabled ? 1 : 0;
+    this.arpMix += (arpTarget - this.arpMix) * 0.08;
+    const playTarget = state?.isPlaying ?? true ? 1 : 0;
+    this.playMix += (playTarget - this.playMix) * 0.06;
   }
   draw() {
     const ctx = this.ctx;
@@ -1882,9 +1899,10 @@ class WaverViz {
     const energy = Math.max(0, Math.min(1, (dbRms + 48) / 48));
     const crest = rms > 1e-3 ? peak / rms : 1;
     const transientKick = Math.pow(Math.max(0, (crest - 2) / 8), 0.6);
-    this.phase += 3e-3 + energy * 0.025;
-    this.driftPhase += 11e-4 + energy * 8e-4;
-    this.breathPhase += 3e-3;
+    const pm = this.playMix;
+    this.phase += (3e-3 + energy * 0.025) * pm;
+    this.driftPhase += (11e-4 + energy * 8e-4) * pm;
+    this.breathPhase += 3e-3 * pm;
     if (this.momentFlash > 0.01) {
       this.momentFlash *= 0.92;
     } else {
@@ -1893,11 +1911,11 @@ class WaverViz {
     this._updateColors(age, energy);
     ctx.fillStyle = this._skyFillCache;
     ctx.fillRect(0, 0, w, h);
-    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02;
+    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02 * pm;
     const baseAmp = h * 0.025;
     const signalAmp = h * 0.3 * energy;
     const peakAmp = h * 0.12 * transientKick;
-    const waveH = baseAmp + signalAmp + peakAmp;
+    const waveH = (baseAmp + signalAmp + peakAmp) * pm;
     const breathMod = 1 + Math.sin(this.breathPhase) * 0.15;
     const lineWidth = 1.5 + age * 1 + transientKick * 0.8;
     for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
@@ -1980,24 +1998,35 @@ class WaverViz {
   _updateColors(age, energy) {
     const quantAge = Math.round(age * 20) / 20;
     const quantEnergy = Math.round(energy * 10) / 10;
+    const quantArp = Math.round(this.arpMix * 20) / 20;
     const shift = Math.min(1, quantAge * 0.4 + this.momentFlash * 0.5);
-    const key = shift * 100 + quantEnergy;
+    const key = shift * 1e4 + quantEnergy * 100 + quantArp;
     if (key === this._lastColorKey) return;
     this._lastColorKey = key;
-    const r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
-    const g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
-    const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
+    const lerp = (a, b2, t) => Math.round(a + (b2 - a) * t);
+    let r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
+    let g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
+    let b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
+    r = lerp(r, ARP_BLUE.r, quantArp);
+    g = lerp(g, ARP_BLUE.g, quantArp);
+    b = lerp(b, ARP_BLUE.b, quantArp);
     this._colorCache = `rgb(${r},${g},${b})`;
     this._glowCache = `rgba(${r},${g},${b},0.3)`;
     const skyLift = Math.round(quantEnergy * 6 + this.momentFlash * 10);
-    const skyR = Math.min(255, AMBER_R + skyLift);
-    const skyG = Math.min(255, AMBER_G + skyLift);
-    const skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65));
+    let skyR = Math.min(255, AMBER_R + skyLift);
+    let skyG = Math.min(255, AMBER_G + skyLift);
+    let skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65));
+    skyR = lerp(skyR, lerp(AMBER_R, ARP_BLUE.r, 0.15), quantArp);
+    skyG = lerp(skyG, lerp(AMBER_G, ARP_BLUE.g, 0.15), quantArp);
+    skyB = lerp(skyB, lerp(AMBER_B, ARP_BLUE.b, 0.2), quantArp);
     this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`;
     const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32;
-    const groundR = Math.round(BG_R + (r - BG_R) * groundMix);
-    const groundG = Math.round(BG_G + (g - BG_G) * groundMix);
-    const groundB = Math.round(BG_B + (b - BG_B) * groundMix);
+    let groundR = Math.round(BG_R + (r - BG_R) * groundMix);
+    let groundG = Math.round(BG_G + (g - BG_G) * groundMix);
+    let groundB = Math.round(BG_B + (b - BG_B) * groundMix);
+    groundR = lerp(groundR, lerp(BG_R, ARP_BLUE.r, 0.2), quantArp);
+    groundG = lerp(groundG, lerp(BG_G, ARP_BLUE.g, 0.2), quantArp);
+    groundB = lerp(groundB, lerp(BG_B, ARP_BLUE.b, 0.25), quantArp);
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`;
     const compR = Math.round(groundR * 0.96 + skyR * 0.04);
     const compG = Math.round(groundG * 0.96 + skyG * 0.04);
@@ -4179,6 +4208,8 @@ let momentSeed = 42;
 let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.length, momentSeed) : [];
 let rbfThrottle = 0;
 let lastLoadedPresetIndex = -1;
+let arpEnabled = false;
+let savedPuckState = null;
 const PRESET_TO_SURFACE_INDEX = [
   0,
   0,
@@ -4206,6 +4237,22 @@ const PRESET_TO_SURFACE_INDEX = [
   1
   // Showcase / hybrid
 ];
+const SURFACE_LABELS = {
+  amber: { left: "veiled", right: "shimmering", top: "worn", bottom: "tender" },
+  drift: { left: "still", right: "restless", top: "fading", bottom: "vivid" },
+  hush: { left: "near", right: "distant", top: "ghosted", bottom: "gentle" },
+  signal: { left: "soft", right: "sharp", top: "frayed", bottom: "focused" },
+  weight: { left: "deep", right: "hollow", top: "weathered", bottom: "solid" }
+};
+const ARP_LABELS = { left: "patient", right: "scattered", top: "flowing", bottom: "clipped" };
+function applyAxisLabels() {
+  if (!shell?.controls?.setAxisLabels) return;
+  if (arpEnabled) {
+    shell.controls.setAxisLabels(ARP_LABELS);
+  } else if (activeSurface?.category && SURFACE_LABELS[activeSurface.category]) {
+    shell.controls.setAxisLabels(SURFACE_LABELS[activeSurface.category]);
+  }
+}
 function applyRbfInterpolation(puckX, puckY) {
   if (!activeSurface) return;
   const now = performance.now();
@@ -4231,7 +4278,7 @@ const sendParam = (id, value) => {
     if (typeof sendMorphSnapshotNative === "function") {
       sendMorphSnapshotNative(morphState.puckX, morphState.puckY, morphState.blend);
     }
-    if (id === "puckX" || id === "puckY") {
+    if ((id === "puckX" || id === "puckY") && !arpEnabled) {
       applyRbfInterpolation(morphState.puckX, morphState.puckY);
     }
     return;
@@ -4249,9 +4296,6 @@ const sendParam = (id, value) => {
     }
     applyRbfInterpolation(morphState.puckX, morphState.puckY);
     return;
-  }
-  if (id === "arpEnabled" && typeof enqueueUiEventNative === "function") {
-    enqueueUiEventNative("arp", Boolean(value));
   }
   sendHostParam(id, value);
 };
@@ -4283,8 +4327,7 @@ function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
       sendMorphSnapshotNative(clampedX, clampedY, morphState.blend);
     }
     shell?.controls?.animatePuckTo(normX, normY);
-    rbfThrottle = 0;
-    applyRbfInterpolation(clampedX, clampedY);
+    applyAxisLabels();
   }
 }
 function initApp() {
@@ -4295,7 +4338,7 @@ function initApp() {
     paramOrder: PARAM_IDS,
     themeTokens: THEME,
     axisLabels: {
-      normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" }
+      normal: SURFACE_LABELS[activeSurface?.category] ?? SURFACE_LABELS.amber
     },
     puckBoundsInsetY: 84,
     getNativeFn: getNativeFunction,
@@ -4306,6 +4349,54 @@ function initApp() {
     drawer = buildDrawer(drawerContent, sendParam);
   }
   applyRbfInterpolation(morphState.puckX, morphState.puckY);
+  const arpBtn = document.querySelector(".btn-arp");
+  if (arpBtn) {
+    arpBtn.addEventListener("click", () => {
+      const next = !arpEnabled;
+      if (!next && savedPuckState && typeof sendMorphSnapshotNative === "function") {
+        sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend);
+      }
+      sendHostParam("arpEnabled", next ? 1 : 0);
+    });
+  }
+}
+function syncArpButton(enabled) {
+  const btn = document.querySelector(".btn-arp");
+  if (!btn) return;
+  btn.classList.toggle("active", enabled);
+  btn.setAttribute("aria-pressed", String(enabled));
+}
+function onArpStateChanged(nowEnabled) {
+  const app = document.getElementById("app");
+  if (nowEnabled && !arpEnabled) {
+    savedPuckState = { puckX: morphState.puckX, puckY: morphState.puckY };
+    app?.classList.add("arping");
+    if (shell?.controls?.toggleSettingsView) {
+      shell.controls.toggleSettingsView(false, { reason: "arp-lock" });
+    }
+    arpEnabled = nowEnabled;
+    syncArpButton(arpEnabled);
+    applyAxisLabels();
+    return;
+  } else if (!nowEnabled && arpEnabled) {
+    app?.classList.remove("arping");
+    if (savedPuckState) {
+      morphState = { ...morphState, puckX: savedPuckState.puckX, puckY: savedPuckState.puckY };
+      if (typeof sendMorphSnapshotNative === "function") {
+        sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend);
+      }
+      const normX = (savedPuckState.puckX + 1) * 0.5;
+      const normY = (1 - savedPuckState.puckY) * 0.5;
+      shell?.controls?.setPuckPositionImmediate(normX, normY);
+      shell?.controls?.renderReadoutsFromNorm(normX, normY);
+      rbfThrottle = 0;
+      applyRbfInterpolation(savedPuckState.puckX, savedPuckState.puckY);
+      savedPuckState = null;
+    }
+  }
+  arpEnabled = nowEnabled;
+  syncArpButton(arpEnabled);
+  applyAxisLabels();
 }
 function handleBackendState(payload) {
   let parsed = payload;
@@ -4314,6 +4405,12 @@ function handleBackendState(payload) {
       parsed = JSON.parse(payload);
     } catch {
       return;
+    }
+  }
+  if (typeof parsed?.arpEnabled === "boolean" || typeof parsed?.arpEnabled === "number") {
+    const nowEnabled = Boolean(parsed.arpEnabled);
+    if (nowEnabled !== arpEnabled) {
+      onArpStateChanged(nowEnabled);
     }
   }
   if (parsed?.currentPreset !== void 0) {
@@ -4515,7 +4612,7 @@ body {
   transition: box-shadow 0.1s ease-out, background 0.2s ease-out;
   cursor: grab;
   -webkit-tap-highlight-color: transparent;
-  z-index: 2;
+  z-index: 10;
   /* NOTE: backdrop-filter and will-change disabled - caused rendering artifacts in JUCE WebView */
   /* CSS fallback: center puck before JS positions it */
   left: 50%;
@@ -4615,7 +4712,7 @@ body {
   transition: opacity 0.2s ease-out;
   text-transform: lowercase;
   letter-spacing: 0.02em;
-  z-index: 10;
+  z-index: 2;
   white-space: nowrap;
 }
 
@@ -5873,6 +5970,87 @@ body {
   opacity: 1;
   background: var(--waver-surface-base-hover);
   color: var(--waver-text-lower);
+}
+
+/* ===== ARP BUTTON ===== */
+
+.btn-arp {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 21px;
+  border: none;
+  background: transparent;
+  color: var(--waver-text-lower);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.btn-arp::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  transform: scale(0.92);
+  transition:
+    background 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-arp:hover::before {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(1);
+}
+
+.btn-arp:active::before {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.96);
+  transition: transform 0.08s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-arp.active {
+  color: var(--waver-panel-ink);
+}
+
+.btn-arp.active::before {
+  background: var(--waver-surface-base-hover);
+  transform: scale(1);
+}
+
+.btn-arp svg {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+/* ===== ARP MODE UI LOCK ===== */
+
+.tb-app.arping .preset-pill,
+.tb-app.arping .btn-settings {
+  opacity: 0.3;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.tb-canvas-shell .axis-label-top {
+  top: 84px;
+}
+
+.tb-canvas-shell .axis-label-bottom {
+  margin-top: 60px;
+  margin-bottom: 60px;
+}
+
+.tb-canvas-shell .axis-label-right {
+  right: 6px;
+  top: 464px;
+  height: fit-content;
+  text-align: center;
 }</style>
   </head>
   <body>
@@ -5901,10 +6079,10 @@ body {
         <div id="puck" role="presentation">
           <span class="puck-pupil"></span>
         </div>
-        <div class="axis-label axis-label-left">bright</div>
-        <div class="axis-label axis-label-right">dark</div>
+        <div class="axis-label axis-label-left">veiled</div>
+        <div class="axis-label axis-label-right">shimmering</div>
         <div class="axis-label axis-label-top">worn</div>
-        <div class="axis-label axis-label-bottom">clean</div>
+        <div class="axis-label axis-label-bottom">tender</div>
       </main>
 
       <footer class="tb-bottom-bar">
@@ -5913,6 +6091,11 @@ body {
           <span data-readout="y">0.000</span>
         </div>
         <div class="tb-control-cluster">
+          <button class="btn-arp" type="button" aria-label="Toggle arpeggiator" aria-pressed="false">
+            <svg class="icon-arp" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M23.25 5.25C23.25 5.44891 23.171 5.63968 23.0303 5.78033C22.8897 5.92098 22.6989 6 22.5 6H18V9.75C18 9.94891 17.921 10.1397 17.7803 10.2803C17.6397 10.421 17.4489 10.5 17.25 10.5H12.75V14.25C12.75 14.4489 12.671 14.6397 12.5303 14.7803C12.3897 14.921 12.1989 15 12 15H7.5V18.75C7.5 18.9489 7.42098 19.1397 7.28033 19.2803C7.13968 19.421 6.94891 19.5 6.75 19.5H1.5C1.30109 19.5 1.11032 19.421 0.96967 19.2803C0.829018 19.1397 0.75 18.9489 0.75 18.75C0.75 18.5511 0.829018 18.3603 0.96967 18.2197C1.11032 18.079 1.30109 18 1.5 18H6V14.25C6 14.0511 6.07902 13.8603 6.21967 13.7197C6.36032 13.579 6.55109 13.5 6.75 13.5H11.25V9.75C11.25 9.55109 11.329 9.36032 11.4697 9.21967C11.6103 9.07902 11.8011 9 12 9H16.5V5.25C16.5 5.05109 16.579 4.86032 16.7197 4.71967C16.8603 4.57902 17.0511 4.5 17.25 4.5H22.5C22.6989 4.5 22.8897 4.57902 23.0303 4.71967C23.171 4.86032 23.25 5.05109 23.25 5.25Z" fill="currentColor"/>
+            </svg>
+          </button>
           <button class="btn-settings" type="button" aria-label="Open settings" aria-expanded="false">
             <svg class="icon-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M21 12C21 12.1989 20.921 12.3897 20.7803 12.5303C20.6397 12.671 20.4489 12.75 20.25 12.75H3.75C3.55109 12.75 3.36032 12.671 3.21967 12.5303C3.07902 12.3897 3 12.1989 3 12C3 11.8011 3.07902 11.6103 3.21967 11.4697C3.36032 11.329 3.55109 11.25 3.75 11.25H20.25C20.4489 11.25 20.6397 11.329 20.7803 11.4697C20.921 11.6103 21 11.8011 21 12ZM3.75 6.75H16.25C16.4489 6.75 16.6397 6.67098 16.7803 6.53033C16.921 6.38968 17 6.19891 17 6C17 5.80109 16.921 5.61032 16.7803 5.46967C16.6397 5.32902 16.4489 5.25 16.25 5.25H3.75C3.55109 5.25 3.36032 5.32902 3.21967 5.46967C3.07902 5.61032 3 5.80109 3 6C3 6.19891 3.07902 6.38968 3.21967 6.53033C3.36032 6.67098 3.55109 6.75 3.75 6.75ZM11.25 17.25H3.75C3.55109 17.25 3.36032 17.329 3.21967 17.4697C3.07902 17.6103 3 17.8011 3 18C3 18.1989 3.07902 18.3897 3.21967 18.5303C3.36032 18.671 3.55109 18.75 3.75 18.75H11.25C11.4489 18.75 11.6397 18.671 11.7803 18.5303C11.921 18.3897 12 18.1989 12 18C12 17.8011 11.921 17.6103 11.7803 17.4697C11.6397 17.329 11.4489 17.25 11.25 17.25Z" fill="currentColor" />

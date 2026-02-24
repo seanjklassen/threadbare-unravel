@@ -190,6 +190,11 @@ void WaverEngine::setArpPuck(float puckX, float puckY) noexcept
     arp.setPuckParams(puckX, puckY);
 }
 
+void WaverEngine::setArpHostTempo(double bpm) noexcept
+{
+    arp.setHostTempo(bpm);
+}
+
 void WaverEngine::arpNoteOn(int midiNote, float velocity) noexcept
 {
     if (arpEnabled)
@@ -211,5 +216,10 @@ void WaverEngine::arpNoteOff(int midiNote, float velocity) noexcept
         voiceAllocator.noteOff(midiNote);
         organ.noteOff(midiNote);
     }
+}
+
+void WaverEngine::arpAllNotesOff() noexcept
+{
+    arp.allNotesOff();
 }
 } // namespace threadbare::dsp
