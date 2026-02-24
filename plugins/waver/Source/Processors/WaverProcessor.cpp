@@ -8,6 +8,14 @@ WaverProcessor::WaverProcessor()
           createParameterLayout())
 {
     initialiseFactoryPresets();
+    if (!factoryPresets.empty())
+    {
+        const auto& preset = factoryPresets.front();
+        presetPuckX.store(preset.puckX, std::memory_order_relaxed);
+        presetPuckY.store(preset.puckY, std::memory_order_relaxed);
+        morphPuckX.store(preset.puckX, std::memory_order_relaxed);
+        morphPuckY.store(preset.puckY, std::memory_order_relaxed);
+    }
 }
 
 void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
@@ -50,6 +58,8 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
 
     latestState.puckX = morphPuckX.load(std::memory_order_relaxed);
     latestState.puckY = morphPuckY.load(std::memory_order_relaxed);
+    latestState.presetPuckX = presetPuckX.load(std::memory_order_relaxed);
+    latestState.presetPuckY = presetPuckY.load(std::memory_order_relaxed);
     latestState.mix = morphBlend.load(std::memory_order_relaxed);
 
     const auto numSamples = buffer.getNumSamples();
@@ -66,7 +76,7 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float macroShape = apvts.getRawParameterValue("macroShape")->load();
     const float lfoToPwm = apvts.getRawParameterValue("lfoToPwm")->load();
     const float driftAmt = apvts.getRawParameterValue("driftAmount")->load();
-    const float puckY = apvts.getRawParameterValue("puckY")->load();
+    const float puckY = morphPuckY.load(std::memory_order_relaxed);
     const float dcoSubLvl = apvts.getRawParameterValue("dcoSubLevel")->load();
     const float noiseLvl = apvts.getRawParameterValue("noiseLevel")->load();
     const float lfoRateHz = apvts.getRawParameterValue("lfoRate")->load();
@@ -116,6 +126,11 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     engine.setOrganLevel(layOrgan);
     engine.setPrintParams(driveGn, tapeSt, wowDp, flutDp, hissLv, humHz, printMx);
 
+    const bool arpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
+    engine.setArpEnabled(arpOn);
+    if (arpOn)
+        engine.setArpPuck(latestState.puckX, latestState.puckY);
+
     const auto renderRange = [&](int startSample, int endSample)
     {
         if (endSample <= startSample)
@@ -144,11 +159,15 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const auto handleMidiMessage = [&](const juce::MidiMessage& message)
     {
         if (message.isNoteOn())
-            engine.noteOn(message.getNoteNumber(), message.getFloatVelocity());
+            engine.arpNoteOn(message.getNoteNumber(), message.getFloatVelocity());
         else if (message.isNoteOff())
-            engine.noteOff(message.getNoteNumber(), message.getFloatVelocity());
-        else if (message.isController() && message.getControllerNumber() == 64)
-            engine.setSustainPedal(message.getControllerValue() >= 64);
+            engine.arpNoteOff(message.getNoteNumber(), message.getFloatVelocity());
+        else if (message.isController())
+        {
+            const int cc = message.getControllerNumber();
+            if (cc == 64)
+                engine.setSustainPedal(message.getControllerValue() >= 64);
+        }
     };
 
     int cursor = 0;
@@ -163,16 +182,19 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     midiMessages.clear();
 
     const float gain = juce::Decibels::decibelsToGain(outputGainDb);
+    float sumSq = 0.0f;
+    float peak = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
     {
         left[sample] *= gain;
         right[sample] *= gain;
-        latestState.scope[latestState.scopeWriteIndex] = left[sample];
-        latestState.scopeWriteIndex = (latestState.scopeWriteIndex + 1u) % kScopeBufferSize;
+        const float mono = (left[sample] + right[sample]) * 0.5f;
+        sumSq += mono * mono;
+        const float absMono = std::abs(mono);
+        if (absMono > peak) peak = absMono;
     }
-
-    latestState.inLevel = 0.0f;
-    latestState.outLevel = 0.0f;
+    latestState.rmsLevel = numSamples > 0 ? std::sqrt(sumSq / static_cast<float>(numSamples)) : 0.0f;
+    latestState.peakLevel = peak;
     stateQueue.push(latestState);
 }
 
@@ -197,7 +219,12 @@ void WaverProcessor::setCurrentProgram(int index)
         return;
 
     currentProgramIndex = juce::jlimit(0, getNumPrograms() - 1, index);
-    applyPreset(factoryPresets[static_cast<size_t>(currentProgramIndex)]);
+    const auto& preset = factoryPresets[static_cast<size_t>(currentProgramIndex)];
+    presetPuckX.store(preset.puckX, std::memory_order_relaxed);
+    presetPuckY.store(preset.puckY, std::memory_order_relaxed);
+    morphPuckX.store(preset.puckX, std::memory_order_relaxed);
+    morphPuckY.store(preset.puckY, std::memory_order_relaxed);
+    applyPreset(preset);
 }
 
 const juce::String WaverProcessor::getProgramName(int index)
@@ -372,7 +399,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.4f}, {"envDecay", 1.5f}, {"envSustain", 0.75f}, {"envRelease", 2.5f},
             {"driveGain", 0.05f}, {"tapeSat", 0.15f}, {"wowDepth", 0.08f}, {"flutterDepth", 0.03f},
             {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
-        }},
+        }, -0.35f, -0.15f},
 
         {"Golden Hour", {
             {"macroShape", 0.35f}, {"layerDco", 0.7f}, {"layerToy", 0.15f}, {"layerOrgan", 0.1f},
@@ -383,7 +410,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.6f}, {"envDecay", 2.0f}, {"envSustain", 0.65f}, {"envRelease", 4.0f},
             {"driveGain", 0.1f}, {"tapeSat", 0.25f}, {"wowDepth", 0.12f}, {"flutterDepth", 0.05f},
             {"hissLevel", 0.08f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
-        }},
+        }, 0.25f, 0.0f},
 
         {"Soft Focus", {
             {"macroShape", 0.05f}, {"layerDco", 0.9f}, {"layerToy", 0.0f}, {"layerOrgan", 0.15f},
@@ -394,7 +421,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 1.2f}, {"envDecay", 3.0f}, {"envSustain", 0.8f}, {"envRelease", 5.0f},
             {"driveGain", 0.0f}, {"tapeSat", 0.1f}, {"wowDepth", 0.06f}, {"flutterDepth", 0.02f},
             {"hissLevel", 0.03f}, {"printMix", 0.5f}, {"outputGain", 0.0f}
-        }},
+        }, -0.45f, 0.35f},
 
         // --- DRIFT (movement, modulation, evolving) ---
         {"Slow Drift", {
@@ -406,7 +433,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.8f}, {"envDecay", 2.0f}, {"envSustain", 0.6f}, {"envRelease", 3.5f},
             {"driveGain", 0.05f}, {"tapeSat", 0.2f}, {"wowDepth", 0.2f}, {"flutterDepth", 0.08f},
             {"hissLevel", 0.06f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
-        }},
+        }, -0.2f, 0.2f},
 
         {"Wandering", {
             {"macroShape", 0.5f}, {"layerDco", 0.6f}, {"layerToy", 0.2f}, {"layerOrgan", 0.0f},
@@ -418,7 +445,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.3f}, {"envDecay", 1.0f}, {"envSustain", 0.5f}, {"envRelease", 2.0f},
             {"driveGain", 0.15f}, {"tapeSat", 0.3f}, {"wowDepth", 0.15f}, {"flutterDepth", 0.06f},
             {"hissLevel", 0.07f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
-        }},
+        }, 0.45f, -0.05f},
 
         {"Detuned Memory", {
             {"macroShape", 0.4f}, {"layerDco", 0.75f}, {"layerToy", 0.1f}, {"layerOrgan", 0.05f},
@@ -429,7 +456,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.5f}, {"envDecay", 2.5f}, {"envSustain", 0.55f}, {"envRelease", 4.0f},
             {"driveGain", 0.1f}, {"tapeSat", 0.35f}, {"wowDepth", 0.25f}, {"flutterDepth", 0.1f},
             {"hissLevel", 0.1f}, {"printMix", 0.8f}, {"outputGain", -2.0f}
-        }},
+        }, 0.1f, 0.55f},
 
         // --- HUSH (quiet, intimate, barely there) ---
         {"Whisper Keys", {
@@ -441,7 +468,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.08f}, {"envDecay", 0.8f}, {"envSustain", 0.3f}, {"envRelease", 1.5f},
             {"driveGain", 0.0f}, {"tapeSat", 0.05f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
             {"hissLevel", 0.02f}, {"printMix", 0.4f}, {"outputGain", -3.0f}
-        }},
+        }, -0.45f, -0.55f},
 
         {"Distant Hymn", {
             {"macroShape", 0.0f}, {"layerDco", 0.3f}, {"layerToy", 0.0f}, {"layerOrgan", 0.6f},
@@ -453,7 +480,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.8f}, {"envDecay", 3.0f}, {"envSustain", 0.7f}, {"envRelease", 6.0f},
             {"driveGain", 0.0f}, {"tapeSat", 0.1f}, {"wowDepth", 0.05f}, {"flutterDepth", 0.02f},
             {"hissLevel", 0.04f}, {"printMix", 0.55f}, {"outputGain", -2.0f}
-        }},
+        }, -0.2f, 0.1f},
 
         {"Tape Lullaby", {
             {"macroShape", 0.1f}, {"layerDco", 0.65f}, {"layerToy", 0.0f}, {"layerOrgan", 0.2f},
@@ -465,7 +492,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 1.5f}, {"envDecay", 4.0f}, {"envSustain", 0.6f}, {"envRelease", 8.0f},
             {"driveGain", 0.0f}, {"tapeSat", 0.2f}, {"wowDepth", 0.15f}, {"flutterDepth", 0.04f},
             {"hissLevel", 0.08f}, {"printMix", 0.75f}, {"outputGain", -1.0f}
-        }},
+        }, -0.35f, 0.65f},
 
         // --- SIGNAL (brighter, present, cutting through) ---
         {"Toy Melody", {
@@ -478,7 +505,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.005f}, {"envDecay", 0.4f}, {"envSustain", 0.2f}, {"envRelease", 0.3f},
             {"driveGain", 0.05f}, {"tapeSat", 0.15f}, {"wowDepth", 0.04f}, {"flutterDepth", 0.02f},
             {"hissLevel", 0.03f}, {"printMix", 0.5f}, {"outputGain", 0.0f}
-        }},
+        }, 0.35f, -0.55f},
 
         {"Broken Bells", {
             {"macroShape", 0.7f}, {"layerDco", 0.15f}, {"layerToy", 0.7f}, {"layerOrgan", 0.0f},
@@ -490,7 +517,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.001f}, {"envDecay", 1.2f}, {"envSustain", 0.0f}, {"envRelease", 1.0f},
             {"driveGain", 0.1f}, {"tapeSat", 0.2f}, {"wowDepth", 0.06f}, {"flutterDepth", 0.03f},
             {"hissLevel", 0.04f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
-        }},
+        }, 0.1f, -0.3f},
 
         {"Pulse Lead", {
             {"macroShape", 0.85f}, {"layerDco", 0.9f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
@@ -502,7 +529,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.01f}, {"envDecay", 0.5f}, {"envSustain", 0.6f}, {"envRelease", 0.4f},
             {"driveGain", 0.2f}, {"tapeSat", 0.1f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
             {"hissLevel", 0.02f}, {"printMix", 0.45f}, {"outputGain", 1.0f}
-        }},
+        }, 0.65f, -0.35f},
 
         // --- WEIGHT (deep, heavy, grounding) ---
         {"Deep Foundation", {
@@ -515,7 +542,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.15f}, {"envDecay", 1.0f}, {"envSustain", 0.85f}, {"envRelease", 2.0f},
             {"driveGain", 0.15f}, {"tapeSat", 0.3f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
             {"hissLevel", 0.06f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
-        }},
+        }, -0.55f, -0.35f},
 
         {"Worn Organ", {
             {"macroShape", 0.0f}, {"layerDco", 0.0f}, {"layerToy", 0.0f}, {"layerOrgan", 0.9f},
@@ -527,7 +554,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.01f}, {"envDecay", 0.5f}, {"envSustain", 0.9f}, {"envRelease", 0.5f},
             {"driveGain", 0.1f}, {"tapeSat", 0.4f}, {"wowDepth", 0.2f}, {"flutterDepth", 0.08f},
             {"hissLevel", 0.12f}, {"printMix", 0.85f}, {"outputGain", -2.0f}
-        }},
+        }, 0.0f, 0.35f},
 
         {"Basement Tape", {
             {"macroShape", 0.2f}, {"layerDco", 0.6f}, {"layerToy", 0.1f}, {"layerOrgan", 0.3f},
@@ -539,7 +566,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.1f}, {"envDecay", 1.5f}, {"envSustain", 0.65f}, {"envRelease", 3.0f},
             {"driveGain", 0.25f}, {"tapeSat", 0.5f}, {"wowDepth", 0.3f}, {"flutterDepth", 0.1f},
             {"hissLevel", 0.15f}, {"printMix", 0.9f}, {"outputGain", -3.0f}
-        }},
+        }, -0.2f, 0.7f},
 
         // --- SHOWCASE / HYBRID ---
         {"Grandaddy Pad", {
@@ -553,7 +580,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.5f}, {"envDecay", 2.0f}, {"envSustain", 0.7f}, {"envRelease", 4.5f},
             {"driveGain", 0.1f}, {"tapeSat", 0.3f}, {"wowDepth", 0.15f}, {"flutterDepth", 0.05f},
             {"hissLevel", 0.08f}, {"printMix", 0.75f}, {"outputGain", -1.0f}
-        }},
+        }, 0.0f, 0.1f},
 
         {"PSS Nostalgia", {
             {"macroShape", 0.5f}, {"layerDco", 0.1f}, {"layerToy", 0.85f}, {"layerOrgan", 0.0f},
@@ -565,7 +592,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.005f}, {"envDecay", 0.6f}, {"envSustain", 0.35f}, {"envRelease", 0.5f},
             {"driveGain", 0.08f}, {"tapeSat", 0.2f}, {"wowDepth", 0.08f}, {"flutterDepth", 0.03f},
             {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
-        }},
+        }, 0.4f, -0.25f},
 
         {"Juno Ghost", {
             {"macroShape", 0.2f}, {"layerDco", 1.0f}, {"layerToy", 0.0f}, {"layerOrgan", 0.0f},
@@ -576,7 +603,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.3f}, {"envDecay", 1.5f}, {"envSustain", 0.6f}, {"envRelease", 3.0f},
             {"driveGain", 0.05f}, {"tapeSat", 0.15f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
             {"hissLevel", 0.05f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
-        }},
+        }, 0.3f, 0.25f},
 
         {"Glide Horizon", {
             {"macroShape", 0.45f}, {"layerDco", 0.7f}, {"layerToy", 0.2f}, {"layerOrgan", 0.1f},
@@ -590,7 +617,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"envAttack", 0.2f}, {"envDecay", 1.0f}, {"envSustain", 0.55f}, {"envRelease", 2.5f},
             {"driveGain", 0.08f}, {"tapeSat", 0.2f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
             {"hissLevel", 0.05f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
-        }},
+        }, 0.55f, 0.15f},
 
     };
 }

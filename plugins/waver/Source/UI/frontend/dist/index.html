@@ -426,10 +426,11 @@ class Controls {
       top: document.querySelector(".axis-label-top"),
       bottom: document.querySelector(".axis-label-bottom")
     };
-    this.axisLabelText = {
+    const defaultLabels = {
       normal: { left: "vivid", right: "hazy", top: "distant", bottom: "recent" },
       loop: { left: "spectral", right: "diffuse", top: "fleeting", bottom: "lingering" }
     };
+    this.axisLabelText = options.axisLabels ? { normal: { ...defaultLabels.normal, ...options.axisLabels.normal }, loop: { ...defaultLabels.loop, ...options.axisLabels.loop || {} } } : defaultLabels;
     this.isDragging = false;
     this.pointerId = null;
     this.dragOffset = { x: 0, y: 0 };
@@ -1589,6 +1590,7 @@ function initShell(options = {}) {
     params,
     paramOrder,
     themeTokens,
+    axisLabels,
     getNativeFn = () => null,
     sendParam: sendParam2 = () => {
     },
@@ -1618,6 +1620,7 @@ function initShell(options = {}) {
     paramOrder,
     sendParam: sendParam2,
     sendLooperTrigger,
+    axisLabels,
     onPuckChange: ({ puckX, puckY }) => {
       currentState = { ...currentState, puckX, puckY };
       viz?.update(currentState);
@@ -1773,35 +1776,159 @@ const createParamSender = (getNativeFn) => {
     }
   };
 };
+const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108;
+const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51;
+const TRAIL_COUNT = 3;
+const POINT_COUNT = 80;
+const OVERSHOOT = 30;
 class WaverViz {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.state = {};
+    this.smoothRms = 0;
+    this.smoothPeak = 0;
+    this.phase = Math.random() * Math.PI * 2;
+    this.driftPhase = Math.random() * Math.PI * 2;
+    this.breathPhase = Math.random() * Math.PI * 2;
+    this.momentFlash = 0;
+    this.trails = [];
+    for (let i = 0; i < TRAIL_COUNT; i++) {
+      this.trails.push({ phase: this.phase, driftPhase: this.driftPhase, waveH: 0, energy: 0 });
+    }
+    this.reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+    this.lastSnapshotTime = 0;
+    this._colorCache = "";
+    this._glowCache = "";
+    this._lastColorKey = -1;
     this.resize();
   }
   resize() {
     const dpr = window.devicePixelRatio || 1;
-    const width = this.canvas.clientWidth || 400;
-    const height = this.canvas.clientHeight || 400;
-    this.canvas.width = Math.round(width * dpr);
-    this.canvas.height = Math.round(height * dpr);
+    const w = this.canvas.clientWidth || 400;
+    const h = this.canvas.clientHeight || 400;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.w = w;
+    this.h = h;
   }
   update(state) {
     this.state = state || {};
+    const rms = state?.rms ?? 0;
+    const peak = state?.peak ?? 0;
+    this.smoothRms += (rms - this.smoothRms) * 0.12;
+    this.smoothPeak += (peak - this.smoothPeak) * 0.15;
   }
   draw() {
     const ctx = this.ctx;
-    const w = this.canvas.clientWidth || 400;
-    const h = this.canvas.clientHeight || 400;
+    const w = this.w;
+    const h = this.h;
+    const now = performance.now();
+    if (this.reducedMotion && now - this.lastSnapshotTime < 1e3) return;
+    this.lastSnapshotTime = now;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
+    const age = this._age();
+    const rms = this.smoothRms;
+    const peak = this.smoothPeak;
+    const dbRms = 20 * Math.log10(Math.max(rms, 1e-4));
+    const energy = Math.max(0, Math.min(1, (dbRms + 48) / 48));
+    const crest = rms > 1e-3 ? peak / rms : 1;
+    const transientKick = Math.pow(Math.max(0, (crest - 2) / 8), 0.6);
+    this.phase += 3e-3 + energy * 0.025;
+    this.driftPhase += 11e-4 + energy * 8e-4;
+    this.breathPhase += 3e-3;
+    if (this.momentFlash > 0.01) {
+      this.momentFlash *= 0.92;
+    } else {
+      this.momentFlash = 0;
+    }
+    this._updateColors(age, energy);
+    const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02;
+    const baseAmp = h * 0.025;
+    const signalAmp = h * 0.3 * energy;
+    const peakAmp = h * 0.12 * transientKick;
+    const waveH = baseAmp + signalAmp + peakAmp;
+    const breathMod = 1 + Math.sin(this.breathPhase) * 0.15;
+    const lineWidth = 1.5 + age * 1 + transientKick * 0.8;
+    for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
+      this.trails[t].phase = this.trails[t - 1].phase;
+      this.trails[t].driftPhase = this.trails[t - 1].driftPhase;
+      this.trails[t].waveH = this.trails[t - 1].waveH;
+      this.trails[t].energy = this.trails[t - 1].energy;
+    }
+    this.trails[0].phase = this.phase;
+    this.trails[0].driftPhase = this.driftPhase;
+    this.trails[0].waveH = waveH * breathMod;
+    this.trails[0].energy = energy;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
+      const trail = this.trails[t];
+      if (trail.waveH < 0.5) continue;
+      const alpha = 0.03 + (TRAIL_COUNT - 1 - t) * 0.03;
+      ctx.beginPath();
+      this._tracePath(ctx, w, centerY, trail);
+      ctx.strokeStyle = this._glowCache;
+      ctx.lineWidth = lineWidth + 2;
+      ctx.globalAlpha = alpha;
+      ctx.stroke();
+    }
     ctx.beginPath();
-    ctx.arc(w * 0.5, h * 0.5, 48, 0, Math.PI * 2);
-    ctx.fill();
+    this._tracePath(ctx, w, centerY, this.trails[0]);
+    ctx.strokeStyle = this._glowCache;
+    ctx.lineWidth = lineWidth + 4;
+    ctx.globalAlpha = 0.1 + energy * 0.2 + this.momentFlash * 0.25;
+    ctx.stroke();
+    ctx.beginPath();
+    this._tracePath(ctx, w, centerY, this.trails[0]);
+    ctx.strokeStyle = this._colorCache;
+    ctx.lineWidth = lineWidth;
+    ctx.globalAlpha = 0.8;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  triggerMoment() {
+    this.momentFlash = 1;
   }
   dispose() {
+  }
+  _tracePath(ctx, w, centerY, trail) {
+    for (let i = -1; i <= POINT_COUNT + 1; i++) {
+      const t = i / POINT_COUNT;
+      const x = -OVERSHOOT + t * (w + OVERSHOOT * 2);
+      const y = centerY + this._wave(t, trail.waveH, trail.energy, trail.phase, trail.driftPhase);
+      if (i === -1) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+  }
+  _wave(t, amplitude, energy, phase, drift) {
+    const p = phase;
+    const d = drift;
+    const b = this.breathPhase;
+    const fundamental = Math.sin(t * Math.PI * 2 + p) * 0.5;
+    const second = Math.sin(t * Math.PI * 3.7 + p * 0.7 + d) * (0.12 + energy * 0.18);
+    const third = Math.sin(t * Math.PI * 5.3 + p * 0.4 + d * 0.8) * (0.05 + energy * 0.15);
+    const shimmer = Math.sin(t * Math.PI * 9.1 + p * 0.25 + d * 1.6) * energy * 0.12;
+    const lowDrift = Math.sin(t * Math.PI * 1.1 + b * 0.5) * 0.08;
+    return (fundamental + second + third + shimmer + lowDrift) * amplitude;
+  }
+  _age() {
+    const puckY = this.state.puckY ?? 0;
+    return Math.max(0, Math.min(1, (puckY + 1) / 2));
+  }
+  _updateColors(age, energy) {
+    const quantAge = Math.round(age * 20) / 20;
+    const quantEnergy = Math.round(energy * 10) / 10;
+    const shift = Math.min(1, quantAge * 0.4 + this.momentFlash * 0.5);
+    const key = shift * 100 + quantEnergy;
+    if (key === this._lastColorKey) return;
+    this._lastColorKey = key;
+    const r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
+    const g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
+    const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
+    this._colorCache = `rgb(${r},${g},${b})`;
+    this._glowCache = `rgba(${r},${g},${b},0.3)`;
   }
 }
 const PARAMS = {
@@ -2224,6 +2351,1743 @@ const PARAM_IDS = [
   "humFreq",
   "printMix"
 ];
+const LOG_PARAMS = /* @__PURE__ */ new Set([
+  "filterCutoff",
+  "lfoRate"
+]);
+const LOG_TIME_PARAMS = /* @__PURE__ */ new Set([
+  "envAttack",
+  "envDecay",
+  "envRelease"
+]);
+const LOG_MS_PARAMS = /* @__PURE__ */ new Set(["portaTime"]);
+const CHOICE_PARAMS = /* @__PURE__ */ new Set([
+  "filterMode",
+  "lfoShape",
+  "chorusMode",
+  "portaMode",
+  "humFreq",
+  "dcoSubOctave"
+]);
+function toPerceptual(id, raw) {
+  if (LOG_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6));
+  if (LOG_TIME_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6));
+  if (LOG_MS_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-3));
+  return raw;
+}
+function fromPerceptual(id, val) {
+  if (LOG_PARAMS.has(id)) return Math.exp(val);
+  if (LOG_TIME_PARAMS.has(id)) return Math.exp(val);
+  if (LOG_MS_PARAMS.has(id)) return Math.exp(val);
+  return val;
+}
+function rbfWeight(px, py, lx, ly, sigma) {
+  const dx = px - lx;
+  const dy = py - ly;
+  const distSq = dx * dx + dy * dy;
+  return Math.exp(-distSq / (2 * sigma * sigma));
+}
+function interpolate(puckX, puckY, landmarks, sigma, sigmaOffsets2) {
+  if (!landmarks || landmarks.length === 0) return {};
+  const allParamIds = /* @__PURE__ */ new Set();
+  for (const lm of landmarks) {
+    if (lm.params) {
+      for (const id of Object.keys(lm.params)) allParamIds.add(id);
+    }
+  }
+  const weights = [];
+  let totalWeight = 0;
+  for (let i = 0; i < landmarks.length; i++) {
+    const lm = landmarks[i];
+    const s = sigma + (sigmaOffsets2?.[i] ?? 0);
+    const w = rbfWeight(puckX, puckY, lm.x, lm.y, Math.max(s, 0.05));
+    weights.push(w);
+    totalWeight += w;
+  }
+  if (totalWeight < 1e-12) {
+    return landmarks[0]?.params ? { ...landmarks[0].params } : {};
+  }
+  const result = {};
+  for (const paramId of allParamIds) {
+    if (CHOICE_PARAMS.has(paramId)) {
+      let bestIdx = 0;
+      let bestW = -1;
+      for (let i = 0; i < landmarks.length; i++) {
+        if (landmarks[i].params?.[paramId] !== void 0 && weights[i] > bestW) {
+          bestW = weights[i];
+          bestIdx = i;
+        }
+      }
+      result[paramId] = landmarks[bestIdx].params[paramId];
+      continue;
+    }
+    let sum = 0;
+    let wSum = 0;
+    for (let i = 0; i < landmarks.length; i++) {
+      const raw = landmarks[i].params?.[paramId];
+      if (raw === void 0) continue;
+      const perceptual = toPerceptual(paramId, raw);
+      sum += weights[i] / totalWeight * perceptual;
+      wSum += weights[i] / totalWeight;
+    }
+    if (wSum > 1e-12) {
+      result[paramId] = fromPerceptual(paramId, sum / wSum);
+    }
+  }
+  return result;
+}
+function generateSigmaOffsets(count, seed) {
+  let s = seed >>> 0 || 1;
+  const offsets = [];
+  for (let i = 0; i < count; i++) {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    const norm = (s >>> 0) / 4294967295 * 2 - 1;
+    offsets.push(norm * 0.06);
+  }
+  return offsets;
+}
+const FACTORY_SURFACES = [
+  {
+    name: "Settle",
+    category: "amber",
+    sigma: 0.32,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "warm center",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 2200,
+          filterRes: 0.12,
+          layerDco: 0.85,
+          layerToy: 0.05,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.01,
+          lfoRate: 1.5,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 0.5,
+          envDecay: 2,
+          envSustain: 0.75,
+          envRelease: 3,
+          driveGain: 0.02,
+          tapeSat: 0.1,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.03,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "soft bright",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 5e3,
+          filterRes: 0.18,
+          layerDco: 0.8,
+          layerToy: 0.1,
+          layerOrgan: 0.05,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.02,
+          lfoRate: 2,
+          lfoToPwm: 0.12,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.4,
+          envDecay: 1.8,
+          envSustain: 0.7,
+          envRelease: 2.5,
+          driveGain: 0.05,
+          tapeSat: 0.12,
+          wowDepth: 0.06,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.55,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "present shimmer",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 8e3,
+          filterRes: 0.22,
+          layerDco: 0.7,
+          layerToy: 0.2,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.03,
+          lfoRate: 2.5,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 5,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.65,
+          envRelease: 2,
+          driveGain: 0.08,
+          tapeSat: 0.15,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "muffled warmth",
+        params: {
+          macroShape: 0.08,
+          filterCutoff: 1500,
+          filterRes: 0.1,
+          layerDco: 0.8,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 5,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.02,
+          lfoRate: 0.8,
+          lfoToPwm: 0.05,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.35,
+          envAttack: 0.8,
+          envDecay: 2.5,
+          envSustain: 0.7,
+          envRelease: 4,
+          driveGain: 0.03,
+          tapeSat: 0.2,
+          wowDepth: 0.1,
+          flutterDepth: 0.03,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "golden drive",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 6e3,
+          filterRes: 0.28,
+          layerDco: 0.65,
+          layerToy: 0.2,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.04,
+          lfoRate: 3,
+          lfoToPwm: 0.25,
+          lfoToVibrato: 6,
+          chorusMode: 2,
+          driftAmount: 0.4,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.6,
+          envRelease: 2.5,
+          driveGain: 0.12,
+          tapeSat: 0.25,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.07,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "dusty lullaby",
+        params: {
+          macroShape: 0.05,
+          filterCutoff: 1200,
+          filterRes: 0.08,
+          layerDco: 0.7,
+          layerToy: 0,
+          layerOrgan: 0.3,
+          organ16: 6,
+          organ8: 5,
+          organ4: 2,
+          organMix: 3,
+          dcoSubLevel: 0.45,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.6,
+          envAttack: 1.2,
+          envDecay: 3,
+          envSustain: 0.65,
+          envRelease: 5,
+          driveGain: 0.05,
+          tapeSat: 0.35,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "worn amber",
+        params: {
+          macroShape: 0.25,
+          filterCutoff: 2800,
+          filterRes: 0.18,
+          layerDco: 0.6,
+          layerToy: 0.1,
+          layerOrgan: 0.25,
+          organ16: 4,
+          organ8: 5,
+          organ4: 2,
+          organMix: 3,
+          dcoSubLevel: 0.35,
+          noiseLevel: 0.05,
+          lfoRate: 1.2,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 4,
+          chorusMode: 3,
+          driftAmount: 0.7,
+          envAttack: 0.8,
+          envDecay: 2.5,
+          envSustain: 0.6,
+          envRelease: 4.5,
+          driveGain: 0.1,
+          tapeSat: 0.4,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "golden decay",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 4500,
+          filterRes: 0.25,
+          layerDco: 0.55,
+          layerToy: 0.15,
+          layerOrgan: 0.2,
+          organ16: 3,
+          organ8: 4,
+          organ4: 2,
+          organMix: 2,
+          dcoSubLevel: 0.25,
+          noiseLevel: 0.06,
+          lfoRate: 2,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 8,
+          chorusMode: 3,
+          driftAmount: 0.8,
+          envAttack: 0.6,
+          envDecay: 2,
+          envSustain: 0.55,
+          envRelease: 4,
+          driveGain: 0.15,
+          tapeSat: 0.45,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -2
+        }
+      }
+    ]
+  },
+  {
+    name: "Wander",
+    category: "drift",
+    sigma: 0.35,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "steady saw",
+        params: {
+          macroShape: 0.15,
+          filterCutoff: 4e3,
+          filterRes: 0.25,
+          layerDco: 0.9,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.02,
+          lfoRate: 0.3,
+          lfoToPwm: 0.15,
+          lfoToVibrato: 5,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          portaTime: 150,
+          portaMode: 0,
+          envAttack: 0.4,
+          envDecay: 1.5,
+          envSustain: 0.65,
+          envRelease: 2.5,
+          driveGain: 0.03,
+          tapeSat: 0.1,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.04,
+          printMix: 0.55,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "pulse drift",
+        params: {
+          macroShape: 0.45,
+          filterCutoff: 5500,
+          filterRes: 0.3,
+          layerDco: 0.85,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.03,
+          lfoRate: 2,
+          lfoToPwm: 0.35,
+          lfoToVibrato: 10,
+          chorusMode: 2,
+          driftAmount: 0.55,
+          portaTime: 200,
+          portaMode: 0,
+          envAttack: 0.3,
+          envDecay: 1.2,
+          envSustain: 0.55,
+          envRelease: 2,
+          driveGain: 0.08,
+          tapeSat: 0.15,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.6,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "bright motion",
+        params: {
+          macroShape: 0.7,
+          filterCutoff: 8e3,
+          filterRes: 0.35,
+          layerDco: 0.75,
+          layerToy: 0.2,
+          layerOrgan: 0,
+          dcoSubLevel: 0.05,
+          noiseLevel: 0.04,
+          lfoRate: 4,
+          lfoToPwm: 0.45,
+          lfoToVibrato: 15,
+          chorusMode: 2,
+          driftAmount: 0.65,
+          portaTime: 250,
+          portaMode: 0,
+          envAttack: 0.2,
+          envDecay: 1,
+          envSustain: 0.5,
+          envRelease: 1.5,
+          driveGain: 0.12,
+          tapeSat: 0.2,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.07,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "slow chorus",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 3e3,
+          filterRes: 0.2,
+          layerDco: 0.8,
+          layerToy: 0.05,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.25,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0.2,
+          lfoToVibrato: 8,
+          chorusMode: 3,
+          driftAmount: 0.6,
+          portaTime: 200,
+          portaMode: 0,
+          envAttack: 0.6,
+          envDecay: 2,
+          envSustain: 0.6,
+          envRelease: 3.5,
+          driveGain: 0.05,
+          tapeSat: 0.2,
+          wowDepth: 0.15,
+          flutterDepth: 0.05,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "swirl",
+        params: {
+          macroShape: 0.6,
+          filterCutoff: 7e3,
+          filterRes: 0.35,
+          layerDco: 0.65,
+          layerToy: 0.25,
+          layerOrgan: 0.05,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.05,
+          lfoRate: 5,
+          lfoToPwm: 0.5,
+          lfoToVibrato: 20,
+          chorusMode: 3,
+          driftAmount: 0.75,
+          portaTime: 350,
+          portaMode: 0,
+          envAttack: 0.2,
+          envDecay: 1,
+          envSustain: 0.45,
+          envRelease: 2,
+          driveGain: 0.15,
+          tapeSat: 0.3,
+          wowDepth: 0.18,
+          flutterDepth: 0.07,
+          hissLevel: 0.08,
+          printMix: 0.75,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "deep wander",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 1800,
+          filterRes: 0.15,
+          layerDco: 0.7,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 5,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.04,
+          lfoRate: 0.3,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 6,
+          chorusMode: 3,
+          driftAmount: 0.85,
+          portaTime: 300,
+          portaMode: 0,
+          envAttack: 1,
+          envDecay: 3,
+          envSustain: 0.55,
+          envRelease: 5,
+          driveGain: 0.06,
+          tapeSat: 0.35,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "detuned haze",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 3500,
+          filterRes: 0.3,
+          layerDco: 0.6,
+          layerToy: 0.15,
+          layerOrgan: 0.15,
+          organ16: 4,
+          organ8: 3,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.06,
+          lfoRate: 1.5,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 12,
+          chorusMode: 3,
+          driftAmount: 0.9,
+          portaTime: 350,
+          portaMode: 0,
+          envAttack: 0.7,
+          envDecay: 2.5,
+          envSustain: 0.5,
+          envRelease: 4.5,
+          driveGain: 0.1,
+          tapeSat: 0.4,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "bright decay",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 6e3,
+          filterRes: 0.4,
+          layerDco: 0.55,
+          layerToy: 0.2,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.08,
+          lfoRate: 3.5,
+          lfoToPwm: 0.4,
+          lfoToVibrato: 18,
+          chorusMode: 3,
+          driftAmount: 0.95,
+          portaTime: 400,
+          portaMode: 0,
+          envAttack: 0.4,
+          envDecay: 2,
+          envSustain: 0.4,
+          envRelease: 3.5,
+          driveGain: 0.18,
+          tapeSat: 0.5,
+          wowDepth: 0.35,
+          flutterDepth: 0.12,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -2
+        }
+      }
+    ]
+  },
+  {
+    name: "Close",
+    category: "hush",
+    sigma: 0.3,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "bare whisper",
+        params: {
+          macroShape: 0,
+          filterCutoff: 1500,
+          filterRes: 0.05,
+          filterMode: 1,
+          layerDco: 0.6,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0,
+          lfoRate: 0.4,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 0,
+          driftAmount: 0.1,
+          envAttack: 0.06,
+          envDecay: 0.6,
+          envSustain: 0.3,
+          envRelease: 1.2,
+          driveGain: 0,
+          tapeSat: 0.05,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.35,
+          outputGain: -3
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "lo-fi keys",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 2500,
+          filterRes: 0.1,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0,
+          dcoSubLevel: 0.35,
+          noiseLevel: 0.01,
+          lfoRate: 0.8,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 0,
+          driftAmount: 0.15,
+          envAttack: 0.03,
+          envDecay: 0.8,
+          envSustain: 0.25,
+          envRelease: 1,
+          driveGain: 0.02,
+          tapeSat: 0.08,
+          wowDepth: 0.03,
+          flutterDepth: 0.01,
+          hissLevel: 0.03,
+          printMix: 0.4,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "thin signal",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 4e3,
+          filterRes: 0.12,
+          filterMode: 0,
+          layerDco: 0.45,
+          layerToy: 0.15,
+          layerOrgan: 0,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.02,
+          lfoRate: 1.5,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 3,
+          chorusMode: 0,
+          driftAmount: 0.2,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.2,
+          envRelease: 0.8,
+          driveGain: 0.04,
+          tapeSat: 0.1,
+          wowDepth: 0.04,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.45,
+          outputGain: -2
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "intimate pad",
+        params: {
+          macroShape: 0.05,
+          filterCutoff: 1200,
+          filterRes: 0.08,
+          filterMode: 1,
+          layerDco: 0.55,
+          layerToy: 0,
+          layerOrgan: 0.15,
+          organ16: 3,
+          organ8: 4,
+          organ4: 0,
+          organMix: 1,
+          dcoSubLevel: 0.45,
+          noiseLevel: 0.01,
+          lfoRate: 0.3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1.5,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 1,
+          envDecay: 2,
+          envSustain: 0.5,
+          envRelease: 3,
+          driveGain: 0.01,
+          tapeSat: 0.12,
+          wowDepth: 0.06,
+          flutterDepth: 0.02,
+          hissLevel: 0.05,
+          printMix: 0.5,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "bright hush",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 3500,
+          filterRes: 0.15,
+          filterMode: 0,
+          layerDco: 0.4,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.02,
+          lfoRate: 2,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 4,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.02,
+          envDecay: 0.5,
+          envSustain: 0.2,
+          envRelease: 0.6,
+          driveGain: 0.05,
+          tapeSat: 0.12,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: -3
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "worn tape",
+        params: {
+          macroShape: 0,
+          filterCutoff: 900,
+          filterRes: 0.06,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.2,
+          organ16: 4,
+          organ8: 3,
+          organ4: 0,
+          organMix: 1,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0.02,
+          lfoRate: 0.2,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          envAttack: 1.5,
+          envDecay: 3,
+          envSustain: 0.45,
+          envRelease: 5,
+          driveGain: 0.02,
+          tapeSat: 0.25,
+          wowDepth: 0.15,
+          flutterDepth: 0.04,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "cassette hymn",
+        params: {
+          macroShape: 0.15,
+          filterCutoff: 1800,
+          filterRes: 0.1,
+          filterMode: 1,
+          layerDco: 0.4,
+          layerToy: 0,
+          layerOrgan: 0.25,
+          organ16: 4,
+          organ8: 4,
+          organ4: 1,
+          organMix: 2,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 1,
+          driftAmount: 0.5,
+          envAttack: 1,
+          envDecay: 2.5,
+          envSustain: 0.5,
+          envRelease: 5,
+          driveGain: 0.04,
+          tapeSat: 0.3,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.75,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "fading signal",
+        params: {
+          macroShape: 0.35,
+          filterCutoff: 2500,
+          filterRes: 0.12,
+          filterMode: 0,
+          layerDco: 0.35,
+          layerToy: 0.1,
+          layerOrgan: 0.1,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.05,
+          lfoRate: 1.2,
+          lfoToPwm: 0.08,
+          lfoToVibrato: 4,
+          chorusMode: 1,
+          driftAmount: 0.55,
+          envAttack: 0.5,
+          envDecay: 1.5,
+          envSustain: 0.35,
+          envRelease: 3,
+          driveGain: 0.06,
+          tapeSat: 0.35,
+          wowDepth: 0.2,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.75,
+          outputGain: -3
+        }
+      }
+    ]
+  },
+  {
+    name: "Flicker",
+    category: "signal",
+    sigma: 0.3,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "clean toy",
+        params: {
+          macroShape: 0.5,
+          filterCutoff: 8e3,
+          filterRes: 0.1,
+          layerDco: 0.2,
+          layerToy: 0.75,
+          layerOrgan: 0,
+          toyIndex: 0.3,
+          toyRatio: 0.3,
+          dcoSubLevel: 0,
+          noiseLevel: 0,
+          lfoRate: 4,
+          lfoToPwm: 0,
+          lfoToVibrato: 0,
+          chorusMode: 0,
+          driftAmount: 0.1,
+          envAttack: 3e-3,
+          envDecay: 0.3,
+          envSustain: 0.15,
+          envRelease: 0.2,
+          driveGain: 0.02,
+          tapeSat: 0.08,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.4,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "fm bell",
+        params: {
+          macroShape: 0.6,
+          filterCutoff: 12e3,
+          filterRes: 0.15,
+          layerDco: 0.15,
+          layerToy: 0.8,
+          layerOrgan: 0,
+          toyIndex: 0.6,
+          toyRatio: 0.5,
+          dcoSubLevel: 0,
+          noiseLevel: 0.01,
+          lfoRate: 5,
+          lfoToPwm: 0,
+          lfoToVibrato: 2,
+          chorusMode: 0,
+          driftAmount: 0.12,
+          envAttack: 1e-3,
+          envDecay: 0.8,
+          envSustain: 0,
+          envRelease: 0.6,
+          driveGain: 0.05,
+          tapeSat: 0.1,
+          wowDepth: 0.03,
+          flutterDepth: 0.01,
+          hissLevel: 0.03,
+          printMix: 0.45,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "sharp lead",
+        params: {
+          macroShape: 0.85,
+          filterCutoff: 1e4,
+          filterRes: 0.4,
+          layerDco: 0.8,
+          layerToy: 0.1,
+          layerOrgan: 0,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0,
+          lfoRate: 6,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 5,
+          chorusMode: 0,
+          driftAmount: 0.15,
+          envAttack: 5e-3,
+          envDecay: 0.4,
+          envSustain: 0.6,
+          envRelease: 0.3,
+          driveGain: 0.15,
+          tapeSat: 0.08,
+          wowDepth: 0.02,
+          flutterDepth: 0.01,
+          hissLevel: 0.02,
+          printMix: 0.35,
+          outputGain: 1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "muted pluck",
+        params: {
+          macroShape: 0.3,
+          filterCutoff: 3500,
+          filterRes: 0.12,
+          layerDco: 0.3,
+          layerToy: 0.6,
+          layerOrgan: 0,
+          toyIndex: 0.4,
+          toyRatio: 0.4,
+          dcoSubLevel: 0.1,
+          noiseLevel: 0.01,
+          lfoRate: 3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 2e-3,
+          envDecay: 0.5,
+          envSustain: 0.1,
+          envRelease: 0.4,
+          driveGain: 0.04,
+          tapeSat: 0.15,
+          wowDepth: 0.05,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "bright fm",
+        params: {
+          macroShape: 0.75,
+          filterCutoff: 14e3,
+          filterRes: 0.2,
+          layerDco: 0.1,
+          layerToy: 0.85,
+          layerOrgan: 0,
+          toyIndex: 0.7,
+          toyRatio: 0.6,
+          dcoSubLevel: 0,
+          noiseLevel: 0.02,
+          lfoRate: 7,
+          lfoToPwm: 0,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.2,
+          envAttack: 1e-3,
+          envDecay: 0.6,
+          envSustain: 0.25,
+          envRelease: 0.5,
+          driveGain: 0.1,
+          tapeSat: 0.15,
+          wowDepth: 0.04,
+          flutterDepth: 0.02,
+          hissLevel: 0.04,
+          printMix: 0.5,
+          outputGain: 0
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "dusty toy",
+        params: {
+          macroShape: 0.4,
+          filterCutoff: 2500,
+          filterRes: 0.1,
+          layerDco: 0.2,
+          layerToy: 0.65,
+          layerOrgan: 0.1,
+          toyIndex: 0.5,
+          toyRatio: 0.4,
+          dcoSubLevel: 0.15,
+          noiseLevel: 0.03,
+          lfoRate: 2,
+          lfoToPwm: 0,
+          lfoToVibrato: 3,
+          chorusMode: 1,
+          driftAmount: 0.45,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.15,
+          envRelease: 0.5,
+          driveGain: 0.06,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.04,
+          hissLevel: 0.08,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "worn bell",
+        params: {
+          macroShape: 0.55,
+          filterCutoff: 5e3,
+          filterRes: 0.18,
+          layerDco: 0.15,
+          layerToy: 0.7,
+          layerOrgan: 0.05,
+          toyIndex: 0.6,
+          toyRatio: 0.5,
+          dcoSubLevel: 0.05,
+          noiseLevel: 0.04,
+          lfoRate: 3.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 5,
+          chorusMode: 1,
+          driftAmount: 0.5,
+          envAttack: 2e-3,
+          envDecay: 1,
+          envSustain: 0,
+          envRelease: 0.8,
+          driveGain: 0.08,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "glitched lead",
+        params: {
+          macroShape: 0.8,
+          filterCutoff: 7e3,
+          filterRes: 0.35,
+          layerDco: 0.5,
+          layerToy: 0.35,
+          layerOrgan: 0,
+          toyIndex: 0.8,
+          toyRatio: 0.7,
+          dcoSubLevel: 0.2,
+          noiseLevel: 0.05,
+          lfoRate: 8,
+          lfoToPwm: 0.3,
+          lfoToVibrato: 8,
+          chorusMode: 2,
+          driftAmount: 0.6,
+          envAttack: 3e-3,
+          envDecay: 0.3,
+          envSustain: 0.5,
+          envRelease: 0.3,
+          driveGain: 0.2,
+          tapeSat: 0.35,
+          wowDepth: 0.15,
+          flutterDepth: 0.06,
+          hissLevel: 0.1,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      }
+    ]
+  },
+  {
+    name: "Anchor",
+    category: "weight",
+    sigma: 0.35,
+    landmarks: [
+      {
+        x: -0.7,
+        y: -0.7,
+        label: "deep organ",
+        params: {
+          macroShape: 0,
+          filterCutoff: 1e3,
+          filterRes: 0.2,
+          filterMode: 1,
+          layerDco: 0.3,
+          layerToy: 0,
+          layerOrgan: 0.8,
+          organ16: 8,
+          organ8: 6,
+          organ4: 2,
+          organMix: 4,
+          dcoSubLevel: 0.6,
+          noiseLevel: 0,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.25,
+          envAttack: 0.1,
+          envDecay: 1,
+          envSustain: 0.85,
+          envRelease: 2,
+          driveGain: 0.1,
+          tapeSat: 0.2,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0,
+        y: -0.7,
+        label: "full organ",
+        params: {
+          macroShape: 0,
+          filterCutoff: 2500,
+          filterRes: 0.15,
+          filterMode: 0,
+          layerDco: 0.1,
+          layerToy: 0,
+          layerOrgan: 0.9,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0,
+          lfoRate: 0.8,
+          lfoToPwm: 0,
+          lfoToVibrato: 0,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.9,
+          envRelease: 1.5,
+          driveGain: 0.08,
+          tapeSat: 0.25,
+          wowDepth: 0.1,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.65,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: -0.7,
+        label: "bright foundation",
+        params: {
+          macroShape: 0.3,
+          filterCutoff: 5e3,
+          filterRes: 0.25,
+          filterMode: 0,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.6,
+          organ16: 6,
+          organ8: 7,
+          organ4: 4,
+          organMix: 5,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.01,
+          lfoRate: 1.5,
+          lfoToPwm: 0.1,
+          lfoToVibrato: 2,
+          chorusMode: 2,
+          driftAmount: 0.3,
+          envAttack: 0.05,
+          envDecay: 0.8,
+          envSustain: 0.8,
+          envRelease: 1.5,
+          driveGain: 0.12,
+          tapeSat: 0.2,
+          wowDepth: 0.08,
+          flutterDepth: 0.03,
+          hissLevel: 0.05,
+          printMix: 0.6,
+          outputGain: 0
+        }
+      },
+      {
+        x: -0.7,
+        y: 0,
+        label: "sub drone",
+        params: {
+          macroShape: 0,
+          filterCutoff: 600,
+          filterRes: 0.3,
+          filterMode: 1,
+          layerDco: 0.5,
+          layerToy: 0,
+          layerOrgan: 0.7,
+          organ16: 8,
+          organ8: 5,
+          organ4: 1,
+          organMix: 3,
+          dcoSubLevel: 0.7,
+          noiseLevel: 0,
+          lfoRate: 0.2,
+          lfoToPwm: 0,
+          lfoToVibrato: 0.5,
+          chorusMode: 1,
+          driftAmount: 0.4,
+          envAttack: 0.3,
+          envDecay: 1.5,
+          envSustain: 0.9,
+          envRelease: 3,
+          driveGain: 0.15,
+          tapeSat: 0.3,
+          wowDepth: 0.12,
+          flutterDepth: 0.04,
+          hissLevel: 0.06,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: 0.7,
+        y: 0,
+        label: "gritty organ",
+        params: {
+          macroShape: 0.2,
+          filterCutoff: 4e3,
+          filterRes: 0.2,
+          filterMode: 0,
+          layerDco: 0.3,
+          layerToy: 0.05,
+          layerOrgan: 0.75,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.3,
+          noiseLevel: 0.02,
+          lfoRate: 1,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 2,
+          driftAmount: 0.45,
+          envAttack: 0.01,
+          envDecay: 0.5,
+          envSustain: 0.9,
+          envRelease: 1,
+          driveGain: 0.2,
+          tapeSat: 0.35,
+          wowDepth: 0.12,
+          flutterDepth: 0.05,
+          hissLevel: 0.08,
+          printMix: 0.7,
+          outputGain: -1
+        }
+      },
+      {
+        x: -0.7,
+        y: 0.7,
+        label: "worn floor",
+        params: {
+          macroShape: 0,
+          filterCutoff: 800,
+          filterRes: 0.15,
+          filterMode: 1,
+          layerDco: 0.4,
+          layerToy: 0,
+          layerOrgan: 0.7,
+          organ16: 8,
+          organ8: 6,
+          organ4: 2,
+          organMix: 4,
+          dcoSubLevel: 0.65,
+          noiseLevel: 0.02,
+          lfoRate: 0.3,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 1,
+          driftAmount: 0.6,
+          envAttack: 0.5,
+          envDecay: 2,
+          envSustain: 0.8,
+          envRelease: 4,
+          driveGain: 0.12,
+          tapeSat: 0.4,
+          wowDepth: 0.2,
+          flutterDepth: 0.07,
+          hissLevel: 0.1,
+          printMix: 0.8,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0,
+        y: 0.7,
+        label: "aged mass",
+        params: {
+          macroShape: 0.1,
+          filterCutoff: 1500,
+          filterRes: 0.2,
+          filterMode: 1,
+          layerDco: 0.2,
+          layerToy: 0,
+          layerOrgan: 0.85,
+          organ16: 8,
+          organ8: 7,
+          organ4: 4,
+          organMix: 5,
+          dcoSubLevel: 0.5,
+          noiseLevel: 0.03,
+          lfoRate: 0.5,
+          lfoToPwm: 0,
+          lfoToVibrato: 1,
+          chorusMode: 2,
+          driftAmount: 0.7,
+          envAttack: 0.2,
+          envDecay: 1.5,
+          envSustain: 0.85,
+          envRelease: 3.5,
+          driveGain: 0.15,
+          tapeSat: 0.45,
+          wowDepth: 0.25,
+          flutterDepth: 0.08,
+          hissLevel: 0.12,
+          printMix: 0.85,
+          outputGain: -2
+        }
+      },
+      {
+        x: 0.7,
+        y: 0.7,
+        label: "heavy print",
+        params: {
+          macroShape: 0.25,
+          filterCutoff: 3e3,
+          filterRes: 0.25,
+          filterMode: 0,
+          layerDco: 0.35,
+          layerToy: 0.05,
+          layerOrgan: 0.7,
+          organ16: 7,
+          organ8: 8,
+          organ4: 5,
+          organMix: 6,
+          dcoSubLevel: 0.4,
+          noiseLevel: 0.05,
+          lfoRate: 1,
+          lfoToPwm: 0.05,
+          lfoToVibrato: 2,
+          chorusMode: 3,
+          driftAmount: 0.8,
+          envAttack: 0.1,
+          envDecay: 1,
+          envSustain: 0.85,
+          envRelease: 3,
+          driveGain: 0.25,
+          tapeSat: 0.5,
+          wowDepth: 0.3,
+          flutterDepth: 0.1,
+          hissLevel: 0.15,
+          printMix: 0.9,
+          outputGain: -3
+        }
+      }
+    ]
+  }
+];
+function getSurfaceByIndex(index) {
+  return FACTORY_SURFACES[index] ?? null;
+}
+const GROUPS = [
+  {
+    label: "tone",
+    ids: ["filterCutoff", "filterRes", "filterMode", "filterKeyTrack", "envToFilter"]
+  },
+  {
+    label: "shape",
+    ids: [
+      "macroShape",
+      "dcoSubLevel",
+      "dcoSubOctave",
+      "noiseLevel",
+      "noiseColor",
+      "toyIndex",
+      "toyRatio",
+      "layerDco",
+      "layerToy",
+      "layerOrgan",
+      "organ16",
+      "organ8",
+      "organ4",
+      "organMix"
+    ]
+  },
+  {
+    label: "motion",
+    ids: [
+      "lfoRate",
+      "lfoShape",
+      "lfoToVibrato",
+      "lfoToPwm",
+      "chorusMode",
+      "driftAmount",
+      "stereoWidth",
+      "portaTime",
+      "portaMode",
+      "envAttack",
+      "envDecay",
+      "envSustain",
+      "envRelease"
+    ]
+  },
+  {
+    label: "print",
+    ids: [
+      "driveGain",
+      "tapeSat",
+      "wowDepth",
+      "flutterDepth",
+      "hissLevel",
+      "humFreq",
+      "printMix",
+      "outputGain"
+    ]
+  }
+];
+function normalise(id, value) {
+  const p = PARAMS[id];
+  if (!p || p.type === "choice" || p.type === "bool") return 0;
+  return Math.max(0, Math.min(1, (value - p.min) / (p.max - p.min)));
+}
+function denormalise(id, norm) {
+  const p = PARAMS[id];
+  if (!p) return norm;
+  return p.min + norm * (p.max - p.min);
+}
+function formatValue(id, raw) {
+  const p = PARAMS[id];
+  if (!p) return String(raw);
+  if (p.unit === "Hz") return raw >= 1e3 ? `${(raw / 1e3).toFixed(1)}k` : `${Math.round(raw)}`;
+  if (p.unit === "dB") return raw >= 0 ? `+${raw.toFixed(1)}` : raw.toFixed(1);
+  if (p.unit === "s") return raw < 1 ? `${(raw * 1e3).toFixed(0)}ms` : `${raw.toFixed(2)}s`;
+  if (p.unit === "ms") return `${Math.round(raw)}ms`;
+  if (p.unit === "cents") return `${Math.round(raw)}c`;
+  if (p.max <= 1 && p.min >= -1) return `${(raw * 100).toFixed(0)}%`;
+  if (p.max <= 8 && p.min >= 0 && Number.isInteger(p.max)) return String(Math.round(raw));
+  return raw.toFixed(2);
+}
+function buildDrawer(container, sendParam2) {
+  const sliderInstances = {};
+  const choiceInstances = {};
+  for (const group of GROUPS) {
+    const heading = document.createElement("h3");
+    heading.className = "drawer-group-heading";
+    heading.textContent = group.label;
+    container.appendChild(heading);
+    for (const id of group.ids) {
+      const p = PARAMS[id];
+      if (!p) continue;
+      if (p.type === "choice") {
+        const row = buildChoiceRow(id, p, sendParam2);
+        container.appendChild(row.el);
+        choiceInstances[id] = row;
+      } else {
+        const row = buildSliderRow(id, p, sendParam2);
+        container.appendChild(row.el);
+        sliderInstances[id] = row;
+      }
+    }
+  }
+  return {
+    update(stateMap) {
+      for (const [id, inst] of Object.entries(sliderInstances)) {
+        const val = stateMap[id];
+        if (val !== void 0 && !inst.dragging) {
+          inst.setNorm(normalise(id, val));
+        }
+      }
+      for (const [id, inst] of Object.entries(choiceInstances)) {
+        const val = stateMap[id];
+        if (val !== void 0) {
+          inst.setIndex(Math.round(val));
+        }
+      }
+    }
+  };
+}
+function buildSliderRow(id, param, sendParam2) {
+  const el = document.createElement("div");
+  el.className = "control-row";
+  el.dataset.param = id;
+  const label = document.createElement("label");
+  label.className = "param-label";
+  label.textContent = param.name;
+  const valueDisplay = document.createElement("span");
+  valueDisplay.className = "param-value";
+  valueDisplay.textContent = formatValue(id, param.default ?? 0);
+  const track = document.createElement("div");
+  track.className = "waver-slider";
+  track.setAttribute("role", "slider");
+  track.setAttribute("tabindex", "0");
+  track.setAttribute("aria-label", param.name);
+  track.setAttribute("aria-valuemin", "0");
+  track.setAttribute("aria-valuemax", "1");
+  const fill = document.createElement("div");
+  fill.className = "waver-slider__fill";
+  const thumb = document.createElement("div");
+  thumb.className = "waver-slider__thumb";
+  track.appendChild(fill);
+  track.appendChild(thumb);
+  el.appendChild(label);
+  el.appendChild(track);
+  el.appendChild(valueDisplay);
+  let dragging = false;
+  let norm = normalise(id, param.default ?? param.min ?? 0);
+  function render(n) {
+    const pct = `${(n * 100).toFixed(1)}%`;
+    fill.style.width = pct;
+    thumb.style.left = pct;
+    const raw = denormalise(id, n);
+    valueDisplay.textContent = formatValue(id, raw);
+    track.setAttribute("aria-valuenow", n.toFixed(3));
+  }
+  render(norm);
+  function onMove(clientX) {
+    const rect = track.getBoundingClientRect();
+    const n = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    norm = n;
+    render(n);
+    sendParam2(id, denormalise(id, n));
+  }
+  track.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    track.setPointerCapture(e.pointerId);
+    onMove(e.clientX);
+  });
+  track.addEventListener("pointermove", (e) => {
+    if (dragging) onMove(e.clientX);
+  });
+  track.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+  track.addEventListener("pointercancel", () => {
+    dragging = false;
+  });
+  track.addEventListener("keydown", (e) => {
+    let step = 0.02;
+    if (e.shiftKey) step = 0.1;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      norm = Math.min(1, norm + step);
+      render(norm);
+      sendParam2(id, denormalise(id, norm));
+      e.preventDefault();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      norm = Math.max(0, norm - step);
+      render(norm);
+      sendParam2(id, denormalise(id, norm));
+      e.preventDefault();
+    }
+  });
+  return {
+    el,
+    get dragging() {
+      return dragging;
+    },
+    setNorm(n) {
+      norm = n;
+      render(n);
+    }
+  };
+}
+function buildChoiceRow(id, param, sendParam2) {
+  const el = document.createElement("div");
+  el.className = "control-row control-row--choice";
+  el.dataset.param = id;
+  const label = document.createElement("label");
+  label.className = "param-label";
+  label.textContent = param.name;
+  const group = document.createElement("div");
+  group.className = "choice-group";
+  group.setAttribute("role", "radiogroup");
+  group.setAttribute("aria-label", param.name);
+  const options = param.options || [];
+  let currentIndex = param.default ?? 0;
+  const buttons = options.map((opt, i) => {
+    const btn = document.createElement("button");
+    btn.className = "choice-btn";
+    btn.type = "button";
+    btn.textContent = opt;
+    btn.setAttribute("role", "radio");
+    btn.setAttribute("aria-checked", i === currentIndex ? "true" : "false");
+    if (i === currentIndex) btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      currentIndex = i;
+      buttons.forEach((b, j) => {
+        b.classList.toggle("active", j === i);
+        b.setAttribute("aria-checked", j === i ? "true" : "false");
+      });
+      sendParam2(id, i);
+    });
+    group.appendChild(btn);
+    return btn;
+  });
+  el.appendChild(label);
+  el.appendChild(group);
+  return {
+    el,
+    setIndex(idx) {
+      currentIndex = idx;
+      buttons.forEach((b, j) => {
+        b.classList.toggle("active", j === idx);
+        b.setAttribute("aria-checked", j === idx ? "true" : "false");
+      });
+    }
+  };
+}
 const getNativeFunction = createNativeFunctionBridge();
 const sendHostParam = createParamSender(getNativeFunction);
 const sendMorphSnapshotNative = getNativeFunction("setMorphSnapshot");
@@ -2233,16 +4097,80 @@ let morphState = {
   puckY: 0,
   blend: 0.35
 };
+let activeSurface = FACTORY_SURFACES.length > 0 ? FACTORY_SURFACES[0] : null;
+let momentSeed = 42;
+let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.length, momentSeed) : [];
+let rbfThrottle = 0;
+let lastLoadedPresetIndex = -1;
+const PRESET_TO_SURFACE_INDEX = [
+  0,
+  0,
+  0,
+  // Amber
+  1,
+  1,
+  1,
+  // Drift
+  2,
+  2,
+  2,
+  // Hush
+  3,
+  3,
+  3,
+  // Signal
+  4,
+  4,
+  4,
+  // Weight
+  0,
+  3,
+  0,
+  1
+  // Showcase / hybrid
+];
+function applyRbfInterpolation(puckX, puckY) {
+  if (!activeSurface) return;
+  const now = performance.now();
+  if (now - rbfThrottle < 100) return;
+  rbfThrottle = now;
+  const sigma = activeSurface.sigma ?? 0.32;
+  const result = interpolate(
+    puckX,
+    puckY,
+    activeSurface.landmarks,
+    sigma,
+    sigmaOffsets
+  );
+  for (const [id, value] of Object.entries(result)) {
+    if (PARAMS[id]) {
+      sendHostParam(id, value);
+    }
+  }
+}
 const sendParam = (id, value) => {
   if (id === "puckX" || id === "puckY" || id === "blend") {
     morphState = { ...morphState, [id]: value };
     if (typeof sendMorphSnapshotNative === "function") {
       sendMorphSnapshotNative(morphState.puckX, morphState.puckY, morphState.blend);
-      return;
     }
+    if (id === "puckX" || id === "puckY") {
+      applyRbfInterpolation(morphState.puckX, morphState.puckY);
+    }
+    return;
   }
-  if (id === "momentTrigger" && typeof enqueueUiEventNative === "function") {
-    enqueueUiEventNative("moment");
+  if (id === "momentTrigger") {
+    momentSeed = momentSeed * 1664525 + 1013904223 >>> 0;
+    if (activeSurface) {
+      sigmaOffsets = generateSigmaOffsets(activeSurface.landmarks.length, momentSeed);
+    }
+    if (typeof enqueueUiEventNative === "function") {
+      enqueueUiEventNative("moment");
+    }
+    if (shell?.viz) {
+      shell.viz.triggerMoment?.();
+    }
+    applyRbfInterpolation(morphState.puckX, morphState.puckY);
     return;
   }
   if (id === "arpEnabled" && typeof enqueueUiEventNative === "function") {
@@ -2251,34 +4179,76 @@ const sendParam = (id, value) => {
   sendHostParam(id, value);
 };
 const THEME = {
-  bg: "#2b2b2b",
-  // TODO: replace with plugin theme token
-  text: "#d8d8d8",
-  // TODO: replace with plugin theme token
-  accent: "#9bc8ff",
-  // TODO: replace with plugin theme token
-  "accent-hover": "#c3e0ff"
-  // TODO: replace with plugin theme token
+  bg: "#241D19",
+  text: "#D3C7BB",
+  accent: "#C4A46C",
+  "accent-hover": "#D4B87C"
 };
 let shell = null;
+let drawer = null;
+function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
+  if (index === lastLoadedPresetIndex) return;
+  lastLoadedPresetIndex = index;
+  const mappedSurfaceIndex = PRESET_TO_SURFACE_INDEX[index] ?? 0;
+  const surface = getSurfaceByIndex(mappedSurfaceIndex);
+  if (surface) {
+    activeSurface = surface;
+    sigmaOffsets = generateSigmaOffsets(
+      activeSurface.landmarks.length,
+      momentSeed
+    );
+    const clampedX = Math.max(-1, Math.min(1, Number(presetPuckX) || 0));
+    const clampedY = Math.max(-1, Math.min(1, Number(presetPuckY) || 0));
+    const normX = (clampedX + 1) * 0.5;
+    const normY = (1 - clampedY) * 0.5;
+    morphState = { ...morphState, puckX: clampedX, puckY: clampedY };
+    if (typeof sendMorphSnapshotNative === "function") {
+      sendMorphSnapshotNative(clampedX, clampedY, morphState.blend);
+    }
+    shell?.controls?.animatePuckTo(normX, normY);
+    rbfThrottle = 0;
+    applyRbfInterpolation(clampedX, clampedY);
+  }
+}
 function initApp() {
   shell = initShell({
     VizClass: WaverViz,
     params: PARAMS,
     paramOrder: PARAM_IDS,
     themeTokens: THEME,
+    axisLabels: {
+      normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" }
+    },
     getNativeFn: getNativeFunction,
     sendParam
   });
+  const drawerContent = document.getElementById("drawer-content");
+  if (drawerContent) {
+    drawer = buildDrawer(drawerContent, sendParam);
+  }
+  applyRbfInterpolation(morphState.puckX, morphState.puckY);
+}
+function handleBackendState(payload) {
+  let parsed = payload;
+  if (typeof payload === "string") {
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return;
+    }
+  }
+  if (parsed?.currentPreset !== void 0) {
+    onPresetLoaded(parsed.currentPreset, parsed?.presetPuckX, parsed?.presetPuckY);
+  }
+  shell?.updateState(payload);
+  if (typeof parsed === "object" && parsed !== null) {
+    drawer?.update(parsed);
+  }
 }
 if (window.__JUCE__?.backend?.addEventListener) {
-  window.__JUCE__.backend.addEventListener("updateState", (payload) => {
-    shell?.updateState(payload);
-  });
+  window.__JUCE__.backend.addEventListener("updateState", handleBackendState);
 }
-window.updateState = (payload) => {
-  shell?.updateState(payload);
-};
+window.updateState = handleBackendState;
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initApp);
 } else {
@@ -3584,13 +5554,186 @@ body {
     transform: none !important;
     filter: none !important;
   }
+}
+.drawer-group-heading {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent, #C4A46C);
+  opacity: 0.7;
+  margin: 18px 0 8px;
+  padding: 0 4px;
+  border-bottom: 1px solid rgba(196, 164, 108, 0.15);
+  padding-bottom: 4px;
+}
+
+.drawer-group-heading:first-child {
+  margin-top: 4px;
+}
+
+.control-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  min-height: 32px;
+}
+
+.control-row--choice {
+  grid-template-columns: 72px 1fr;
+}
+
+.param-label {
+  font-size: 11px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.param-value {
+  font-size: 10px;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.waver-slider {
+  position: relative;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.waver-slider:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent, #C4A46C);
+}
+
+.waver-slider__fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--accent, #C4A46C);
+  opacity: 0.2;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.waver-slider__thumb {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  background: var(--accent, #C4A46C);
+  border-radius: 1.5px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: height 0.1s ease;
+}
+
+.waver-slider:active .waver-slider__thumb {
+  height: 20px;
+}
+
+.choice-group {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  padding: 2px;
+}
+
+.choice-btn {
+  flex: 1;
+  padding: 4px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text, #D3C7BB);
+  opacity: 0.5;
+  background: none;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.choice-btn:hover {
+  opacity: 0.7;
+}
+
+.choice-btn.active {
+  opacity: 1;
+  background: var(--accent, #C4A46C);
+  color: var(--bg, #241D19);
 }</style>
   </head>
   <body>
-    <div class="tb-canvas-shell">
-      <div id="viz-slot">
-        <canvas id="orb"></canvas>
-      </div>
+    <div id="app" class="tb-app">
+      <header class="tb-top-bar">
+        <div class="preset-pill" role="combobox" aria-haspopup="listbox" aria-expanded="false" tabindex="0">
+          <span class="chevron" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M18.5675 9.06754L12.3175 15.3175C12.2595 15.3756 12.1906 15.4217 12.1147 15.4532C12.0388 15.4847 11.9575 15.5008 11.8753 15.5008C11.7932 15.5008 11.7119 15.4847 11.636 15.4532C11.5601 15.4217 11.4912 15.3756 11.4332 15.3175L5.18316 9.06754C5.06588 8.95026 5 8.7912 5 8.62535C5 8.4595 5.06588 8.30044 5.18316 8.18316C5.30044 8.06588 5.4595 8 5.62535 8C5.7912 8 5.95026 8.06588 6.06753 8.18316L11.8753 13.9918L17.6832 8.18316C17.7412 8.12509 17.8102 8.07903 17.886 8.0476C17.9619 8.01617 18.0432 8 18.1253 8C18.2075 8 18.2888 8.01617 18.3647 8.0476C18.4405 8.07903 18.5095 8.12509 18.5675 8.18316C18.6256 8.24123 18.6717 8.31017 18.7031 8.38604C18.7345 8.46191 18.7507 8.54323 18.7507 8.62535C18.7507 8.70747 18.7345 8.78879 18.7031 8.86466C18.6717 8.94053 18.6256 9.00947 18.5675 9.06754Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span class="preset-name">waver</span>
+        </div>
+        <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24V21.6C8.93482 21.6 6.45 19.1152 6.45 16.05C6.45 12.9848 8.93482 10.5 12 10.5V8.1C7.60934 8.1 4.05 11.6593 4.05 16.05C4.05 16.58 4.10186 17.0978 4.20077 17.5987C3.06745 16.0228 2.4 14.0893 2.4 12C2.4 6.69807 6.69807 2.4 12 2.4V0Z" fill="currentColor" />
+            <path d="M13.2 23.9408C19.264 23.3387 24 18.2224 24 12C24 5.77758 19.264 0.66132 13.2 0.0592503V23.9408Z" fill="currentColor" />
+          </svg>
+        </span>
+      </header>
+
+      <ul class="preset-dropdown" role="listbox" aria-label="Select preset"></ul>
+
+      <main class="tb-canvas-shell" aria-label="Waveform scope">
+        <canvas id="orb" width="1200" height="1600"></canvas>
+        <div id="puck" role="presentation">
+          <span class="puck-pupil"></span>
+        </div>
+        <div class="axis-label axis-label-left">bright</div>
+        <div class="axis-label axis-label-right">dark</div>
+        <div class="axis-label axis-label-top">worn</div>
+        <div class="axis-label axis-label-bottom">clean</div>
+      </main>
+
+      <footer class="tb-bottom-bar">
+        <div class="readouts" aria-live="polite">
+          <span data-readout="x">0.000</span>
+          <span data-readout="y">0.000</span>
+        </div>
+        <div class="tb-control-cluster">
+          <button class="btn-settings" type="button" aria-label="Open settings" aria-expanded="false">
+            <svg class="icon-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M21 12C21 12.1989 20.921 12.3897 20.7803 12.5303C20.6397 12.671 20.4489 12.75 20.25 12.75H3.75C3.55109 12.75 3.36032 12.671 3.21967 12.5303C3.07902 12.3897 3 12.1989 3 12C3 11.8011 3.07902 11.6103 3.21967 11.4697C3.36032 11.329 3.55109 11.25 3.75 11.25H20.25C20.4489 11.25 20.6397 11.329 20.7803 11.4697C20.921 11.6103 21 11.8011 21 12ZM3.75 6.75H16.25C16.4489 6.75 16.6397 6.67098 16.7803 6.53033C16.921 6.38968 17 6.19891 17 6C17 5.80109 16.921 5.61032 16.7803 5.46967C16.6397 5.32902 16.4489 5.25 16.25 5.25H3.75C3.55109 5.25 3.36032 5.32902 3.21967 5.46967C3.07902 5.61032 3 5.80109 3 6C3 6.19891 3.07902 6.38968 3.21967 6.53033C3.36032 6.67098 3.55109 6.75 3.75 6.75ZM11.25 17.25H3.75C3.55109 17.25 3.36032 17.329 3.21967 17.4697C3.07902 17.6103 3 17.8011 3 18C3 18.1989 3.07902 18.3897 3.21967 18.5303C3.36032 18.671 3.55109 18.75 3.75 18.75H11.25C11.4489 18.75 11.6397 18.671 11.7803 18.5303C11.921 18.3897 12 18.1989 12 18C12 17.8011 11.921 17.6103 11.7803 17.4697C11.6397 17.329 11.4489 17.25 11.25 17.25Z" fill="currentColor" />
+            </svg>
+            <svg class="icon-close" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M19.281 18.2194C19.3507 18.2891 19.406 18.3718 19.4437 18.4628C19.4814 18.5539 19.5008 18.6515 19.5008 18.75C19.5008 18.8486 19.4814 18.9461 19.4437 19.0372C19.406 19.1282 19.3507 19.2109 19.281 19.2806C19.2114 19.3503 19.1286 19.4056 19.0376 19.4433C18.9465 19.481 18.849 19.5004 18.7504 19.5004C18.6519 19.5004 18.5543 19.481 18.4632 19.4433C18.3722 19.4056 18.2895 19.3503 18.2198 19.2806L12.0004 13.0603L5.78104 19.2806C5.64031 19.4214 5.44944 19.5004 5.25042 19.5004C5.05139 19.5004 4.86052 19.4214 4.71979 19.2806C4.57906 19.1399 4.5 18.949 4.5 18.75C4.5 18.551 4.57906 18.3601 4.71979 18.2194L10.9401 12L4.71979 5.78063C4.57906 5.6399 4.5 5.44903 4.5 5.25001C4.5 5.05098 4.57906 4.86011 4.71979 4.71938C4.86052 4.57865 5.05139 4.49959 5.25042 4.49959C5.44944 4.49959 5.64031 4.57865 5.78104 4.71938L12.0004 10.9397L18.2198 4.71938C18.3605 4.57865 18.5514 4.49959 18.7504 4.49959C18.9494 4.49959 19.1403 4.57865 19.281 4.71938C19.4218 4.86011 19.5008 5.05098 19.5008 5.25001C19.5008 5.44903 19.4218 5.6399 19.281 5.78063L13.0607 12L19.281 18.2194Z" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+      </footer>
+
+      <aside class="settings-view" id="settings-view" role="dialog" aria-modal="true" aria-labelledby="settings-title" aria-hidden="true">
+        <div class="settings-body">
+          <h2 class="settings-title" id="settings-title">advanced</h2>
+          <div class="settings-content" id="drawer-content">
+          </div>
+        </div>
+      </aside>
     </div>
+
   </body>
 </html>

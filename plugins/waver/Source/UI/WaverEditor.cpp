@@ -85,10 +85,7 @@ threadbare::core::NativeFunctionMap createNativeFunctions(WaverProcessor& proces
                     if (auto* rangedParam = dynamic_cast<juce::RangedAudioParameter*>(
                             processorPtr->getValueTreeState().getParameter(paramId)))
                     {
-                        const auto normalised = rangedParam->convertTo0to1(value);
-                        rangedParam->beginChangeGesture();
-                        rangedParam->setValueNotifyingHost(normalised);
-                        rangedParam->endChangeGesture();
+                        rangedParam->setValueNotifyingHost(rangedParam->convertTo0to1(value));
                     }
                 }
                 completion({});
@@ -183,10 +180,12 @@ void WaverEditor::handleUpdate()
     auto* obj = new juce::DynamicObject();
     obj->setProperty("puckX", state.puckX);
     obj->setProperty("puckY", state.puckY);
+    obj->setProperty("presetPuckX", state.presetPuckX);
+    obj->setProperty("presetPuckY", state.presetPuckY);
     obj->setProperty("mix", state.mix);
-    obj->setProperty("output", state.output);
-    obj->setProperty("inLevel", state.inLevel);
-    obj->setProperty("outLevel", state.outLevel);
+    obj->setProperty("rms", state.rmsLevel);
+    obj->setProperty("peak", state.peakLevel);
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());
+
     webView.emitEventIfBrowserIsVisible("updateState", juce::JSON::toString(juce::var(obj)));
 }

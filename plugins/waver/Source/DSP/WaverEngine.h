@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <span>
 
+#include "ArpEngine.h"
 #include "BbdChorus.h"
 #include "OrganEngine.h"
 #include "PrintChain.h"
@@ -43,12 +44,20 @@ public:
                         float printMix) noexcept;
 
     WaverVoiceAllocator& getAllocator() noexcept { return voiceAllocator; }
+    ArpEngine& getArp() noexcept { return arp; }
+
+    void setArpEnabled(bool on) noexcept;
+    void setArpPuck(float puckX, float puckY) noexcept;
+    void arpNoteOn(int midiNote, float velocity) noexcept;
+    void arpNoteOff(int midiNote, float velocity) noexcept;
 
 private:
     WaverVoiceAllocator voiceAllocator;
+    ArpEngine arp;
     BbdChorus chorus;
     OrganEngine organ;
     PrintChain printChain;
     float organLevel = 0.3f;
+    bool arpEnabled = false;
 };
 } // namespace threadbare::dsp

@@ -8,6 +8,7 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
 {
     voiceAllocator.prepare(spec.sampleRate, driftSeed);
     voiceAllocator.setPortamento(0.0f, false);
+    arp.prepare(spec.sampleRate, driftSeed ^ 0xABCD1234u);
     chorus.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
     chorus.setMode(BbdChorus::Mode::modeI);
     organ.prepare(spec.sampleRate);
@@ -17,6 +18,7 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
 void WaverEngine::reset() noexcept
 {
     voiceAllocator.reset();
+    arp.reset();
     chorus.reset();
     organ.reset();
     printChain.reset();
@@ -24,10 +26,26 @@ void WaverEngine::reset() noexcept
 
 void WaverEngine::process(std::span<float> left, std::span<float> right) noexcept
 {
-    // Voice allocator renders DCO+Toy into left/right (mono-summed).
+    if (arpEnabled)
+    {
+        auto event = arp.advance(static_cast<int>(left.size()));
+        if (event.noteNumber >= 0)
+        {
+            if (event.isNoteOn)
+            {
+                voiceAllocator.noteOn(event.noteNumber, event.velocity);
+                organ.noteOn(event.noteNumber);
+            }
+            else
+            {
+                voiceAllocator.noteOff(event.noteNumber);
+                organ.noteOff(event.noteNumber);
+            }
+        }
+    }
+
     voiceAllocator.render(left, right);
 
-    // Mix in the global organ bus.
     for (std::size_t i = 0; i < left.size(); ++i)
     {
         const float organSample = organ.processSample() * organLevel;
@@ -159,5 +177,39 @@ void WaverEngine::setPrintParams(float driveGain, float tapeSat, float wowDepth,
     printChain.setHissLevel(hissLevel);
     printChain.setHumFreq(humFreqHz);
     printChain.setMix(printMix);
+}
+
+void WaverEngine::setArpEnabled(bool on) noexcept
+{
+    arpEnabled = on;
+    arp.setEnabled(on);
+}
+
+void WaverEngine::setArpPuck(float puckX, float puckY) noexcept
+{
+    arp.setPuckParams(puckX, puckY);
+}
+
+void WaverEngine::arpNoteOn(int midiNote, float velocity) noexcept
+{
+    if (arpEnabled)
+        arp.noteOn(midiNote, velocity);
+    else
+    {
+        voiceAllocator.noteOn(midiNote, velocity);
+        organ.noteOn(midiNote);
+    }
+}
+
+void WaverEngine::arpNoteOff(int midiNote, float velocity) noexcept
+{
+    juce::ignoreUnused(velocity);
+    if (arpEnabled)
+        arp.noteOff(midiNote);
+    else
+    {
+        voiceAllocator.noteOff(midiNote);
+        organ.noteOff(midiNote);
+    }
 }
 } // namespace threadbare::dsp

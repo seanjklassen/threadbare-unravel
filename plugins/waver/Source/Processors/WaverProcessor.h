@@ -16,8 +16,6 @@
 class WaverProcessor final : public threadbare::core::ProcessorBase
 {
 public:
-    static constexpr std::size_t kScopeBufferSize = 256;
-
     WaverProcessor();
     ~WaverProcessor() override = default;
 
@@ -43,12 +41,14 @@ public:
     {
         float puckX = 0.0f;
         float puckY = 0.0f;
+        float presetPuckX = 0.0f;
+        float presetPuckY = 0.0f;
         float mix = 0.5f;
         float output = 0.0f;
         float inLevel = 0.0f;
         float outLevel = 0.0f;
-        std::array<float, kScopeBufferSize> scope{};
-        std::uint32_t scopeWriteIndex = 0;
+        float rmsLevel = 0.0f;
+        float peakLevel = 0.0f;
     };
 
     struct DeterminismState
@@ -104,6 +104,8 @@ private:
     {
         juce::String name;
         std::map<juce::String, float> parameters;
+        float puckX = 0.0f;
+        float puckY = 0.0f;
     };
 
     void initialiseFactoryPresets();
@@ -124,6 +126,8 @@ private:
     std::atomic<float> morphPuckX { 0.0f };
     std::atomic<float> morphPuckY { 0.0f };
     std::atomic<float> morphBlend { 0.35f };
+    std::atomic<float> presetPuckX { 0.0f };
+    std::atomic<float> presetPuckY { 0.0f };
     std::vector<Preset> factoryPresets;
     int currentProgramIndex = 0;
 
