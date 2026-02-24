@@ -28,6 +28,9 @@ let sigmaOffsets = activeSurface
   : []
 let rbfThrottle = 0
 let lastLoadedPresetIndex = -1
+let arpEnabled = false
+let savedPuckState = null
+let isRestoringFromArp = false
 
 const PRESET_TO_SURFACE_INDEX = [
   0, 0, 0, // Amber
@@ -67,7 +70,7 @@ const sendParam = (id, value) => {
     if (typeof sendMorphSnapshotNative === "function") {
       sendMorphSnapshotNative(morphState.puckX, morphState.puckY, morphState.blend)
     }
-    if (id === "puckX" || id === "puckY") {
+    if ((id === "puckX" || id === "puckY") && !arpEnabled) {
       applyRbfInterpolation(morphState.puckX, morphState.puckY)
     }
     return
@@ -86,10 +89,6 @@ const sendParam = (id, value) => {
     }
     applyRbfInterpolation(morphState.puckX, morphState.puckY)
     return
-  }
-
-  if (id === "arpEnabled" && typeof enqueueUiEventNative === "function") {
-    enqueueUiEventNative("arp", Boolean(value))
   }
 
   sendHostParam(id, value)
@@ -158,11 +157,49 @@ function initApp() {
   applyRbfInterpolation(morphState.puckX, morphState.puckY)
 }
 
+function onArpStateChanged(nowEnabled) {
+  const app = document.getElementById("app")
+
+  if (nowEnabled && !arpEnabled) {
+    savedPuckState = { puckX: morphState.puckX, puckY: morphState.puckY }
+    app?.classList.add("arping")
+    if (shell?.controls?.toggleSettingsView) {
+      shell.controls.toggleSettingsView(false, { reason: "arp-lock" })
+    }
+  } else if (!nowEnabled && arpEnabled) {
+    app?.classList.remove("arping")
+    if (savedPuckState) {
+      isRestoringFromArp = true
+      morphState = { ...morphState, puckX: savedPuckState.puckX, puckY: savedPuckState.puckY }
+      if (typeof sendMorphSnapshotNative === "function") {
+        sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend)
+      }
+      const normX = (savedPuckState.puckX + 1) * 0.5
+      const normY = (1 - savedPuckState.puckY) * 0.5
+      shell?.controls?.setPuckPositionImmediate(normX, normY)
+      shell?.controls?.renderReadoutsFromNorm(normX, normY)
+      rbfThrottle = 0
+      applyRbfInterpolation(savedPuckState.puckX, savedPuckState.puckY)
+      savedPuckState = null
+      isRestoringFromArp = false
+    }
+  }
+  arpEnabled = nowEnabled
+}
+
 function handleBackendState(payload) {
   let parsed = payload
   if (typeof payload === "string") {
     try { parsed = JSON.parse(payload) } catch { return }
   }
+
+  if (typeof parsed?.arpEnabled === "boolean" || typeof parsed?.arpEnabled === "number") {
+    const nowEnabled = Boolean(parsed.arpEnabled)
+    if (nowEnabled !== arpEnabled) {
+      onArpStateChanged(nowEnabled)
+    }
+  }
+
   if (parsed?.currentPreset !== undefined) {
     onPresetLoaded(parsed.currentPreset, parsed?.presetPuckX, parsed?.presetPuckY)
   }
