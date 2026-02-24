@@ -1,3 +1,44 @@
+.tb-app {
+  background: #C4A46C;
+}
+
+.tb-top-bar {
+  background: transparent;
+}
+
+.tb-canvas-shell {
+  background: transparent;
+  top: 0;
+  bottom: 0;
+}
+
+.preset-pill {
+  color: #241D19;
+}
+
+.preset-dropdown {
+  background: rgba(196, 164, 108, 0.30);
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
+}
+
+.preset-option {
+  color: #241D19;
+}
+
+.tb-bottom-bar {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: none;
+}
+
+.settings-view {
+  background: rgba(196, 164, 108, 0.30);
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
+}
+
 .drawer-group-heading {
   font-size: 11px;
   font-weight: 500;

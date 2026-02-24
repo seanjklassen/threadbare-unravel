@@ -1778,6 +1778,7 @@ const createParamSender = (getNativeFn) => {
 };
 const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108;
 const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51;
+const BG_R = 42, BG_G = 31, BG_B = 26;
 const TRAIL_COUNT = 3;
 const POINT_COUNT = 80;
 const OVERSHOOT = 30;
@@ -1800,6 +1801,8 @@ class WaverViz {
     this.lastSnapshotTime = 0;
     this._colorCache = "";
     this._glowCache = "";
+    this._skyFillCache = "";
+    this._groundFillCache = "";
     this._lastColorKey = -1;
     this.resize();
   }
@@ -1844,6 +1847,8 @@ class WaverViz {
       this.momentFlash = 0;
     }
     this._updateColors(age, energy);
+    ctx.fillStyle = this._skyFillCache;
+    ctx.fillRect(0, 0, w, h);
     const centerY = h * 0.5 + Math.sin(this.breathPhase * 0.4) * h * 0.02;
     const baseAmp = h * 0.025;
     const signalAmp = h * 0.3 * energy;
@@ -1861,12 +1866,17 @@ class WaverViz {
     this.trails[0].driftPhase = this.driftPhase;
     this.trails[0].waveH = waveH * breathMod;
     this.trails[0].energy = energy;
+    ctx.beginPath();
+    this._traceFillPath(ctx, w, h, centerY, this.trails[0]);
+    ctx.fillStyle = this._groundFillCache;
+    ctx.globalAlpha = 0.96;
+    ctx.fill();
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
       const trail = this.trails[t];
       if (trail.waveH < 0.5) continue;
-      const alpha = 0.03 + (TRAIL_COUNT - 1 - t) * 0.03;
+      const alpha = 0.02 + (TRAIL_COUNT - 1 - t) * 0.02;
       ctx.beginPath();
       this._tracePath(ctx, w, centerY, trail);
       ctx.strokeStyle = this._glowCache;
@@ -1902,6 +1912,12 @@ class WaverViz {
       else ctx.lineTo(x, y);
     }
   }
+  _traceFillPath(ctx, w, h, centerY, trail) {
+    this._tracePath(ctx, w, centerY, trail);
+    ctx.lineTo(w + OVERSHOOT, h + OVERSHOOT);
+    ctx.lineTo(-OVERSHOOT, h + OVERSHOOT);
+    ctx.closePath();
+  }
   _wave(t, amplitude, energy, phase, drift) {
     const p = phase;
     const d = drift;
@@ -1929,6 +1945,16 @@ class WaverViz {
     const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
     this._colorCache = `rgb(${r},${g},${b})`;
     this._glowCache = `rgba(${r},${g},${b},0.3)`;
+    const skyLift = Math.round(quantEnergy * 6 + this.momentFlash * 10);
+    const skyR = Math.min(255, AMBER_R + skyLift);
+    const skyG = Math.min(255, AMBER_G + skyLift);
+    const skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65));
+    this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`;
+    const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32;
+    const groundR = Math.round(BG_R + (r - BG_R) * groundMix);
+    const groundG = Math.round(BG_G + (g - BG_G) * groundMix);
+    const groundB = Math.round(BG_B + (b - BG_B) * groundMix);
+    this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`;
   }
 }
 const PARAMS = {
@@ -5555,6 +5581,47 @@ body {
     filter: none !important;
   }
 }
+.tb-app {
+  background: #C4A46C;
+}
+
+.tb-top-bar {
+  background: transparent;
+}
+
+.tb-canvas-shell {
+  background: transparent;
+  top: 0;
+  bottom: 0;
+}
+
+.preset-pill {
+  color: #241D19;
+}
+
+.preset-dropdown {
+  background: rgba(196, 164, 108, 0.30);
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
+}
+
+.preset-option {
+  color: #241D19;
+}
+
+.tb-bottom-bar {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: none;
+}
+
+.settings-view {
+  background: rgba(196, 164, 108, 0.30);
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
+}
+
 .drawer-group-heading {
   font-size: 11px;
   font-weight: 500;
