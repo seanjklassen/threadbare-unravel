@@ -1793,14 +1793,15 @@ const createParamSender = (getNativeFn) => {
   };
 };
 const WAVER_PALETTE = Object.freeze({
-  surfaceBase: "#E4E4D8",
-  surfaceBaseHover: "#CC8A7E",
+  surfaceBase: "#7D8FA0",
+  surfaceBaseHover: "#E8B8A8",
   textPrimary: "#31312B",
-  panelInk: "#E4E4D8",
-  panelInkSoft: "#31312B",
-  waveformShadowDrift: "#b8cac8",
+  panelInk: "#7D8FA0",
+  panelInkSoft: "#E4E4D8",
+  waveformShadowDrift: "#E4E4D8",
   textUpper: "#31312B",
-  textLower: "#E4E4D8"
+  textLower: "#31312B",
+  arpTint: "#AD97B1"
 });
 function hexToRgb(hex) {
   const normalized = hex.replace("#", "");
@@ -1826,15 +1827,20 @@ function applyWaverPaletteCssVars(target = document.documentElement) {
   target.style.setProperty("--waver-waveform-shadow-drift", WAVER_PALETTE.waveformShadowDrift);
   target.style.setProperty("--waver-text-upper", WAVER_PALETTE.textUpper);
   target.style.setProperty("--waver-text-lower", WAVER_PALETTE.textLower);
+  target.style.setProperty("--waver-arp-tint", WAVER_PALETTE.arpTint);
   target.style.setProperty("--waver-overlay-surface", alpha(WAVER_PALETTE.panelInkSoft, 0.3));
   target.style.setProperty("--waver-overlay-panel", alpha(WAVER_PALETTE.panelInk, 0.42));
   target.style.setProperty("--waver-border-soft", alpha(WAVER_PALETTE.panelInkSoft, 0.15));
   target.style.setProperty("--waver-overlay-bg", alpha(WAVER_PALETTE.panelInk, 0.7));
+  target.style.setProperty("--waver-arp-ring", alpha("#CC8A7E", 0.65));
+  target.style.setProperty("--waver-arp-ring-fade", alpha("#CC8A7E", 0));
+  target.style.setProperty("--waver-arp-overlay-bg", alpha(WAVER_PALETTE.arpTint, 0.2));
+  target.style.setProperty("--waver-arp-overlay-surface", alpha(WAVER_PALETTE.arpTint, 0.1));
 }
 const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase);
 const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift);
 const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft);
-const ARP_BLUE = { r: 106, g: 158, b: 181 };
+const { r: ARP_R, g: ARP_G, b: ARP_B } = hexToRgb(WAVER_PALETTE.arpTint);
 const TRAIL_COUNT = 3;
 const POINT_COUNT = 80;
 const OVERSHOOT = 30;
@@ -2007,29 +2013,29 @@ class WaverViz {
     if (key === this._lastColorKey) return;
     this._lastColorKey = key;
     const lerp = (a, b2, t) => Math.round(a + (b2 - a) * t);
-    let r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
-    let g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
-    let b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
-    r = lerp(r, ARP_BLUE.r, quantArp);
-    g = lerp(g, ARP_BLUE.g, quantArp);
-    b = lerp(b, ARP_BLUE.b, quantArp);
+    const baseR = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift);
+    const baseG = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift);
+    const baseB = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift);
+    const lineBlend = this.state?.arpEnabled ? 1 : 0;
+    const r = lerp(baseR, ARP_R, lineBlend);
+    const g = lerp(baseG, ARP_G, lineBlend);
+    const b = lerp(baseB, ARP_B, lineBlend);
     this._colorCache = `rgb(${r},${g},${b})`;
     this._glowCache = `rgba(${r},${g},${b},0.3)`;
     const skyLift = Math.round(quantEnergy * 6 + this.momentFlash * 10);
     let skyR = Math.min(255, AMBER_R + skyLift);
     let skyG = Math.min(255, AMBER_G + skyLift);
     let skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65));
-    skyR = lerp(skyR, lerp(AMBER_R, ARP_BLUE.r, 0.15), quantArp);
-    skyG = lerp(skyG, lerp(AMBER_G, ARP_BLUE.g, 0.15), quantArp);
-    skyB = lerp(skyB, lerp(AMBER_B, ARP_BLUE.b, 0.2), quantArp);
+    if (this.state?.arpEnabled) {
+      skyR = ARP_R;
+      skyG = ARP_G;
+      skyB = ARP_B;
+    }
     this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`;
     const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32;
-    let groundR = Math.round(BG_R + (r - BG_R) * groundMix);
-    let groundG = Math.round(BG_G + (g - BG_G) * groundMix);
-    let groundB = Math.round(BG_B + (b - BG_B) * groundMix);
-    groundR = lerp(groundR, lerp(BG_R, ARP_BLUE.r, 0.2), quantArp);
-    groundG = lerp(groundG, lerp(BG_G, ARP_BLUE.g, 0.2), quantArp);
-    groundB = lerp(groundB, lerp(BG_B, ARP_BLUE.b, 0.25), quantArp);
+    const groundR = Math.round(BG_R + (baseR - BG_R) * groundMix);
+    const groundG = Math.round(BG_G + (baseG - BG_G) * groundMix);
+    const groundB = Math.round(BG_B + (baseB - BG_B) * groundMix);
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`;
     const compR = Math.round(groundR * 0.96 + skyR * 0.04);
     const compG = Math.round(groundG * 0.96 + skyG * 0.04);
@@ -4212,6 +4218,7 @@ let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.
 let rbfThrottle = 0;
 let lastLoadedPresetIndex = -1;
 let arpEnabled = false;
+let transportPlaying = false;
 let savedPuckState = null;
 const PRESET_TO_SURFACE_INDEX = [
   0,
@@ -4335,6 +4342,7 @@ function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
 }
 function initApp() {
   applyWaverPaletteCssVars();
+  syncPlaybackState(false);
   shell = initShell({
     VizClass: WaverViz,
     params: PARAMS,
@@ -4367,7 +4375,24 @@ function syncArpButton(enabled) {
   const btn = document.querySelector(".btn-arp");
   if (!btn) return;
   btn.classList.toggle("active", enabled);
+  btn.classList.toggle("playing", enabled && transportPlaying);
   btn.setAttribute("aria-pressed", String(enabled));
+}
+function syncPlaybackState(value) {
+  transportPlaying = Boolean(value);
+  const app = document.getElementById("app");
+  app?.classList.toggle("playing", transportPlaying);
+  syncArpButton(arpEnabled);
+}
+function parsePlayingState(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value > 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "1" || normalized === "true" || normalized === "playing" || normalized === "play") return true;
+    if (normalized === "0" || normalized === "false" || normalized === "stopped" || normalized === "stop") return false;
+  }
+  return null;
 }
 function onArpStateChanged(nowEnabled) {
   const app = document.getElementById("app");
@@ -4415,6 +4440,10 @@ function handleBackendState(payload) {
     if (nowEnabled !== arpEnabled) {
       onArpStateChanged(nowEnabled);
     }
+  }
+  const parsedPlaying = parsePlayingState(parsed?.isPlaying);
+  if (parsedPlaying !== null) {
+    syncPlaybackState(parsedPlaying);
   }
   if (parsed?.currentPreset !== void 0) {
     onPresetLoaded(parsed.currentPreset, parsed?.presetPuckX, parsed?.presetPuckY);
@@ -5735,12 +5764,29 @@ body {
   --waver-overlay-surface: rgba(127, 155, 165, 0.3);
   --waver-overlay-panel: rgba(49, 49, 43, 0.42);
   --waver-border-soft: rgba(127, 155, 165, 0.15);
+  --waver-arp-tint: #AD97B1;
+  --waver-arp-ring: rgba(204, 138, 126, 0.65);
+  --waver-arp-ring-fade: rgba(204, 138, 126, 0);
+  --waver-arp-overlay-bg: #AD97B1;
+  --waver-arp-overlay-surface: #AD97B1;
 }
 
 /* ===== BACKGROUND ===== */
 
 .tb-app {
   background: var(--waver-panel-ink);
+}
+
+.tb-app::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 80px;
+  background: var(--waver-ground-fill, var(--waver-panel-ink));
+  pointer-events: none;
+  z-index: 0;
 }
 
 .tb-canvas-shell {
@@ -5757,7 +5803,11 @@ body {
 }
 
 .preset-pill {
-  color: var(--waver-text-upper);
+  color: var(--waver-text-lower);
+}
+
+.tb-app.presets-open .preset-pill {
+  color: var(--waver-text-lower);
 }
 
 .logo-glyph svg {
@@ -5812,6 +5862,16 @@ body {
 
 .tb-app .preset-option.selected {
   color: var(--waver-surface-base-hover);
+}
+
+.tb-app.presets-open .preset-option:hover,
+.tb-app.presets-open .preset-option:focus-visible {
+  transform: translateX(4px) translateY(0);
+  background: radial-gradient(
+    ellipse at 20% 50%,
+    rgba(255, 255, 255, 0.14) 0%,
+    transparent 72%
+  );
 }
 
 /* ===== SETTINGS DRAWER ===== */
@@ -5966,6 +6026,12 @@ body {
 
 /* ===== ARP BUTTON ===== */
 
+@keyframes arp-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--waver-arp-ring); }
+  70%  { box-shadow: 0 0 0 10px var(--waver-arp-ring-fade); }
+  100% { box-shadow: 0 0 0 0 var(--waver-arp-ring-fade); }
+}
+
 .btn-arp {
   position: relative;
   width: 48px;
@@ -5995,7 +6061,12 @@ body {
 }
 
 .btn-arp:hover::before {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.24);
+  transform: scale(1);
+}
+
+.tb-app .btn-settings:hover::before {
+  background: rgba(255, 255, 255, 0.24);
   transform: scale(1);
 }
 
@@ -6006,12 +6077,20 @@ body {
 }
 
 .btn-arp.active {
-  color: var(--waver-panel-ink);
+  color: #31312B;
 }
 
 .btn-arp.active::before {
   background: var(--waver-surface-base-hover);
   transform: scale(1);
+}
+
+.btn-arp.active.playing::before {
+  animation: arp-pulse 1.6s ease-out infinite;
+}
+
+.btn-arp.active:not(.playing)::before {
+  animation: none;
 }
 
 .btn-arp svg {
@@ -6024,13 +6103,13 @@ body {
 
 .tb-app.arping .preset-pill,
 .tb-app.arping .btn-settings {
-  opacity: 0.99;
+  opacity: 0.35;
   pointer-events: none;
   transition: opacity 0.3s ease;
 }
 
 .tb-canvas-shell .axis-label {
-  color: #969588;
+  color: #31312B;
 }
 
 .tb-canvas-shell.puck-dragging .axis-label {
@@ -6046,11 +6125,18 @@ body {
   margin-bottom: 60px;
 }
 
+.tb-canvas-shell .axis-label-left {
+  left: 6px;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(-90deg);
+}
+
 .tb-canvas-shell .axis-label-right {
   right: 6px;
-  top: 464px;
-  height: fit-content;
-  text-align: center;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%) rotate(90deg);
 }</style>
   </head>
   <body>

@@ -4,7 +4,7 @@ const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBas
 const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift)
 const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft)
 
-const ARP_BLUE = { r: 106, g: 158, b: 181 }
+const { r: ARP_R, g: ARP_G, b: ARP_B } = hexToRgb(WAVER_PALETTE.arpTint)
 
 const TRAIL_COUNT = 3
 const POINT_COUNT = 80
@@ -216,12 +216,13 @@ export class WaverViz {
 
     const lerp = (a, b, t) => Math.round(a + (b - a) * t)
 
-    let r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift)
-    let g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift)
-    let b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
-    r = lerp(r, ARP_BLUE.r, quantArp)
-    g = lerp(g, ARP_BLUE.g, quantArp)
-    b = lerp(b, ARP_BLUE.b, quantArp)
+    const baseR = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift)
+    const baseG = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift)
+    const baseB = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
+    const lineBlend = this.state?.arpEnabled ? 1 : 0
+    const r = lerp(baseR, ARP_R, lineBlend)
+    const g = lerp(baseG, ARP_G, lineBlend)
+    const b = lerp(baseB, ARP_B, lineBlend)
 
     this._colorCache = `rgb(${r},${g},${b})`
     this._glowCache = `rgba(${r},${g},${b},0.3)`
@@ -229,17 +230,16 @@ export class WaverViz {
     let skyR = Math.min(255, AMBER_R + skyLift)
     let skyG = Math.min(255, AMBER_G + skyLift)
     let skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65))
-    skyR = lerp(skyR, lerp(AMBER_R, ARP_BLUE.r, 0.15), quantArp)
-    skyG = lerp(skyG, lerp(AMBER_G, ARP_BLUE.g, 0.15), quantArp)
-    skyB = lerp(skyB, lerp(AMBER_B, ARP_BLUE.b, 0.2), quantArp)
+    if (this.state?.arpEnabled) {
+      skyR = ARP_R
+      skyG = ARP_G
+      skyB = ARP_B
+    }
     this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`
     const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32
-    let groundR = Math.round(BG_R + (r - BG_R) * groundMix)
-    let groundG = Math.round(BG_G + (g - BG_G) * groundMix)
-    let groundB = Math.round(BG_B + (b - BG_B) * groundMix)
-    groundR = lerp(groundR, lerp(BG_R, ARP_BLUE.r, 0.2), quantArp)
-    groundG = lerp(groundG, lerp(BG_G, ARP_BLUE.g, 0.2), quantArp)
-    groundB = lerp(groundB, lerp(BG_B, ARP_BLUE.b, 0.25), quantArp)
+    const groundR = Math.round(BG_R + (baseR - BG_R) * groundMix)
+    const groundG = Math.round(BG_G + (baseG - BG_G) * groundMix)
+    const groundB = Math.round(BG_B + (baseB - BG_B) * groundMix)
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`
 
     const compR = Math.round(groundR * 0.96 + skyR * 0.04)

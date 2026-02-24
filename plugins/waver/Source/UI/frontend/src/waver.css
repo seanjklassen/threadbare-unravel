@@ -10,12 +10,29 @@
   --waver-overlay-surface: rgba(127, 155, 165, 0.3);
   --waver-overlay-panel: rgba(49, 49, 43, 0.42);
   --waver-border-soft: rgba(127, 155, 165, 0.15);
+  --waver-arp-tint: #AD97B1;
+  --waver-arp-ring: rgba(204, 138, 126, 0.65);
+  --waver-arp-ring-fade: rgba(204, 138, 126, 0);
+  --waver-arp-overlay-bg: #AD97B1;
+  --waver-arp-overlay-surface: #AD97B1;
 }
 
 /* ===== BACKGROUND ===== */
 
 .tb-app {
   background: var(--waver-panel-ink);
+}
+
+.tb-app::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 80px;
+  background: var(--waver-ground-fill, var(--waver-panel-ink));
+  pointer-events: none;
+  z-index: 0;
 }
 
 .tb-canvas-shell {
@@ -255,6 +272,12 @@
 
 /* ===== ARP BUTTON ===== */
 
+@keyframes arp-pulse {
+  0%   { box-shadow: 0 0 0 0 var(--waver-arp-ring); }
+  70%  { box-shadow: 0 0 0 10px var(--waver-arp-ring-fade); }
+  100% { box-shadow: 0 0 0 0 var(--waver-arp-ring-fade); }
+}
+
 .btn-arp {
   position: relative;
   width: 48px;
@@ -300,12 +323,20 @@
 }
 
 .btn-arp.active {
-  color: var(--waver-panel-ink);
+  color: #31312B;
 }
 
 .btn-arp.active::before {
   background: var(--waver-surface-base-hover);
   transform: scale(1);
+}
+
+.btn-arp.active.playing::before {
+  animation: arp-pulse 1.6s ease-out infinite;
+}
+
+.btn-arp.active:not(.playing)::before {
+  animation: none;
 }
 
 .btn-arp svg {
@@ -316,15 +347,9 @@
 
 /* ===== ARP MODE UI LOCK ===== */
 
-.tb-app.arping {
-  --waver-surface-base: #AD97B1;
-  --waver-panel-ink: #AD97B1;
-  --bg: #AD97B1;
-}
-
 .tb-app.arping .preset-pill,
 .tb-app.arping .btn-settings {
-  opacity: 0.99;
+  opacity: 0.35;
   pointer-events: none;
   transition: opacity 0.3s ease;
 }

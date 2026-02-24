@@ -181,6 +181,21 @@ void WaverEngine::setPrintParams(float driveGain, float tapeSat, float wowDepth,
 
 void WaverEngine::setArpEnabled(bool on) noexcept
 {
+    if (on == arpEnabled)
+        return;
+
+    if (on)
+    {
+        voiceAllocator.releaseAllNotes();
+        organ.allNotesOff();
+    }
+    else
+    {
+        arp.allNotesOff();
+        voiceAllocator.releaseAllNotes();
+        organ.allNotesOff();
+    }
+
     arpEnabled = on;
     arp.setEnabled(on);
 }

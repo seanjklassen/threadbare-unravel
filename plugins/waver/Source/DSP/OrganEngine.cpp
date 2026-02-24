@@ -69,6 +69,12 @@ void OrganEngine::noteOff(int noteNumber) noexcept
     notes[static_cast<std::size_t>(noteNumber)].active = false;
 }
 
+void OrganEngine::allNotesOff() noexcept
+{
+    for (auto& n : notes)
+        n.active = false;
+}
+
 void OrganEngine::setDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept
 {
     draw16 = std::clamp(sub16, 0.0f, 8.0f) / 8.0f;

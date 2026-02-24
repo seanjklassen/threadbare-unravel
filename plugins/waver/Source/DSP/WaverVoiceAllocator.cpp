@@ -59,6 +59,20 @@ void WaverVoiceAllocator::noteOff(int noteNumber) noexcept
         voice->noteOff(sustainPedalDown);
 }
 
+void WaverVoiceAllocator::releaseAllNotes() noexcept
+{
+    for (auto& voice : voices)
+    {
+        if (!voice.isActive())
+            continue;
+
+        if (voice.isHeld())
+            voice.noteOff(false);
+        else if (voice.isSustained())
+            voice.releaseFromSustain();
+    }
+}
+
 void WaverVoiceAllocator::setSustainPedal(bool isDown) noexcept
 {
     sustainPedalDown = isDown;

@@ -18,6 +18,7 @@ public:
 
     void noteOn(int noteNumber, float velocity) noexcept;
     void noteOff(int noteNumber) noexcept;
+    void releaseAllNotes() noexcept;
     void setSustainPedal(bool isDown) noexcept;
     void setPortamento(float glideMs, bool alwaysMode) noexcept;
     void setFilter(float cutoffHz, float resonance, bool ladderMode) noexcept;

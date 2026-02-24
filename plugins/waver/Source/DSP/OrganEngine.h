@@ -16,6 +16,7 @@ public:
 
     void noteOn(int noteNumber) noexcept;
     void noteOff(int noteNumber) noexcept;
+    void allNotesOff() noexcept;
 
     void setDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept;
     void setAge(float age) noexcept;

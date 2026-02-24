@@ -29,6 +29,7 @@ let sigmaOffsets = activeSurface
 let rbfThrottle = 0
 let lastLoadedPresetIndex = -1
 let arpEnabled = false
+let transportPlaying = false
 let savedPuckState = null
 let isRestoringFromArp = false
 
@@ -153,6 +154,7 @@ function onPresetLoaded(index, presetPuckX = 0.0, presetPuckY = 0.0) {
 
 function initApp() {
   applyWaverPaletteCssVars()
+  syncPlaybackState(false)
 
   shell = initShell({
     VizClass: WaverViz,
@@ -190,7 +192,26 @@ function syncArpButton(enabled) {
   const btn = document.querySelector(".btn-arp")
   if (!btn) return
   btn.classList.toggle("active", enabled)
+  btn.classList.toggle("playing", enabled && transportPlaying)
   btn.setAttribute("aria-pressed", String(enabled))
+}
+
+function syncPlaybackState(value) {
+  transportPlaying = Boolean(value)
+  const app = document.getElementById("app")
+  app?.classList.toggle("playing", transportPlaying)
+  syncArpButton(arpEnabled)
+}
+
+function parsePlayingState(value) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "number") return value > 0
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === "1" || normalized === "true" || normalized === "playing" || normalized === "play") return true
+    if (normalized === "0" || normalized === "false" || normalized === "stopped" || normalized === "stop") return false
+  }
+  return null
 }
 
 function onArpStateChanged(nowEnabled) {
@@ -240,6 +261,10 @@ function handleBackendState(payload) {
     if (nowEnabled !== arpEnabled) {
       onArpStateChanged(nowEnabled)
     }
+  }
+  const parsedPlaying = parsePlayingState(parsed?.isPlaying)
+  if (parsedPlaying !== null) {
+    syncPlaybackState(parsedPlaying)
   }
 
   if (parsed?.currentPreset !== undefined) {
