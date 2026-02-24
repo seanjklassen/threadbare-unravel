@@ -398,6 +398,7 @@ class Controls {
   constructor(options = {}) {
     this.params = options.params || {};
     this.paramOrder = options.paramOrder || Object.keys(this.params);
+    this.puckBoundsInsetY = Math.max(0, Number(options.puckBoundsInsetY) || 0);
     this.onPuckChange = options.onPuckChange || (() => {
     });
     this.onFreezeChange = options.onFreezeChange || (() => {
@@ -709,8 +710,11 @@ class Controls {
     const height = Math.max(bounds.height, 1);
     const minPxX = Math.min(PUCK_RADIUS, width / 2);
     const maxPxX = Math.max(width - PUCK_RADIUS, minPxX);
-    const minPxY = Math.min(PUCK_RADIUS, height / 2);
-    const maxPxY = Math.max(height - PUCK_RADIUS, minPxY);
+    const baseMinPxY = Math.min(PUCK_RADIUS, height / 2);
+    const baseMaxPxY = Math.max(height - PUCK_RADIUS, baseMinPxY);
+    const requestedInset = Math.min(this.puckBoundsInsetY, height * 0.45);
+    const minPxY = Math.min(baseMinPxY + requestedInset, baseMaxPxY);
+    const maxPxY = Math.max(baseMaxPxY - requestedInset, minPxY);
     this.dimensions = {
       width,
       height,
@@ -1591,6 +1595,7 @@ function initShell(options = {}) {
     paramOrder,
     themeTokens,
     axisLabels,
+    puckBoundsInsetY = 0,
     getNativeFn = () => null,
     sendParam: sendParam2 = () => {
     },
@@ -1621,6 +1626,7 @@ function initShell(options = {}) {
     sendParam: sendParam2,
     sendLooperTrigger,
     axisLabels,
+    puckBoundsInsetY,
     onPuckChange: ({ puckX, puckY }) => {
       currentState = { ...currentState, puckX, puckY };
       viz?.update(currentState);
@@ -1776,9 +1782,47 @@ const createParamSender = (getNativeFn) => {
     }
   };
 };
-const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108;
-const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51;
-const BG_R = 42, BG_G = 31, BG_B = 26;
+const WAVER_PALETTE = Object.freeze({
+  surfaceBase: "#31312B",
+  surfaceBaseHover: "#DD8469",
+  textPrimary: "#D3C7BB",
+  panelInk: "#31312B",
+  panelInkSoft: "#7F9BA5",
+  waveformShadowDrift: "#7F9BA5",
+  textUpper: "#D3C7BB",
+  textLower: "#31312B"
+});
+function hexToRgb(hex) {
+  const normalized = hex.replace("#", "");
+  const value = Number.parseInt(normalized, 16);
+  return {
+    r: value >> 16 & 255,
+    g: value >> 8 & 255,
+    b: value & 255
+  };
+}
+function alpha(hex, opacity) {
+  const { r, g, b } = hexToRgb(hex);
+  const clamped = Math.max(0, Math.min(1, opacity));
+  return `rgba(${r},${g},${b},${clamped})`;
+}
+function applyWaverPaletteCssVars(target = document.documentElement) {
+  if (!target?.style) return;
+  target.style.setProperty("--waver-surface-base", WAVER_PALETTE.surfaceBase);
+  target.style.setProperty("--waver-surface-base-hover", WAVER_PALETTE.surfaceBaseHover);
+  target.style.setProperty("--waver-text-primary", WAVER_PALETTE.textPrimary);
+  target.style.setProperty("--waver-panel-ink", WAVER_PALETTE.panelInk);
+  target.style.setProperty("--waver-panel-ink-soft", WAVER_PALETTE.panelInkSoft);
+  target.style.setProperty("--waver-waveform-shadow-drift", WAVER_PALETTE.waveformShadowDrift);
+  target.style.setProperty("--waver-text-upper", WAVER_PALETTE.textUpper);
+  target.style.setProperty("--waver-text-lower", WAVER_PALETTE.textLower);
+  target.style.setProperty("--waver-overlay-surface", alpha(WAVER_PALETTE.panelInkSoft, 0.3));
+  target.style.setProperty("--waver-overlay-panel", alpha(WAVER_PALETTE.panelInk, 0.42));
+  target.style.setProperty("--waver-border-soft", alpha(WAVER_PALETTE.panelInkSoft, 0.15));
+}
+const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase);
+const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift);
+const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft);
 const TRAIL_COUNT = 3;
 const POINT_COUNT = 80;
 const OVERSHOOT = 30;
@@ -1876,12 +1920,12 @@ class WaverViz {
     for (let t = TRAIL_COUNT - 1; t >= 1; t--) {
       const trail = this.trails[t];
       if (trail.waveH < 0.5) continue;
-      const alpha = 0.02 + (TRAIL_COUNT - 1 - t) * 0.02;
+      const alpha2 = 0.02 + (TRAIL_COUNT - 1 - t) * 0.02;
       ctx.beginPath();
       this._tracePath(ctx, w, centerY, trail);
       ctx.strokeStyle = this._glowCache;
       ctx.lineWidth = lineWidth + 2;
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = alpha2;
       ctx.stroke();
     }
     ctx.beginPath();
@@ -1955,6 +1999,13 @@ class WaverViz {
     const groundG = Math.round(BG_G + (g - BG_G) * groundMix);
     const groundB = Math.round(BG_B + (b - BG_B) * groundMix);
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`;
+    const compR = Math.round(groundR * 0.96 + skyR * 0.04);
+    const compG = Math.round(groundG * 0.96 + skyG * 0.04);
+    const compB = Math.round(groundB * 0.96 + skyB * 0.04);
+    document.documentElement.style.setProperty(
+      "--waver-ground-fill",
+      `rgb(${compR},${compG},${compB})`
+    );
   }
 }
 const PARAMS = {
@@ -4205,10 +4256,10 @@ const sendParam = (id, value) => {
   sendHostParam(id, value);
 };
 const THEME = {
-  bg: "#241D19",
-  text: "#D3C7BB",
-  accent: "#C4A46C",
-  "accent-hover": "#D4B87C"
+  bg: WAVER_PALETTE.panelInk,
+  text: WAVER_PALETTE.textUpper,
+  accent: WAVER_PALETTE.surfaceBaseHover,
+  "accent-hover": WAVER_PALETTE.panelInkSoft
 };
 let shell = null;
 let drawer = null;
@@ -4237,6 +4288,7 @@ function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
   }
 }
 function initApp() {
+  applyWaverPaletteCssVars();
   shell = initShell({
     VizClass: WaverViz,
     params: PARAMS,
@@ -4245,6 +4297,7 @@ function initApp() {
     axisLabels: {
       normal: { left: "dark", right: "bright", top: "worn", bottom: "clean" }
     },
+    puckBoundsInsetY: 84,
     getNativeFn: getNativeFunction,
     sendParam
   });
@@ -5581,12 +5634,24 @@ body {
     filter: none !important;
   }
 }
-.tb-app {
-  background: #C4A46C;
+:root {
+  --waver-surface-base: #31312B;
+  --waver-surface-base-hover: #DD8469;
+  --waver-text-primary: #D3C7BB;
+  --waver-panel-ink: #31312B;
+  --waver-panel-ink-soft: #7F9BA5;
+  --waver-waveform-shadow-drift: #7F9BA5;
+  --waver-text-upper: #D3C7BB;
+  --waver-text-lower: #31312B;
+  --waver-overlay-surface: rgba(127, 155, 165, 0.3);
+  --waver-overlay-panel: rgba(49, 49, 43, 0.42);
+  --waver-border-soft: rgba(127, 155, 165, 0.15);
 }
 
-.tb-top-bar {
-  background: transparent;
+/* ===== BACKGROUND ===== */
+
+.tb-app {
+  background: var(--waver-panel-ink);
 }
 
 .tb-canvas-shell {
@@ -5595,31 +5660,97 @@ body {
   bottom: 0;
 }
 
+/* ===== TOP ZONE — light text on dark canvas ===== */
+
+.tb-top-bar {
+  background: transparent;
+  color: var(--waver-text-upper);
+}
+
 .preset-pill {
-  color: #241D19;
+  color: var(--waver-text-upper);
 }
 
-.preset-dropdown {
-  background: rgba(196, 164, 108, 0.30);
-  backdrop-filter: blur(12px) saturate(85%);
-  -webkit-backdrop-filter: blur(12px) saturate(85%);
+.logo-glyph svg {
+  color: var(--waver-text-upper);
 }
 
-.preset-option {
-  color: #241D19;
-}
+/* ===== BOTTOM ZONE — dark text on light blue bg ===== */
 
-.tb-bottom-bar {
+.tb-app .tb-bottom-bar {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   border-top: none;
+  color: var(--waver-text-lower);
 }
 
-.settings-view {
-  background: rgba(196, 164, 108, 0.30);
+.tb-bottom-bar .readouts span {
+  color: var(--waver-text-lower);
+}
+
+.tb-app .tb-bottom-bar .btn-settings {
+  color: var(--waver-text-lower);
+}
+
+/* ===== PRESET DROPDOWN ===== */
+
+.preset-dropdown {
+  background: transparent;
   backdrop-filter: blur(12px) saturate(85%);
   -webkit-backdrop-filter: blur(12px) saturate(85%);
+  transition:
+    opacity 520ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 560ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 600ms,
+    background 520ms cubic-bezier(0.4, 0, 0.1, 1);
+}
+
+.tb-app.presets-open .preset-dropdown {
+  background: var(--waver-panel-ink);
+  transition:
+    opacity 440ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 460ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms,
+    background 440ms cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+.tb-app .preset-option {
+  color: var(--waver-text-upper);
+}
+
+.tb-app .preset-option.selected {
+  color: var(--waver-surface-base-hover);
+}
+
+/* ===== SETTINGS DRAWER ===== */
+
+.settings-view {
+  background: transparent;
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
+  transition:
+    opacity 600ms cubic-bezier(0.4, 0, 0.1, 1),
+    transform 680ms cubic-bezier(0.4, 0, 0.1, 1),
+    filter 640ms cubic-bezier(0.4, 0, 0.1, 1),
+    visibility 0ms 680ms,
+    background 600ms cubic-bezier(0.4, 0, 0.1, 1);
+}
+
+.settings-view.open {
+  background: var(--waver-ground-fill, #78929A);
+  transition:
+    opacity 480ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    transform 540ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    filter 500ms cubic-bezier(0.16, 0.84, 0.44, 1),
+    visibility 0ms,
+    background 480ms cubic-bezier(0.16, 0.84, 0.44, 1);
+}
+
+.settings-view .settings-title {
+  color: var(--waver-text-lower);
 }
 
 .drawer-group-heading {
@@ -5627,11 +5758,11 @@ body {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--accent, #C4A46C);
+  color: var(--waver-text-lower);
   opacity: 0.7;
   margin: 18px 0 8px;
   padding: 0 4px;
-  border-bottom: 1px solid rgba(196, 164, 108, 0.15);
+  border-bottom: 1px solid var(--waver-border-soft);
   padding-bottom: 4px;
 }
 
@@ -5654,7 +5785,7 @@ body {
 
 .param-label {
   font-size: 11px;
-  color: var(--text, #D3C7BB);
+  color: var(--waver-text-lower);
   opacity: 0.65;
   white-space: nowrap;
   overflow: hidden;
@@ -5663,7 +5794,7 @@ body {
 
 .param-value {
   font-size: 10px;
-  color: var(--text, #D3C7BB);
+  color: var(--waver-text-lower);
   opacity: 0.5;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -5681,7 +5812,7 @@ body {
 }
 
 .waver-slider:focus-visible {
-  box-shadow: 0 0 0 2px var(--accent, #C4A46C);
+  box-shadow: 0 0 0 2px var(--accent, var(--waver-panel-ink-soft));
 }
 
 .waver-slider__fill {
@@ -5689,7 +5820,7 @@ body {
   top: 0;
   left: 0;
   height: 100%;
-  background: var(--accent, #C4A46C);
+  background: var(--accent, var(--waver-panel-ink-soft));
   opacity: 0.2;
   border-radius: 4px;
   pointer-events: none;
@@ -5700,7 +5831,7 @@ body {
   top: 50%;
   width: 3px;
   height: 16px;
-  background: var(--accent, #C4A46C);
+  background: var(--accent, var(--waver-panel-ink-soft));
   border-radius: 1.5px;
   transform: translate(-50%, -50%);
   pointer-events: none;
@@ -5724,7 +5855,7 @@ body {
   padding: 4px 6px;
   font-size: 10px;
   font-weight: 500;
-  color: var(--text, #D3C7BB);
+  color: var(--waver-text-lower);
   opacity: 0.5;
   background: none;
   border: none;
@@ -5740,8 +5871,8 @@ body {
 
 .choice-btn.active {
   opacity: 1;
-  background: var(--accent, #C4A46C);
-  color: var(--bg, #241D19);
+  background: var(--waver-surface-base-hover);
+  color: var(--waver-text-lower);
 }</style>
   </head>
   <body>

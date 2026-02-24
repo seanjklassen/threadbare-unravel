@@ -1,6 +1,8 @@
-const AMBER_R = 196, AMBER_G = 164, AMBER_B = 108
-const COPPER_R = 184, COPPER_G = 115, COPPER_B = 51
-const BG_R = 42, BG_G = 31, BG_B = 26
+import { WAVER_PALETTE, hexToRgb } from "./palette.js"
+
+const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase)
+const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift)
+const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft)
 
 const TRAIL_COUNT = 3
 const POINT_COUNT = 80
@@ -213,5 +215,13 @@ export class WaverViz {
     const groundG = Math.round(BG_G + (g - BG_G) * groundMix)
     const groundB = Math.round(BG_B + (b - BG_B) * groundMix)
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`
+
+    const compR = Math.round(groundR * 0.96 + skyR * 0.04)
+    const compG = Math.round(groundG * 0.96 + skyG * 0.04)
+    const compB = Math.round(groundB * 0.96 + skyB * 0.04)
+    document.documentElement.style.setProperty(
+      "--waver-ground-fill",
+      `rgb(${compR},${compG},${compB})`,
+    )
   }
 }

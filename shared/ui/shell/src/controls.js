@@ -78,6 +78,7 @@ export class Controls {
     // Required: params metadata (injected, NOT imported from generated file)
     this.params = options.params || {}
     this.paramOrder = options.paramOrder || Object.keys(this.params)
+    this.puckBoundsInsetY = Math.max(0, Number(options.puckBoundsInsetY) || 0)
     
     // Callbacks
     this.onPuckChange = options.onPuckChange || (() => {})
@@ -484,8 +485,11 @@ export class Controls {
     const height = Math.max(bounds.height, 1)
     const minPxX = Math.min(PUCK_RADIUS, width / 2)
     const maxPxX = Math.max(width - PUCK_RADIUS, minPxX)
-    const minPxY = Math.min(PUCK_RADIUS, height / 2)
-    const maxPxY = Math.max(height - PUCK_RADIUS, minPxY)
+    const baseMinPxY = Math.min(PUCK_RADIUS, height / 2)
+    const baseMaxPxY = Math.max(height - PUCK_RADIUS, baseMinPxY)
+    const requestedInset = Math.min(this.puckBoundsInsetY, height * 0.45)
+    const minPxY = Math.min(baseMinPxY + requestedInset, baseMaxPxY)
+    const maxPxY = Math.max(baseMaxPxY - requestedInset, minPxY)
     this.dimensions = {
       width,
       height,
