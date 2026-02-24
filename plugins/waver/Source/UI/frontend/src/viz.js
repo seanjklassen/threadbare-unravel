@@ -4,6 +4,8 @@ const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBas
 const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift)
 const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft)
 
+const ARP_BLUE = { r: 106, g: 158, b: 181 }
+
 const TRAIL_COUNT = 3
 const POINT_COUNT = 80
 const OVERSHOOT = 30
@@ -25,6 +27,8 @@ export class WaverViz {
     for (let i = 0; i < TRAIL_COUNT; i++) {
       this.trails.push({ phase: this.phase, driftPhase: this.driftPhase, waveH: 0, energy: 0 })
     }
+
+    this.arpMix = 0
 
     this.reducedMotion =
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false
@@ -56,6 +60,8 @@ export class WaverViz {
     const peak = state?.peak ?? 0
     this.smoothRms += (rms - this.smoothRms) * 0.12
     this.smoothPeak += (peak - this.smoothPeak) * 0.15
+    const arpTarget = state?.arpEnabled ? 1 : 0
+    this.arpMix += (arpTarget - this.arpMix) * 0.08
   }
 
   draw() {
@@ -195,25 +201,38 @@ export class WaverViz {
   _updateColors(age, energy) {
     const quantAge = Math.round(age * 20) / 20
     const quantEnergy = Math.round(energy * 10) / 10
+    const quantArp = Math.round(this.arpMix * 20) / 20
     const shift = Math.min(1, quantAge * 0.4 + this.momentFlash * 0.5)
-    const key = shift * 100 + quantEnergy
+    const key = shift * 10000 + quantEnergy * 100 + quantArp
     if (key === this._lastColorKey) return
     this._lastColorKey = key
 
-    const r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift)
-    const g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift)
-    const b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
+    const lerp = (a, b, t) => Math.round(a + (b - a) * t)
+
+    let r = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift)
+    let g = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift)
+    let b = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
+    r = lerp(r, ARP_BLUE.r, quantArp)
+    g = lerp(g, ARP_BLUE.g, quantArp)
+    b = lerp(b, ARP_BLUE.b, quantArp)
+
     this._colorCache = `rgb(${r},${g},${b})`
     this._glowCache = `rgba(${r},${g},${b},0.3)`
     const skyLift = Math.round(quantEnergy * 6 + this.momentFlash * 10)
-    const skyR = Math.min(255, AMBER_R + skyLift)
-    const skyG = Math.min(255, AMBER_G + skyLift)
-    const skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65))
+    let skyR = Math.min(255, AMBER_R + skyLift)
+    let skyG = Math.min(255, AMBER_G + skyLift)
+    let skyB = Math.min(255, AMBER_B + Math.round(skyLift * 0.65))
+    skyR = lerp(skyR, lerp(AMBER_R, ARP_BLUE.r, 0.15), quantArp)
+    skyG = lerp(skyG, lerp(AMBER_G, ARP_BLUE.g, 0.15), quantArp)
+    skyB = lerp(skyB, lerp(AMBER_B, ARP_BLUE.b, 0.2), quantArp)
     this._skyFillCache = `rgb(${skyR},${skyG},${skyB})`
     const groundMix = 0.05 + quantEnergy * 0.11 + shift * 0.32
-    const groundR = Math.round(BG_R + (r - BG_R) * groundMix)
-    const groundG = Math.round(BG_G + (g - BG_G) * groundMix)
-    const groundB = Math.round(BG_B + (b - BG_B) * groundMix)
+    let groundR = Math.round(BG_R + (r - BG_R) * groundMix)
+    let groundG = Math.round(BG_G + (g - BG_G) * groundMix)
+    let groundB = Math.round(BG_B + (b - BG_B) * groundMix)
+    groundR = lerp(groundR, lerp(BG_R, ARP_BLUE.r, 0.2), quantArp)
+    groundG = lerp(groundG, lerp(BG_G, ARP_BLUE.g, 0.2), quantArp)
+    groundB = lerp(groundB, lerp(BG_B, ARP_BLUE.b, 0.25), quantArp)
     this._groundFillCache = `rgb(${groundR},${groundG},${groundB})`
 
     const compR = Math.round(groundR * 0.96 + skyR * 0.04)
