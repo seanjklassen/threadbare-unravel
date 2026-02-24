@@ -756,6 +756,17 @@ export class Controls {
   }
 
   /**
+   * Replace the normal-mode axis labels at runtime.
+   * Opt-in API — callers that never invoke this get default behavior.
+   * @param {{ left?: string, right?: string, top?: string, bottom?: string }} labels
+   */
+  setAxisLabels(labels) {
+    if (!labels || typeof labels !== 'object') return
+    this.axisLabelText.normal = { ...this.axisLabelText.normal, ...labels }
+    this.updateAxisLabels()
+  }
+
+  /**
    * Update axis label text based on looper state
    * Labels show different descriptors for normal vs loop mode
    */
