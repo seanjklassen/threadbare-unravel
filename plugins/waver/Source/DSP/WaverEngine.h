@@ -79,8 +79,10 @@ private:
     // 4th-order Butterworth HPF (two cascaded biquad sections).
     BiquadStage hpfStage1, hpfStage2;
 
-    // Low-end mono collapse (2nd-order Butterworth LP at 200 Hz, per-channel).
-    BiquadStage monoCollapseL, monoCollapseR;
+    // Low-end mono collapse (2nd-order Butterworth LP at 200 Hz on side channel).
+    // We lowpass the side and subtract it, effectively highpassing the side so bass is mono
+    // without time-varying cancellation artifacts.
+    BiquadStage monoCollapseSide;
 
     // Gentle HF rolloff (one-pole LP at 18 kHz).
     float hfCoeff = 0.0f;

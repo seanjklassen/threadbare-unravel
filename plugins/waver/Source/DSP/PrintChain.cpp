@@ -16,6 +16,8 @@ void PrintChain::prepare(double sampleRate, std::size_t maxBlockSize) noexcept
     mix.reset(sampleRate, 0.02);
     mix.setCurrentAndTargetValue(0.75f);
     wetMixScratch.assign(maxBlockSize, mix.getCurrentValue());
+    wetL.assign(maxBlockSize, 0.0f);
+    wetR.assign(maxBlockSize, 0.0f);
 }
 
 void PrintChain::reset() noexcept
@@ -82,31 +84,44 @@ void PrintChain::process(float* left, float* right, int numSamples) noexcept
     if (numSamples <= 0)
         return;
     const std::size_t scratchSize = wetMixScratch.size();
+    const std::size_t wetSize = std::min(wetL.size(), wetR.size());
+    if (wetSize == 0)
+        return;
 
     for (int i = 0; i < numSamples; ++i)
     {
         const float wet = mix.getNextValue();
-        const float dry = 1.0f - wet;
         if (static_cast<std::size_t>(i) < scratchSize)
             wetMixScratch[static_cast<std::size_t>(i)] = wet;
         const float dryL = left[i];
         const float dryR = right[i];
 
-        float wL = overdriveL.processSample(left[i]);
-        float wR = overdriveR.processSample(right[i]);
+        float wL = overdriveL.processSample(dryL);
+        float wR = overdriveR.processSample(dryR);
 
         wL = tapeL.processSample(wL);
         wR = tapeR.processSample(wR);
 
-        left[i] = wL;
-        right[i] = wR;
-
-        left[i] = dryL * dry + wL * wet;
-        right[i] = dryR * dry + wR * wet;
+        if (static_cast<std::size_t>(i) < wetSize)
+        {
+            wetL[static_cast<std::size_t>(i)] = wL;
+            wetR[static_cast<std::size_t>(i)] = wR;
+        }
     }
 
-    // Wow/Flutter operates on the full mixed signal (per spec: post-mixdown).
-    wowFlutter.process(left, right, numSamples);
+    // Wow/Flutter operates on the wet tape path so it scales with print mix.
+    const int n = static_cast<int>(std::min<std::size_t>(static_cast<std::size_t>(numSamples), wetSize));
+    wowFlutter.process(wetL.data(), wetR.data(), n);
+
+    for (int i = 0; i < n; ++i)
+    {
+        const float wet = static_cast<std::size_t>(i) < scratchSize
+            ? wetMixScratch[static_cast<std::size_t>(i)]
+            : mix.getCurrentValue();
+        const float dry = 1.0f - wet;
+        left[i] = left[i] * dry + wetL[static_cast<std::size_t>(i)] * wet;
+        right[i] = right[i] * dry + wetR[static_cast<std::size_t>(i)] * wet;
+    }
 
     // Noise floor is additive.
     for (int i = 0; i < numSamples; ++i)

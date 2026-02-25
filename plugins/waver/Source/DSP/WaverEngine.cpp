@@ -44,7 +44,7 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
     computeHpfStage(hpfStage1, q1);
     computeHpfStage(hpfStage2, q2);
 
-    // Low-end mono collapse: 2nd-order Butterworth LP at 200 Hz (per-channel).
+    // Low-end mono collapse: 2nd-order Butterworth LP at 200 Hz (side channel).
     {
         constexpr float mcCutoff = 200.0f;
         const float mcW0 = 2.0f * std::numbers::pi_v<float> * mcCutoff / srF;
@@ -62,8 +62,7 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
             s.s1L = s.s2L = 0.0f;
             s.s1R = s.s2R = 0.0f;
         };
-        initLp(monoCollapseL);
-        initLp(monoCollapseR);
+        initLp(monoCollapseSide);
     }
 
     // Gentle HF rolloff: one-pole LP at 18 kHz.
@@ -86,10 +85,8 @@ void WaverEngine::reset() noexcept
     hpfStage1.s1R = hpfStage1.s2R = 0.0f;
     hpfStage2.s1L = hpfStage2.s2L = 0.0f;
     hpfStage2.s1R = hpfStage2.s2R = 0.0f;
-    monoCollapseL.s1L = monoCollapseL.s2L = 0.0f;
-    monoCollapseL.s1R = monoCollapseL.s2R = 0.0f;
-    monoCollapseR.s1L = monoCollapseR.s2L = 0.0f;
-    monoCollapseR.s1R = monoCollapseR.s2R = 0.0f;
+    monoCollapseSide.s1L = monoCollapseSide.s2L = 0.0f;
+    monoCollapseSide.s1R = monoCollapseSide.s2R = 0.0f;
     hfStateL = hfStateR = 0.0f;
 }
 
@@ -147,12 +144,13 @@ void WaverEngine::process(std::span<float> left, std::span<float> right) noexcep
         R = applyBiquad(hpfStage1, R, hpfStage1.s1R, hpfStage1.s2R);
         R = applyBiquad(hpfStage2, R, hpfStage2.s1R, hpfStage2.s2R);
 
-        // 2. Low-end mono collapse (sum L+R below 200 Hz).
-        const float bassL = applyBiquad(monoCollapseL, L, monoCollapseL.s1L, monoCollapseL.s2L);
-        const float bassR = applyBiquad(monoCollapseR, R, monoCollapseR.s1L, monoCollapseR.s2L);
-        const float monoBass = 0.5f * (bassL + bassR);
-        L = L - bassL + monoBass;
-        R = R - bassR + monoBass;
+        // 2. Low-end mono collapse (highpass the side channel at 200 Hz).
+        const float mid = 0.5f * (L + R);
+        const float side = 0.5f * (L - R);
+        const float sideLow = applyBiquad(monoCollapseSide, side, monoCollapseSide.s1L, monoCollapseSide.s2L);
+        const float sideHigh = side - sideLow;
+        L = mid + sideHigh;
+        R = mid - sideHigh;
 
         // 3. HF rolloff (one-pole LP, 18 kHz).
         hfStateL += hfCoeff * (L - hfStateL);
