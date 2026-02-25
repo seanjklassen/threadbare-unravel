@@ -52,6 +52,11 @@ void WaverVoice::prepare(double newSampleRate, int voiceIndex, std::uint32_t dri
     layerDcoLevel.setCurrentAndTargetValue(1.0f);
     layerToyLevel.setCurrentAndTargetValue(0.0f);
 
+    filterCutoffSmoothed.reset(sampleRate, 0.06);
+    filterCutoffSmoothed.setCurrentAndTargetValue(8000.0f);
+    filterResSmoothed.reset(sampleRate, 0.06);
+    filterResSmoothed.setCurrentAndTargetValue(0.15f);
+
     const std::uint32_t tolSeed = driftSeed ^ (static_cast<std::uint32_t>(voiceIndex) * 2654435761u);
     tolerances.computeFromSeed(tolSeed);
 
@@ -90,6 +95,8 @@ void WaverVoice::reset() noexcept
     lastOutputSample = 0.0f;
     layerDcoLevel.setCurrentAndTargetValue(1.0f);
     layerToyLevel.setCurrentAndTargetValue(0.0f);
+    filterCutoffSmoothed.setCurrentAndTargetValue(filterCutoffSmoothed.getTargetValue());
+    filterResSmoothed.setCurrentAndTargetValue(filterResSmoothed.getTargetValue());
     ouDrift.reset();
     toyEngine.reset();
 }
@@ -193,7 +200,8 @@ float WaverVoice::processSample() noexcept
     float saw = 2.0f * phase - 1.0f;
     saw -= polyBlep(phase, phaseIncrement);
 
-    const float pw = juce::jlimit(0.05f, 0.95f, basePulseWidth + lfoToPwmDepth * lfoValue);
+    const float pwRaw = (basePulseWidth + lfoToPwmDepth * lfoValue - 0.5f) * 2.22f;
+    const float pw = 0.5f + std::tanh(pwRaw) * 0.45f;
     float pulse = phase < pw ? 1.0f : -1.0f;
     pulse += polyBlamp(phase, phaseIncrement);
     float fallingEdge = phase - pw;
@@ -238,8 +246,8 @@ float WaverVoice::processSample() noexcept
     const float filterDriftScale = 1.0f + drift *
         (threadbare::tuning::waver::kFilterDriftMin +
          driftAmount * (threadbare::tuning::waver::kFilterDriftMax - threadbare::tuning::waver::kFilterDriftMin));
-    const float effectiveCutoff = baseFilterCutoffHz * filterDriftScale * tolerances.filterCutoffScale;
-    const float effectiveRes = baseFilterRes * tolerances.filterResScale;
+    const float effectiveCutoff = filterCutoffSmoothed.getNextValue() * filterDriftScale * tolerances.filterCutoffScale;
+    const float effectiveRes = filterResSmoothed.getNextValue() * tolerances.filterResScale;
 
     otaFilter.setCutoffHz(std::clamp(effectiveCutoff, 20.0f, 20000.0f));
     otaFilter.setResonance(std::clamp(effectiveRes, 0.0f, 1.0f));
@@ -357,8 +365,8 @@ void WaverVoice::setGlideStartFrequency(float hz) noexcept
 
 void WaverVoice::setFilter(float cutoffHz, float resonanceValue, bool ladderMode) noexcept
 {
-    baseFilterCutoffHz = cutoffHz;
-    baseFilterRes = resonanceValue;
+    filterCutoffSmoothed.setTargetValue(cutoffHz);
+    filterResSmoothed.setTargetValue(resonanceValue);
     useLadderFilter = ladderMode;
 }
 

@@ -72,6 +72,11 @@ void PrintChain::setAge(float age) noexcept
     noiseFloor.setAge(age);
 }
 
+void PrintChain::setTransitionDelay(float delayMs) noexcept
+{
+    wowFlutter.setTransitionDelay(delayMs);
+}
+
 void PrintChain::process(float* left, float* right, int numSamples) noexcept
 {
     if (numSamples <= 0)

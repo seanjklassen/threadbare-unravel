@@ -16,6 +16,7 @@ public:
     void setWowDepth(float depth01) noexcept;
     void setFlutterDepth(float depth01) noexcept;
     void setAge(float age) noexcept;
+    void setTransitionDelay(float delayMs) noexcept;
     void process(float* left, float* right, int numSamples) noexcept;
 
 private:
@@ -43,6 +44,10 @@ private:
 
     std::uint32_t rngState = 0x12345678u;
     float noiseLpZ = 0.0f;
+
+    float transitionDelayTarget = 0.0f;
+    float transitionDelayCurrent = 0.0f;
+    float transitionDelayCoeff = 0.0f;
 };
 
 } // namespace threadbare::dsp

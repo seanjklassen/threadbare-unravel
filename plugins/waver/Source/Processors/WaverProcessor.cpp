@@ -42,6 +42,10 @@ void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
     applyQualityMode(qualityMode);
     lastQualityModeParam = static_cast<int>(qualityMode);
+    transitionFade.reset(rateDependent.sampleRate, 0.30);
+    transitionFade.setCurrentAndTargetValue(1.0f);
+    transitionPhase = TransitionPhase::idle;
+    pendingPresetIndex.store(-1, std::memory_order_relaxed);
     stateQueue.reset();
     uiEventQueue.reset();
 }
@@ -53,6 +57,8 @@ void WaverProcessor::reset()
     engine.reset();
     outputGainSmoothed.setCurrentAndTargetValue(
         juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
+    transitionFade.setCurrentAndTargetValue(1.0f);
+    transitionPhase = TransitionPhase::idle;
     stateQueue.reset();
     uiEventQueue.reset();
 }
@@ -111,6 +117,37 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         frozenAgeNorm = ageNorm;
     prevArpOn = arpOn;
     latestState.arpEnabled = arpOn;
+
+    const int pending = pendingPresetIndex.load(std::memory_order_acquire);
+    if (pending >= 0)
+    {
+        if (transitionPhase == TransitionPhase::idle)
+        {
+            transitionPhase = TransitionPhase::fadeOut;
+            transitionFade.setTargetValue(0.0f);
+            engine.setTransitionDelay(25.0f);
+        }
+        else if (transitionPhase == TransitionPhase::fadeIn)
+        {
+            transitionPhase = TransitionPhase::fadeOut;
+            transitionFade.setTargetValue(0.0f);
+            engine.setTransitionDelay(25.0f);
+        }
+    }
+    if (transitionPhase == TransitionPhase::fadeOut && transitionFade.getCurrentValue() < 0.001f)
+    {
+        const int idx = pendingPresetIndex.exchange(-1, std::memory_order_acq_rel);
+        if (idx >= 0 && idx < static_cast<int>(factoryPresets.size()))
+            applyPreset(factoryPresets[static_cast<size_t>(idx)]);
+        transitionPhase = TransitionPhase::fadeIn;
+        transitionFade.setTargetValue(1.0f);
+        engine.setTransitionDelay(0.0f);
+    }
+    if (transitionPhase == TransitionPhase::fadeIn && transitionFade.getCurrentValue() > 0.999f)
+    {
+        transitionPhase = TransitionPhase::idle;
+        transitionFade.setCurrentAndTargetValue(1.0f);
+    }
 
     engine.setPortamento(portaTimeMs, portaMode == 1);
     engine.setChorusMode(chorusMode);
@@ -213,11 +250,17 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     midiMessages.clear();
 
     outputGainSmoothed.setTargetValue(juce::Decibels::decibelsToGain(outputGainDb));
+    const bool transitioning = transitionPhase != TransitionPhase::idle;
     float sumSq = 0.0f;
     float peak = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
     {
-        const float gain = outputGainSmoothed.getNextValue();
+        float gain = outputGainSmoothed.getNextValue();
+        if (transitioning)
+        {
+            const float t = transitionFade.getNextValue();
+            gain *= t * t * (3.0f - 2.0f * t);
+        }
         left[sample] *= gain;
         right[sample] *= gain;
         const float mono = (left[sample] + right[sample]) * 0.5f;
@@ -256,7 +299,7 @@ void WaverProcessor::setCurrentProgram(int index)
     presetPuckY.store(preset.puckY, std::memory_order_relaxed);
     morphPuckX.store(preset.puckX, std::memory_order_relaxed);
     morphPuckY.store(preset.puckY, std::memory_order_relaxed);
-    applyPreset(preset);
+    pendingPresetIndex.store(currentProgramIndex, std::memory_order_release);
 }
 
 const juce::String WaverProcessor::getProgramName(int index)
@@ -650,12 +693,7 @@ void WaverProcessor::applyPreset(const Preset& preset)
     for (const auto& [id, value] : preset.parameters)
     {
         if (auto* param = apvts.getParameter(id))
-        {
-            const auto normalised = param->convertTo0to1(value);
-            param->beginChangeGesture();
-            param->setValueNotifyingHost(normalised);
-            param->endChangeGesture();
-        }
+            param->setValueNotifyingHost(param->convertTo0to1(value));
     }
 }
 

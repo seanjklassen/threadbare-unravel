@@ -182,6 +182,11 @@ void WaverEngine::setPrintParams(float driveGain, float tapeSat, float wowDepth,
     printChain.setMix(printMix);
 }
 
+void WaverEngine::setTransitionDelay(float delayMs) noexcept
+{
+    printChain.setTransitionDelay(delayMs);
+}
+
 void WaverEngine::setArpEnabled(bool on) noexcept
 {
     if (on == arpEnabled)

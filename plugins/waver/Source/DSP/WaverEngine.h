@@ -42,6 +42,7 @@ public:
     void setPrintParams(float driveGain, float tapeSat, float wowDepth,
                         float flutterDepth, float hissLevel, float humFreqHz,
                         float printMix) noexcept;
+    void setTransitionDelay(float delayMs) noexcept;
 
     WaverVoiceAllocator& getAllocator() noexcept { return voiceAllocator; }
     ArpEngine& getArp() noexcept { return arp; }

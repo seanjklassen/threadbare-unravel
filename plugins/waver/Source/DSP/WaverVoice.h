@@ -111,8 +111,8 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerDcoLevel;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerToyLevel;
 
-    float baseFilterCutoffHz = 8000.0f;
-    float baseFilterRes = 0.15f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> filterCutoffSmoothed;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> filterResSmoothed;
 
     OtaFilter otaFilter;
     MoogLadder moogLadder;

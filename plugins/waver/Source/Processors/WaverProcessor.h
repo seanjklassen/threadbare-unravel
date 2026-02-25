@@ -112,6 +112,8 @@ private:
     void applyQualityMode(QualityMode mode);
     void configureOversampling(QualityMode mode);
 
+    enum class TransitionPhase : std::uint8_t { idle, fadeOut, fadeIn };
+
     threadbare::dsp::WaverEngine engine;
     threadbare::core::StateQueue<WaverState> stateQueue;
     threadbare::core::StateQueue<UiEvent, 64> uiEventQueue;
@@ -133,6 +135,10 @@ private:
     bool prevArpOn = false;
     std::vector<Preset> factoryPresets;
     int currentProgramIndex = 0;
+
+    TransitionPhase transitionPhase = TransitionPhase::idle;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> transitionFade;
+    std::atomic<int> pendingPresetIndex { -1 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaverProcessor)
 };

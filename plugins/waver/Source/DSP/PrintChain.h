@@ -28,6 +28,7 @@ public:
     void setHumFreq(float hz) noexcept;
     void setMix(float mix01) noexcept;
     void setAge(float age) noexcept;
+    void setTransitionDelay(float delayMs) noexcept;
 
     void process(float* left, float* right, int numSamples) noexcept;
 

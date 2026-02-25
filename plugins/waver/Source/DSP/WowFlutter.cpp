@@ -10,7 +10,7 @@ namespace threadbare::dsp
 void WowFlutter::prepare(double sr, std::size_t /*maxBlockSize*/) noexcept
 {
     sampleRate = std::max(1.0, sr);
-    const int maxDelaySamples = static_cast<int>(sampleRate * 0.01) + 4;
+    const int maxDelaySamples = static_cast<int>(sampleRate * 0.04) + 4;
     delaySize = maxDelaySamples;
     delayL.assign(static_cast<std::size_t>(delaySize), 0.0f);
     delayR.assign(static_cast<std::size_t>(delaySize), 0.0f);
@@ -21,6 +21,12 @@ void WowFlutter::prepare(double sr, std::size_t /*maxBlockSize*/) noexcept
     wowPhase = 0.0f;
     flutterPhase = 0.0f;
     noiseLpZ = 0.0f;
+
+    transitionDelayTarget = 0.0f;
+    transitionDelayCurrent = 0.0f;
+    constexpr float smoothHz = 8.0f;
+    transitionDelayCoeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * smoothHz
+                                           / static_cast<float>(sampleRate));
 }
 
 void WowFlutter::reset() noexcept
@@ -31,6 +37,8 @@ void WowFlutter::reset() noexcept
     wowPhase = 0.0f;
     flutterPhase = 0.0f;
     noiseLpZ = 0.0f;
+    transitionDelayTarget = 0.0f;
+    transitionDelayCurrent = 0.0f;
 }
 
 void WowFlutter::setWowDepth(float depth01) noexcept
@@ -46,6 +54,11 @@ void WowFlutter::setFlutterDepth(float depth01) noexcept
 void WowFlutter::setAge(float age) noexcept
 {
     ageParam = std::clamp(age, 0.0f, 1.0f);
+}
+
+void WowFlutter::setTransitionDelay(float delayMs) noexcept
+{
+    transitionDelayTarget = std::clamp(delayMs, 0.0f, 30.0f);
 }
 
 void WowFlutter::process(float* left, float* right, int numSamples) noexcept
@@ -67,8 +80,11 @@ void WowFlutter::process(float* left, float* right, int numSamples) noexcept
         const float wowMod = std::sin(twoPi * wowPhase) + noise * 0.3f;
         const float flutterMod = std::sin(twoPi * flutterPhase) + noise * 0.15f;
 
-        const float totalDelayMs = wowDepthMs * wowMod + flutterDepthMs * flutterMod;
-        const float delaySamples = std::max(0.0f, totalDelayMs * 0.001f * srF);
+        transitionDelayCurrent += transitionDelayCoeff * (transitionDelayTarget - transitionDelayCurrent);
+
+        const float baseDelayMs = wowDepthMs * 1.35f + flutterDepthMs * 1.25f + transitionDelayCurrent;
+        const float totalDelayMs = baseDelayMs + wowDepthMs * wowMod + flutterDepthMs * flutterMod;
+        const float delaySamples = std::max(1.0f, totalDelayMs * 0.001f * srF);
 
         const int intDelay = static_cast<int>(delaySamples);
         const float frac = delaySamples - static_cast<float>(intDelay);
