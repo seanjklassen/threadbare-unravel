@@ -57,7 +57,7 @@ export class WaverViz {
 
   update(state) {
     this.state = state || {}
-    const playing = state?.isPlaying ?? true
+    const playing = (state?.isPlaying ?? true) || Boolean(state?.noteActive)
     const playTarget = playing ? 1 : 0
     this.playMix += (playTarget - this.playMix) * 0.06
     if (this.playMix < 0.005) this.playMix = 0

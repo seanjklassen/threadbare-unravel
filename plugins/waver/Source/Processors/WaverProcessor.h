@@ -50,6 +50,7 @@ public:
         float rmsLevel = 0.0f;
         float peakLevel = 0.0f;
         bool arpEnabled = false;
+        bool noteActive = false;
         bool isPlaying = false;
         bool isRecording = false;
         bool transportActive = false;

@@ -196,6 +196,7 @@ void WaverEditor::handleUpdate()
     obj->setProperty("rms", state.rmsLevel);
     obj->setProperty("peak", state.peakLevel);
     obj->setProperty("arpEnabled", state.arpEnabled);
+    obj->setProperty("noteActive", state.noteActive);
     obj->setProperty("isPlaying", transportStateIsStale ? false : state.isPlaying);
     obj->setProperty("isRecording", transportStateIsStale ? false : state.isRecording);
     obj->setProperty("transportActive", transportStateIsStale ? false : state.transportActive);

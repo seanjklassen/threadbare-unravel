@@ -320,6 +320,18 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     }
     latestState.rmsLevel = numSamples > 0 ? std::sqrt(sumSq / static_cast<float>(numSamples)) : 0.0f;
     latestState.peakLevel = peak;
+    {
+        bool anyVoiceActive = false;
+        for (auto& voice : engine.getAllocator().getVoices())
+        {
+            if (voice.isActive())
+            {
+                anyVoiceActive = true;
+                break;
+            }
+        }
+        latestState.noteActive = anyVoiceActive;
+    }
     stateQueue.push(latestState);
 }
 
