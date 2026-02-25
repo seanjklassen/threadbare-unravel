@@ -7,6 +7,11 @@ WaverProcessor::WaverProcessor()
               .withOutput("Output", juce::AudioChannelSet::stereo(), true),
           createParameterLayout())
 {
+    auto& rng = juce::Random::getSystemRandom();
+    determinismState.globalSeed = static_cast<std::uint64_t>(rng.nextInt64());
+    if (determinismState.globalSeed == 0)
+        determinismState.globalSeed = 0xDEADBEEF42u;
+
     initialiseFactoryPresets();
     if (!factoryPresets.empty())
     {
@@ -206,9 +211,20 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float printMx = apvts.getRawParameterValue("printMix")->load();
     const float humHz = humIdx == 0 ? 50.0f : 60.0f;
 
+    const float filterKeyTrk = apvts.getRawParameterValue("filterKeyTrack")->load();
+    const float envToFilt = apvts.getRawParameterValue("envToFilter")->load();
+    const float noiseClr = apvts.getRawParameterValue("noiseColor")->load();
+    const float stereoWd = apvts.getRawParameterValue("stereoWidth")->load();
+    const int subOctChoice = static_cast<int>(apvts.getRawParameterValue("dcoSubOctave")->load());
+
     engine.setToyParams(toyIdx, toyRat, 0.0f);
     engine.setLayerLevels(layDco, layToy);
     engine.setEnvelopeParams(envA, envD, envS, envR);
+    engine.setFilterKeyTrack(filterKeyTrk);
+    engine.setEnvToFilter(envToFilt);
+    engine.setNoiseColor(noiseClr);
+    engine.setStereoWidth(stereoWd);
+    engine.setSubOctave(subOctChoice);
     engine.setOrganDrawbars(org16, org8, org4, orgMix);
     engine.setOrganLevel(layOrgan);
     engine.setPrintParams(driveGn, tapeSt, wowDp, flutDp, hissLv, humHz, printMx);
@@ -498,7 +514,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 1.0f}, {"driftAmount", 0.25f},
             {"envAttack", 0.4f}, {"envDecay", 1.5f}, {"envSustain", 0.75f}, {"envRelease", 2.5f},
             {"driveGain", 0.05f}, {"tapeSat", 0.15f}, {"wowDepth", 0.08f}, {"flutterDepth", 0.03f},
-            {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", 0.0f}
+            {"hissLevel", 0.05f}, {"printMix", 0.6f}, {"outputGain", -1.0f}
         }, -0.35f, -0.15f},
 
         {"Summer Here Pad", {
@@ -520,7 +536,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 3.0f}, {"driftAmount", 0.2f},
             {"envAttack", 1.2f}, {"envDecay", 3.0f}, {"envSustain", 0.8f}, {"envRelease", 5.0f},
             {"driveGain", 0.0f}, {"tapeSat", 0.1f}, {"wowDepth", 0.06f}, {"flutterDepth", 0.02f},
-            {"hissLevel", 0.03f}, {"printMix", 0.5f}, {"outputGain", 0.0f}
+            {"hissLevel", 0.03f}, {"printMix", 0.5f}, {"outputGain", -1.0f}
         }, -0.45f, 0.35f},
 
         // --- DRIFT (movement, modulation, evolving) ---
@@ -532,7 +548,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 1.0f}, {"driftAmount", 0.7f},
             {"envAttack", 0.8f}, {"envDecay", 2.0f}, {"envSustain", 0.6f}, {"envRelease", 3.5f},
             {"driveGain", 0.05f}, {"tapeSat", 0.2f}, {"wowDepth", 0.2f}, {"flutterDepth", 0.08f},
-            {"hissLevel", 0.06f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
+            {"hissLevel", 0.06f}, {"printMix", 0.65f}, {"outputGain", -1.0f}
         }, -0.2f, 0.2f},
 
         {"Wandering Pilot", {
@@ -567,7 +583,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 0.0f}, {"driftAmount", 0.15f},
             {"envAttack", 0.08f}, {"envDecay", 0.8f}, {"envSustain", 0.3f}, {"envRelease", 1.5f},
             {"driveGain", 0.0f}, {"tapeSat", 0.05f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
-            {"hissLevel", 0.02f}, {"printMix", 0.4f}, {"outputGain", -3.0f}
+            {"hissLevel", 0.02f}, {"printMix", 0.4f}, {"outputGain", -1.0f}
         }, -0.45f, -0.55f},
 
         {"Nature Anthem", {
@@ -628,7 +644,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"portaTime", 250.0f}, {"portaMode", 0.0f},
             {"envAttack", 0.01f}, {"envDecay", 0.5f}, {"envSustain", 0.6f}, {"envRelease", 0.4f},
             {"driveGain", 0.12f}, {"tapeSat", 0.1f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
-            {"hissLevel", 0.02f}, {"printMix", 0.45f}, {"outputGain", 1.0f}
+            {"hissLevel", 0.02f}, {"printMix", 0.45f}, {"outputGain", -1.0f}
         }, 0.65f, -0.35f},
 
         // --- WEIGHT (deep, heavy, grounding) ---
@@ -641,7 +657,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 1.0f}, {"driftAmount", 0.3f},
             {"envAttack", 0.15f}, {"envDecay", 1.0f}, {"envSustain", 0.85f}, {"envRelease", 2.0f},
             {"driveGain", 0.12f}, {"tapeSat", 0.3f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
-            {"hissLevel", 0.06f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
+            {"hissLevel", 0.06f}, {"printMix", 0.7f}, {"outputGain", -2.0f}
         }, -0.55f, -0.35f},
 
         {"Saddest Organ", {
@@ -665,7 +681,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 3.0f}, {"driftAmount", 0.5f},
             {"envAttack", 0.1f}, {"envDecay", 1.5f}, {"envSustain", 0.65f}, {"envRelease", 3.0f},
             {"driveGain", 0.08f}, {"tapeSat", 0.26f}, {"wowDepth", 0.16f}, {"flutterDepth", 0.06f},
-            {"hissLevel", 0.15f}, {"printMix", 0.74f}, {"outputGain", -3.0f}
+            {"hissLevel", 0.15f}, {"printMix", 0.74f}, {"outputGain", -2.0f}
         }, -0.2f, 0.7f},
 
         // --- SHOWCASE / HYBRID ---
@@ -716,8 +732,90 @@ void WaverProcessor::initialiseFactoryPresets()
             {"portaTime", 300.0f}, {"portaMode", 0.0f},
             {"envAttack", 0.2f}, {"envDecay", 1.0f}, {"envSustain", 0.55f}, {"envRelease", 2.5f},
             {"driveGain", 0.08f}, {"tapeSat", 0.2f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
-            {"hissLevel", 0.05f}, {"printMix", 0.65f}, {"outputGain", 0.0f}
+            {"hissLevel", 0.05f}, {"printMix", 0.65f}, {"outputGain", -1.0f}
         }, 0.55f, 0.15f},
+
+        // --- CELLULOID (1970s educational film, institutional warmth) ---
+        {"Eversion", {
+            {"macroShape", 0.1f}, {"layerDco", 0.7f}, {"layerToy", 0.15f}, {"layerOrgan", 0.15f},
+            {"organ16", 3.0f}, {"organ8", 4.0f}, {"organ4", 1.0f}, {"organMix", 2.0f},
+            {"toyIndex", 0.15f}, {"toyRatio", 0.35f},
+            {"filterCutoff", 2200.0f}, {"filterRes", 0.15f}, {"filterMode", 0.0f},
+            {"filterKeyTrack", 0.6f}, {"envToFilter", 0.3f},
+            {"dcoSubLevel", 0.25f}, {"noiseLevel", 0.02f}, {"noiseColor", 0.7f},
+            {"lfoRate", 0.6f}, {"lfoToPwm", 0.1f}, {"lfoToVibrato", 3.0f},
+            {"chorusMode", 3.0f}, {"stereoWidth", 0.7f}, {"driftAmount", 0.35f},
+            {"envAttack", 1.0f}, {"envDecay", 3.0f}, {"envSustain", 0.7f}, {"envRelease", 5.0f},
+            {"driveGain", 0.03f}, {"tapeSat", 0.12f}, {"wowDepth", 0.08f}, {"flutterDepth", 0.03f},
+            {"hissLevel", 0.04f}, {"printMix", 0.55f}, {"outputGain", -1.0f}
+        }, -0.1f, 0.2f},
+
+        {"Cathode Lesson", {
+            {"macroShape", 0.75f}, {"layerDco", 0.55f}, {"layerToy", 0.35f}, {"layerOrgan", 0.0f},
+            {"toyIndex", 0.3f}, {"toyRatio", 0.2f},
+            {"filterCutoff", 4800.0f}, {"filterRes", 0.3f}, {"filterMode", 0.0f},
+            {"filterKeyTrack", 0.7f}, {"envToFilter", 0.2f},
+            {"dcoSubLevel", 0.1f}, {"noiseLevel", 0.03f}, {"noiseColor", 0.3f},
+            {"lfoRate", 4.0f}, {"lfoToPwm", 0.25f}, {"lfoToVibrato", 2.0f},
+            {"chorusMode", 1.0f}, {"stereoWidth", 0.6f}, {"driftAmount", 0.2f},
+            {"envAttack", 0.01f}, {"envDecay", 0.8f}, {"envSustain", 0.5f}, {"envRelease", 0.6f},
+            {"driveGain", 0.06f}, {"tapeSat", 0.1f}, {"wowDepth", 0.04f}, {"flutterDepth", 0.02f},
+            {"hissLevel", 0.03f}, {"printMix", 0.45f}, {"outputGain", -1.0f}
+        }, 0.35f, -0.3f},
+
+        {"Chalk Dust Carrier", {
+            {"macroShape", 0.15f}, {"layerDco", 0.5f}, {"layerToy", 0.0f}, {"layerOrgan", 0.4f},
+            {"organ16", 5.0f}, {"organ8", 6.0f}, {"organ4", 2.0f}, {"organMix", 3.0f},
+            {"filterCutoff", 1600.0f}, {"filterRes", 0.1f}, {"filterMode", 1.0f},
+            {"filterKeyTrack", 0.4f},
+            {"dcoSubLevel", 0.35f}, {"noiseLevel", 0.06f}, {"noiseColor", 0.8f},
+            {"lfoRate", 0.8f}, {"lfoToPwm", 0.05f}, {"lfoToVibrato", 2.5f},
+            {"chorusMode", 1.0f}, {"stereoWidth", 0.5f}, {"driftAmount", 0.4f},
+            {"envAttack", 0.6f}, {"envDecay", 2.5f}, {"envSustain", 0.7f}, {"envRelease", 4.0f},
+            {"driveGain", 0.04f}, {"tapeSat", 0.22f}, {"wowDepth", 0.18f}, {"flutterDepth", 0.06f},
+            {"hissLevel", 0.1f}, {"printMix", 0.72f}, {"outputGain", -1.0f}
+        }, -0.3f, 0.45f},
+
+        {"Film Strip Organ", {
+            {"macroShape", 0.0f}, {"layerDco", 0.15f}, {"layerToy", 0.0f}, {"layerOrgan", 0.85f},
+            {"organ16", 7.0f}, {"organ8", 8.0f}, {"organ4", 3.0f}, {"organMix", 4.0f},
+            {"filterCutoff", 3000.0f}, {"filterRes", 0.12f}, {"filterMode", 0.0f},
+            {"filterKeyTrack", 0.5f},
+            {"dcoSubLevel", 0.0f}, {"noiseLevel", 0.0f},
+            {"lfoRate", 1.0f}, {"lfoToPwm", 0.0f}, {"lfoToVibrato", 1.5f},
+            {"chorusMode", 2.0f}, {"stereoWidth", 0.65f}, {"driftAmount", 0.3f},
+            {"envAttack", 0.02f}, {"envDecay", 0.8f}, {"envSustain", 0.85f}, {"envRelease", 0.6f},
+            {"driveGain", 0.06f}, {"tapeSat", 0.25f}, {"wowDepth", 0.2f}, {"flutterDepth", 0.07f},
+            {"hissLevel", 0.09f}, {"printMix", 0.7f}, {"outputGain", -2.0f}
+        }, -0.15f, 0.3f},
+
+        {"Nelson's Proof", {
+            {"macroShape", 0.4f}, {"layerDco", 0.6f}, {"layerToy", 0.3f}, {"layerOrgan", 0.0f},
+            {"toyIndex", 0.2f}, {"toyRatio", 0.45f},
+            {"filterCutoff", 6000.0f}, {"filterRes", 0.08f}, {"filterMode", 0.0f},
+            {"filterKeyTrack", 0.8f}, {"envToFilter", 0.15f},
+            {"dcoSubLevel", 0.15f}, {"noiseLevel", 0.01f}, {"noiseColor", 0.0f},
+            {"lfoRate", 0.3f}, {"lfoToPwm", 0.1f}, {"lfoToVibrato", 2.0f},
+            {"chorusMode", 1.0f}, {"stereoWidth", 0.75f}, {"driftAmount", 0.15f},
+            {"portaTime", 200.0f}, {"portaMode", 0.0f},
+            {"envAttack", 1.5f}, {"envDecay", 2.0f}, {"envSustain", 0.8f}, {"envRelease", 6.0f},
+            {"driveGain", 0.0f}, {"tapeSat", 0.05f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
+            {"hissLevel", 0.02f}, {"printMix", 0.3f}, {"outputGain", -1.0f}
+        }, 0.2f, -0.1f},
+
+        {"Sumday Machine", {
+            {"macroShape", 0.3f}, {"layerDco", 0.7f}, {"layerToy", 0.1f}, {"layerOrgan", 0.1f},
+            {"organ16", 3.0f}, {"organ8", 3.0f}, {"organ4", 1.0f}, {"organMix", 2.0f},
+            {"toyIndex", 0.15f}, {"toyRatio", 0.3f},
+            {"filterCutoff", 2600.0f}, {"filterRes", 0.25f}, {"filterMode", 0.0f},
+            {"filterKeyTrack", 0.5f}, {"envToFilter", 0.25f},
+            {"dcoSubLevel", 0.3f}, {"noiseLevel", 0.05f}, {"noiseColor", 0.6f},
+            {"lfoRate", 1.5f}, {"lfoToPwm", 0.15f}, {"lfoToVibrato", 5.0f},
+            {"chorusMode", 3.0f}, {"stereoWidth", 0.7f}, {"driftAmount", 0.55f},
+            {"envAttack", 0.4f}, {"envDecay", 1.8f}, {"envSustain", 0.6f}, {"envRelease", 3.5f},
+            {"driveGain", 0.09f}, {"tapeSat", 0.28f}, {"wowDepth", 0.14f}, {"flutterDepth", 0.05f},
+            {"hissLevel", 0.09f}, {"printMix", 0.72f}, {"outputGain", -1.0f}
+        }, 0.0f, 0.3f},
 
     };
 }

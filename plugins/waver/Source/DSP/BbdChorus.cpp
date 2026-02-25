@@ -10,7 +10,18 @@ void BbdChorus::prepare(double newSampleRate, std::size_t maxBlockSize)
     const auto maxDelaySamples = static_cast<std::size_t>(sampleRate * 0.02); // 20 ms headroom
     delayL.assign(maxDelaySamples + maxBlockSize + 8, 0.0f);
     delayR.assign(maxDelaySamples + maxBlockSize + 8, 0.0f);
-    subLpCoeff = 1.0f - std::exp((-2.0f * std::numbers::pi_v<float> * 150.0f) / static_cast<float>(sampleRate));
+
+    const float w0 = 2.0f * std::numbers::pi_v<float> * 150.0f / static_cast<float>(sampleRate);
+    const float cosW0 = std::cos(w0);
+    const float sinW0 = std::sin(w0);
+    const float alpha = sinW0 / (2.0f * std::sqrt(2.0f));
+    const float a0 = 1.0f + alpha;
+    subLpB0 = ((1.0f - cosW0) * 0.5f) / a0;
+    subLpB1 = (1.0f - cosW0) / a0;
+    subLpB2 = subLpB0;
+    subLpA1 = (-2.0f * cosW0) / a0;
+    subLpA2 = (1.0f - alpha) / a0;
+
     reset();
 }
 
@@ -23,7 +34,8 @@ void BbdChorus::reset() noexcept
     phase2 = 0.5f;
     noiseState = 0.0f;
     noiseRng = 0x6D2B79F5u;
-    subLpState = 0.0f;
+    subLpS1 = 0.0f;
+    subLpS2 = 0.0f;
 }
 
 void BbdChorus::process(float* left, float* right, int numSamples) noexcept
@@ -41,8 +53,9 @@ void BbdChorus::process(float* left, float* right, int numSamples) noexcept
         float inL = left[i];
         float inR = right[i];
         const float mono = 0.5f * (inL + inR);
-        subLpState += subLpCoeff * (mono - subLpState);
-        const float subBass = subLpState;
+        const float subBass = subLpB0 * mono + subLpS1;
+        subLpS1 = subLpB1 * mono - subLpA1 * subBass + subLpS2;
+        subLpS2 = subLpB2 * mono - subLpA2 * subBass;
         const float upperBand = mono - subBass;
 
         noiseRng = noiseRng * 1664525u + 1013904223u;
@@ -70,8 +83,13 @@ void BbdChorus::process(float* left, float* right, int numSamples) noexcept
         float wetL = readDelaySample(delayL, dL, writeIndex);
         float wetR = readDelaySample(delayR, dR, writeIndex);
 
-        left[i] = subBass + 0.65f * wetL + 0.35f * inL;
-        right[i] = subBass + 0.65f * wetR + 0.35f * inR;
+        const float wetGain = 0.65f * stereoWidth;
+        const float dryGain = 1.0f - wetGain;
+        const float midWet = 0.5f * (wetL + wetR);
+        const float outWetL = midWet + stereoWidth * (wetL - midWet);
+        const float outWetR = midWet + stereoWidth * (wetR - midWet);
+        left[i] = subBass + wetGain * outWetL + dryGain * (inL - subBass);
+        right[i] = subBass + wetGain * outWetR + dryGain * (inR - subBass);
 
         writeIndex = (writeIndex + 1) % delayL.size();
     }

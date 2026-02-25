@@ -23,6 +23,7 @@ public:
     void prepare(double newSampleRate, std::size_t maxBlockSize);
     void reset() noexcept;
     void setMode(Mode newMode) noexcept { mode = newMode; }
+    void setStereoWidth(float width01) noexcept { stereoWidth = std::clamp(width01, 0.0f, 1.0f); }
     void process(float* left, float* right, int numSamples) noexcept;
 
 private:
@@ -37,7 +38,9 @@ private:
     float phase2 = 0.5f;
     float noiseState = 0.0f;
     std::uint32_t noiseRng = 0x6D2B79F5u;
-    float subLpCoeff = 0.0f;
-    float subLpState = 0.0f;
+    float subLpB0 = 0.0f, subLpB1 = 0.0f, subLpB2 = 0.0f;
+    float subLpA1 = 0.0f, subLpA2 = 0.0f;
+    float subLpS1 = 0.0f, subLpS2 = 0.0f;
+    float stereoWidth = 0.8f;
 };
 } // namespace threadbare::dsp

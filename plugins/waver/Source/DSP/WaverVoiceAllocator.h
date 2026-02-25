@@ -34,6 +34,10 @@ public:
     void setToyParams(float modIndex, float ratioNorm, float feedback) noexcept;
     void setLayerLevels(float dco, float toy) noexcept;
     void setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept;
+    void setFilterKeyTrack(float amount) noexcept;
+    void setEnvToFilter(float amount) noexcept;
+    void setNoiseColor(float color) noexcept;
+    void setSubOctave(int octaveChoice) noexcept;
 
     void render(std::span<float> left, std::span<float> right) noexcept;
 

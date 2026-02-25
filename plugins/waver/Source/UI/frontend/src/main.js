@@ -22,7 +22,7 @@ let morphState = {
 }
 
 let activeSurface = FACTORY_SURFACES.length > 0 ? FACTORY_SURFACES[0] : null
-let momentSeed = 42
+let momentSeed = ((Date.now() * 2654435761) >>> 0) || 1
 let sigmaOffsets = activeSurface
   ? generateSigmaOffsets(activeSurface.landmarks.length, momentSeed)
   : []
@@ -97,17 +97,6 @@ const sendParam = (id, value) => {
   }
 
   if (id === "momentTrigger") {
-    momentSeed = (momentSeed * 1664525 + 1013904223) >>> 0
-    if (activeSurface) {
-      sigmaOffsets = generateSigmaOffsets(activeSurface.landmarks.length, momentSeed)
-    }
-    if (typeof enqueueUiEventNative === "function") {
-      enqueueUiEventNative("moment")
-    }
-    if (shell?.viz) {
-      shell.viz.triggerMoment?.()
-    }
-    applyRbfInterpolation(morphState.puckX, morphState.puckY)
     return
   }
 
@@ -132,10 +121,12 @@ function onPresetLoaded(index, presetPuckX = 0.0, presetPuckY = 0.0) {
   const surface = getSurfaceByIndex(mappedSurfaceIndex)
   if (surface) {
     activeSurface = surface
+    momentSeed = (momentSeed * 1664525 + 1013904223) >>> 0
     sigmaOffsets = generateSigmaOffsets(
       activeSurface.landmarks.length,
       momentSeed,
     )
+    shell?.viz?.triggerMoment?.()
 
     const clampedX = Math.max(-1, Math.min(1, Number(presetPuckX) || 0))
     const clampedY = Math.max(-1, Math.min(1, Number(presetPuckY) || 0))

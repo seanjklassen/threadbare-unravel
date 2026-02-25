@@ -67,7 +67,9 @@ Overdrive modeled on the SD-1 mid-push, cassette tape saturation with hysteresis
 
 ### moment
 
-Press the moment button and waver re-rolls its internal tolerances. Every voice gets slightly different filter offsets, envelope timing, gain levels. The drift patterns change. The RBF morph surface shifts. It's the same patch, but today's version of it. Subtle, but you feel it. Like picking up a guitar that's been restrung.
+Every instance of waver gets its own personality. When you load the plugin, its internal tolerances are randomly seeded — every voice gets slightly different filter offsets, envelope timing, gain levels. The drift patterns are unique to this instance. The morph surface shifts. It's the same patch, but this particular copy of it. Subtle, but you feel it. Like picking up a guitar that's been restrung.
+
+Save your session and it comes back exactly the same. Open a new instance and it's subtly different again.
 
 ### true stereo
 

@@ -48,6 +48,16 @@ private:
     float transitionDelayTarget = 0.0f;
     float transitionDelayCurrent = 0.0f;
     float transitionDelayCoeff = 0.0f;
+
+    // Sub-bass crossover (2nd-order Butterworth LP at 100 Hz).
+    // Sub-bass bypasses the modulated delay to prevent audible pitch wobble.
+    struct CrossoverLp
+    {
+        float b0 = 0.0f, b1 = 0.0f, b2 = 0.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+        float s1 = 0.0f, s2 = 0.0f;
+    };
+    CrossoverLp xoverL, xoverR;
 };
 
 } // namespace threadbare::dsp

@@ -97,6 +97,9 @@ void WaverVoice::reset() noexcept
     layerToyLevel.setCurrentAndTargetValue(0.0f);
     filterCutoffSmoothed.setCurrentAndTargetValue(filterCutoffSmoothed.getTargetValue());
     filterResSmoothed.setCurrentAndTargetValue(filterResSmoothed.getTargetValue());
+    pinkB0 = 0.0f;
+    pinkB1 = 0.0f;
+    pinkB2 = 0.0f;
     ouDrift.reset();
     toyEngine.reset();
 }
@@ -194,7 +197,8 @@ float WaverVoice::processSample() noexcept
     currentFrequencyHz += (targetFrequencyHz - currentFrequencyHz) * (1.0f - glideCoeff);
     const float driftedFreq = currentFrequencyHz * pitchMultiplier * vibratoMultiplier;
     phaseIncrement = driftedFreq / static_cast<float>(sampleRate);
-    subPhaseIncrement = (driftedFreq * 0.5f) / static_cast<float>(sampleRate);
+    const float subFreq = currentFrequencyHz * pitchMultiplier;
+    subPhaseIncrement = (subFreq * subOctaveMultiplier) / static_cast<float>(sampleRate);
 
     // DCO oscillator.
     float saw = 2.0f * phase - 1.0f;
@@ -215,14 +219,18 @@ float WaverVoice::processSample() noexcept
 
     const float sub = std::sin(2.0f * std::numbers::pi_v<float> * subPhase);
     noiseState = noiseState * 1664525u + 1013904223u;
-    const float noise = (static_cast<float>((noiseState >> 8) & 0x00FFFFFFu) / static_cast<float>(0x00FFFFFFu)) * 2.0f - 1.0f;
+    const float white = (static_cast<float>((noiseState >> 8) & 0x00FFFFFFu) / static_cast<float>(0x00FFFFFFu)) * 2.0f - 1.0f;
+    pinkB0 = 0.99765f * pinkB0 + white * 0.0990460f;
+    pinkB1 = 0.96300f * pinkB1 + white * 0.2965164f;
+    pinkB2 = 0.57000f * pinkB2 + white * 1.0526913f;
+    const float pink = (pinkB0 + pinkB1 + pinkB2 + white * 0.1848f) * 0.22f;
+    const float noise = white + noiseColorMix * (pink - white);
 
     phase += phaseIncrement;
     if (phase >= 1.0f)
         phase -= 1.0f;
 
     float dcoOut = saw * (1.0f - waveBlend) + pulse * waveBlend;
-    dcoOut += sub * subLevel;
     dcoOut += noise * noiseLevel;
 
     // Toy engine: shares envelope for AM, tracks same note.
@@ -242,11 +250,16 @@ float WaverVoice::processSample() noexcept
     const float toyLevel = layerToyLevel.getNextValue();
     float layerMixed = dcoOut * dcoLevel + toyOut * toyLevel;
 
-    // Filter with drift and component tolerances.
+    // Filter with drift, key tracking, envelope modulation, and component tolerances.
     const float filterDriftScale = 1.0f + drift *
         (threadbare::tuning::waver::kFilterDriftMin +
          driftAmount * (threadbare::tuning::waver::kFilterDriftMax - threadbare::tuning::waver::kFilterDriftMin));
-    const float effectiveCutoff = filterCutoffSmoothed.getNextValue() * filterDriftScale * tolerances.filterCutoffScale;
+    const float keyTrackSemitones = static_cast<float>(midiNote - 60) * filterKeyTrackAmount;
+    const float keyTrackScale = std::pow(2.0f, keyTrackSemitones / 12.0f);
+    const float envFilterScale = 1.0f + envToFilterAmount * envelope * 4.0f;
+    const float effectiveCutoff = filterCutoffSmoothed.getNextValue()
+        * filterDriftScale * tolerances.filterCutoffScale
+        * keyTrackScale * std::max(envFilterScale, 0.05f);
     const float effectiveRes = filterResSmoothed.getNextValue() * tolerances.filterResScale;
 
     otaFilter.setCutoffHz(std::clamp(effectiveCutoff, 20.0f, 20000.0f));
@@ -255,6 +268,10 @@ float WaverVoice::processSample() noexcept
     moogLadder.setResonance(std::clamp(effectiveRes, 0.0f, 1.0f));
 
     float filtered = useLadderFilter ? moogLadder.process(layerMixed) : otaFilter.process(layerMixed);
+
+    // Sub bypasses the filter to avoid resonant amplitude pumping from
+    // filter cutoff drift/modulation at low frequencies.
+    filtered += sub * subLevel * dcoLevel;
 
     const float dcBlocked = filtered - dcX1 + dcBlockerR * dcY1;
     dcX1 = filtered;
@@ -337,7 +354,7 @@ void WaverVoice::updateFrequencyFromMidi() noexcept
     if (currentFrequencyHz <= 0.0f)
         currentFrequencyHz = targetFrequencyHz;
     phaseIncrement = currentFrequencyHz / static_cast<float>(sampleRate);
-    subPhaseIncrement = (currentFrequencyHz * 0.5f) / static_cast<float>(sampleRate);
+    subPhaseIncrement = (currentFrequencyHz * subOctaveMultiplier) / static_cast<float>(sampleRate);
 }
 
 void WaverVoice::setPortamento(float glideMs, bool alwaysMode) noexcept
@@ -441,5 +458,25 @@ void WaverVoice::setEnvelopeParams(float attack, float decay, float sustain, flo
         sustain,
         release * tolerances.envReleaseScale
     });
+}
+
+void WaverVoice::setFilterKeyTrack(float amount) noexcept
+{
+    filterKeyTrackAmount = std::clamp(amount, 0.0f, 1.0f);
+}
+
+void WaverVoice::setEnvToFilter(float amount) noexcept
+{
+    envToFilterAmount = std::clamp(amount, -1.0f, 1.0f);
+}
+
+void WaverVoice::setNoiseColor(float color) noexcept
+{
+    noiseColorMix = std::clamp(color, 0.0f, 1.0f);
+}
+
+void WaverVoice::setSubOctave(int octaveChoice) noexcept
+{
+    subOctaveMultiplier = (octaveChoice == 1) ? 0.25f : 0.5f;
 }
 } // namespace threadbare::dsp

@@ -39,6 +39,8 @@ private:
     NoiseFloor noiseFloor;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mix;
     std::vector<float> wetMixScratch;
+    std::vector<float> wetL;
+    std::vector<float> wetR;
 };
 
 } // namespace threadbare::dsp
