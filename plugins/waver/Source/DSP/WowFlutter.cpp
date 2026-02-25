@@ -27,6 +27,20 @@ void WowFlutter::prepare(double sr, std::size_t /*maxBlockSize*/) noexcept
     constexpr float smoothHz = 8.0f;
     transitionDelayCoeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * smoothHz
                                            / static_cast<float>(sampleRate));
+
+    constexpr float xoverCutoff = 100.0f;
+    const float srF = static_cast<float>(sampleRate);
+    const float w0 = 2.0f * std::numbers::pi_v<float> * xoverCutoff / srF;
+    const float cosW0 = std::cos(w0);
+    const float sinW0 = std::sin(w0);
+    const float alpha = sinW0 / std::sqrt(2.0f); // Q = 1/sqrt(2) for Butterworth
+    const float a0 = 1.0f + alpha;
+    const float lpB0 = ((1.0f - cosW0) * 0.5f) / a0;
+    const float lpB1 = (1.0f - cosW0) / a0;
+    const float lpA1 = (-2.0f * cosW0) / a0;
+    const float lpA2 = (1.0f - alpha) / a0;
+    xoverL = { lpB0, lpB1, lpB0, lpA1, lpA2, 0.0f, 0.0f };
+    xoverR = { lpB0, lpB1, lpB0, lpA1, lpA2, 0.0f, 0.0f };
 }
 
 void WowFlutter::reset() noexcept
@@ -39,6 +53,8 @@ void WowFlutter::reset() noexcept
     noiseLpZ = 0.0f;
     transitionDelayTarget = 0.0f;
     transitionDelayCurrent = 0.0f;
+    xoverL.s1 = xoverL.s2 = 0.0f;
+    xoverR.s1 = xoverR.s2 = 0.0f;
 }
 
 void WowFlutter::setWowDepth(float depth01) noexcept
@@ -72,8 +88,21 @@ void WowFlutter::process(float* left, float* right, int numSamples) noexcept
 
     for (int i = 0; i < numSamples; ++i)
     {
-        delayL[static_cast<std::size_t>(writePos)] = left[i];
-        delayR[static_cast<std::size_t>(writePos)] = right[i];
+        const float inL = left[i];
+        const float inR = right[i];
+
+        // Extract sub-bass via 2nd-order Butterworth LP (transposed-direct-form II).
+        const float subL = xoverL.b0 * inL + xoverL.s1;
+        xoverL.s1 = xoverL.b1 * inL - xoverL.a1 * subL + xoverL.s2;
+        xoverL.s2 = xoverL.b2 * inL - xoverL.a2 * subL;
+
+        const float subR = xoverR.b0 * inR + xoverR.s1;
+        xoverR.s1 = xoverR.b1 * inR - xoverR.a1 * subR + xoverR.s2;
+        xoverR.s2 = xoverR.b2 * inR - xoverR.a2 * subR;
+
+        // Only the upper band enters the modulated delay.
+        delayL[static_cast<std::size_t>(writePos)] = inL - subL;
+        delayR[static_cast<std::size_t>(writePos)] = inR - subR;
 
         const float noise = nextNoise() * stochasticScale;
 
@@ -90,8 +119,9 @@ void WowFlutter::process(float* left, float* right, int numSamples) noexcept
         const float frac = delaySamples - static_cast<float>(intDelay);
         const int readPos = ((writePos - intDelay - 1) + delaySize * 4) % delaySize;
 
-        left[i] = cubicHermite(delayL.data(), delaySize, frac, readPos);
-        right[i] = cubicHermite(delayR.data(), delaySize, frac, readPos);
+        // Recombine: clean sub-bass + modulated upper band.
+        left[i] = subL + cubicHermite(delayL.data(), delaySize, frac, readPos);
+        right[i] = subR + cubicHermite(delayR.data(), delaySize, frac, readPos);
 
         wowPhase += wowInc;
         if (wowPhase >= 1.0f)

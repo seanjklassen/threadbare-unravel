@@ -7,6 +7,11 @@ WaverProcessor::WaverProcessor()
               .withOutput("Output", juce::AudioChannelSet::stereo(), true),
           createParameterLayout())
 {
+    auto& rng = juce::Random::getSystemRandom();
+    determinismState.globalSeed = static_cast<std::uint64_t>(rng.nextInt64());
+    if (determinismState.globalSeed == 0)
+        determinismState.globalSeed = 0xDEADBEEF42u;
+
     initialiseFactoryPresets();
     if (!factoryPresets.empty())
     {
@@ -206,9 +211,20 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float printMx = apvts.getRawParameterValue("printMix")->load();
     const float humHz = humIdx == 0 ? 50.0f : 60.0f;
 
+    const float filterKeyTrk = apvts.getRawParameterValue("filterKeyTrack")->load();
+    const float envToFilt = apvts.getRawParameterValue("envToFilter")->load();
+    const float noiseClr = apvts.getRawParameterValue("noiseColor")->load();
+    const float stereoWd = apvts.getRawParameterValue("stereoWidth")->load();
+    const int subOctChoice = static_cast<int>(apvts.getRawParameterValue("dcoSubOctave")->load());
+
     engine.setToyParams(toyIdx, toyRat, 0.0f);
     engine.setLayerLevels(layDco, layToy);
     engine.setEnvelopeParams(envA, envD, envS, envR);
+    engine.setFilterKeyTrack(filterKeyTrk);
+    engine.setEnvToFilter(envToFilt);
+    engine.setNoiseColor(noiseClr);
+    engine.setStereoWidth(stereoWd);
+    engine.setSubOctave(subOctChoice);
     engine.setOrganDrawbars(org16, org8, org4, orgMix);
     engine.setOrganLevel(layOrgan);
     engine.setPrintParams(driveGn, tapeSt, wowDp, flutDp, hissLv, humHz, printMx);

@@ -1,6 +1,8 @@
 #include "WaverEngine.h"
 
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 namespace threadbare::dsp
 {
@@ -15,6 +17,32 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
     printChain.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
     organLevel.reset(spec.sampleRate, 0.02);
     organLevel.setCurrentAndTargetValue(0.3f);
+
+    // 4th-order Butterworth HPF at 45 Hz (two cascaded 2nd-order sections).
+    constexpr float hpfCutoff = 45.0f;
+    const float srF = static_cast<float>(spec.sampleRate);
+    const float w0 = 2.0f * std::numbers::pi_v<float> * hpfCutoff / srF;
+    const float cosW0 = std::cos(w0);
+    const float sinW0 = std::sin(w0);
+
+    // 4th-order Butterworth Q values: 1/(2*cos(pi/8)), 1/(2*cos(3*pi/8))
+    constexpr float q1 = 0.54119610f;
+    constexpr float q2 = 1.30656296f;
+
+    auto computeHpfStage = [&](BiquadStage& stage, float q) {
+        const float alpha = sinW0 / (2.0f * q);
+        const float a0 = 1.0f + alpha;
+        stage.b0 = ((1.0f + cosW0) * 0.5f) / a0;
+        stage.b1 = -(1.0f + cosW0) / a0;
+        stage.b2 = stage.b0;
+        stage.a1 = (-2.0f * cosW0) / a0;
+        stage.a2 = (1.0f - alpha) / a0;
+        stage.s1L = stage.s2L = 0.0f;
+        stage.s1R = stage.s2R = 0.0f;
+    };
+
+    computeHpfStage(hpfStage1, q1);
+    computeHpfStage(hpfStage2, q2);
 }
 
 void WaverEngine::reset() noexcept
@@ -25,6 +53,10 @@ void WaverEngine::reset() noexcept
     organ.reset();
     printChain.reset();
     organLevel.setCurrentAndTargetValue(organLevel.getTargetValue());
+    hpfStage1.s1L = hpfStage1.s2L = 0.0f;
+    hpfStage1.s1R = hpfStage1.s2R = 0.0f;
+    hpfStage2.s1L = hpfStage2.s2L = 0.0f;
+    hpfStage2.s1R = hpfStage2.s2R = 0.0f;
 }
 
 void WaverEngine::process(std::span<float> left, std::span<float> right) noexcept
@@ -61,6 +93,23 @@ void WaverEngine::process(std::span<float> left, std::span<float> right) noexcep
 
     // Print chain (overdrive -> tape -> wow/flutter -> noise floor).
     printChain.process(left.data(), right.data(), static_cast<int>(left.size()));
+
+    // 4th-order Butterworth HPF (35 Hz, 24 dB/oct) for mix-ready low end.
+    auto applyStage = [](BiquadStage& s, float inL, float inR, float& outL, float& outR) {
+        outL = s.b0 * inL + s.s1L;
+        s.s1L = s.b1 * inL - s.a1 * outL + s.s2L;
+        s.s2L = s.b2 * inL - s.a2 * outL;
+        outR = s.b0 * inR + s.s1R;
+        s.s1R = s.b1 * inR - s.a1 * outR + s.s2R;
+        s.s2R = s.b2 * inR - s.a2 * outR;
+    };
+
+    for (std::size_t i = 0; i < left.size(); ++i)
+    {
+        float tmpL, tmpR;
+        applyStage(hpfStage1, left[i], right[i], tmpL, tmpR);
+        applyStage(hpfStage2, tmpL, tmpR, left[i], right[i]);
+    }
 }
 
 void WaverEngine::noteOn(int midiNote, float velocity) noexcept
@@ -157,6 +206,31 @@ void WaverEngine::setLayerLevels(float dco, float toy) noexcept
 void WaverEngine::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept
 {
     voiceAllocator.setEnvelopeParams(attack, decay, sustain, release);
+}
+
+void WaverEngine::setFilterKeyTrack(float amount) noexcept
+{
+    voiceAllocator.setFilterKeyTrack(amount);
+}
+
+void WaverEngine::setEnvToFilter(float amount) noexcept
+{
+    voiceAllocator.setEnvToFilter(amount);
+}
+
+void WaverEngine::setNoiseColor(float color) noexcept
+{
+    voiceAllocator.setNoiseColor(color);
+}
+
+void WaverEngine::setStereoWidth(float width) noexcept
+{
+    chorus.setStereoWidth(width);
+}
+
+void WaverEngine::setSubOctave(int octaveChoice) noexcept
+{
+    voiceAllocator.setSubOctave(octaveChoice);
 }
 
 void WaverEngine::setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept

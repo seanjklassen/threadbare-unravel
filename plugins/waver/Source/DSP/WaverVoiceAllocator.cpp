@@ -172,6 +172,30 @@ void WaverVoiceAllocator::setEnvelopeParams(float attack, float decay, float sus
         voice.setEnvelopeParams(attack, decay, sustain, release);
 }
 
+void WaverVoiceAllocator::setFilterKeyTrack(float amount) noexcept
+{
+    for (auto& voice : voices)
+        voice.setFilterKeyTrack(amount);
+}
+
+void WaverVoiceAllocator::setEnvToFilter(float amount) noexcept
+{
+    for (auto& voice : voices)
+        voice.setEnvToFilter(amount);
+}
+
+void WaverVoiceAllocator::setNoiseColor(float color) noexcept
+{
+    for (auto& voice : voices)
+        voice.setNoiseColor(color);
+}
+
+void WaverVoiceAllocator::setSubOctave(int octaveChoice) noexcept
+{
+    for (auto& voice : voices)
+        voice.setSubOctave(octaveChoice);
+}
+
 void WaverVoiceAllocator::render(std::span<float> left, std::span<float> right) noexcept
 {
     const auto sampleCount = left.size();

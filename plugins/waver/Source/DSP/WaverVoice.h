@@ -49,6 +49,10 @@ public:
     void setToyParams(float modIndex, float ratioNorm, float feedback) noexcept;
     void setLayerLevels(float dco, float toy) noexcept;
     void setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept;
+    void setFilterKeyTrack(float amount) noexcept;
+    void setEnvToFilter(float amount) noexcept;
+    void setNoiseColor(float color) noexcept;
+    void setSubOctave(int octaveChoice) noexcept;
 
     float processSample() noexcept;
 
@@ -108,6 +112,11 @@ private:
     float driftAmount = 0.0f;
     float ageParam = 0.0f;
     float lfoToVibratoCents = 0.0f;
+    float filterKeyTrackAmount = 0.0f;
+    float envToFilterAmount = 0.0f;
+    float noiseColorMix = 0.0f;
+    float subOctaveMultiplier = 0.5f;
+    float pinkB0 = 0.0f, pinkB1 = 0.0f, pinkB2 = 0.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerDcoLevel;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerToyLevel;
 

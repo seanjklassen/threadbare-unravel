@@ -30,19 +30,24 @@ The tagline: **"broken but beautiful synthesis."**
 Three emotional targets serve as the north star for all design decisions: **Weathered** (the tape, the drift, the controlled imperfection), **Tender** (the emotional register is never aggressive, even when distorted), and **Breathing** (the sound is never static—OU drift, chorus modulation, and flutter keep everything alive).
 
 
-| Element               | Value                                 |
-| --------------------- | ------------------------------------- |
-| Product name          | waver                                 |
-| Tagline               | broken but beautiful synthesis.       |
-| Emotional targets     | Weathered · Tender · Breathing        |
-| Accent color          | C4A46C (dusty amber / warm ochre)     |
-| Foundation background | 241D19 (vintage cassette shell)       |
-| Text / icons          | D3C7BB (faded label / warm off-white) |
-| Plugin dimensions     | 380–420 px wide, 670–720 px tall      |
-| CMake target          | ThreadbareWaver                       |
-| Plugin code           | Wavr                                  |
-| Bundle ID (VST3)      | com.threadbare.waver.vst3             |
-| Bundle ID (AU)        | com.threadbare.waver.component        |
+| Element               | Value                                                  |
+| --------------------- | ------------------------------------------------------ |
+| Product name          | waver                                                  |
+| Tagline               | broken but beautiful synthesis.                        |
+| Emotional targets     | Weathered · Tender · Breathing                         |
+| Surface base          | 7D8FA0 (coastal blue-gray — ocean viewed from above)   |
+| Surface hover         | E8B8A8 (warm sand / blush)                             |
+| Panel ink soft        | E4E4D8 (cream / sea-foam)                              |
+| Text / panel ink      | 31312B (dark driftwood)                                |
+| Arp tint              | AD97B1 (muted lavender / twilight)                     |
+| Foundation background | 31312B (dark driftwood, via CSS)                       |
+| Plugin dimensions     | 380–420 px wide, 670–720 px tall                       |
+| CMake target          | ThreadbareWaver                                        |
+| Plugin code           | Wavr                                                   |
+| Bundle ID (VST3)      | com.threadbare.waver.vst3                              |
+| Bundle ID (AU)        | com.threadbare.waver.component                         |
+
+The palette is conceptually a bird's-eye view of a beach with waves: coastal blue-gray surface, cream foam, warm sand accents, dark driftwood text, and twilight lavender for arp mode. All palette values live in `palette.js` and are applied as CSS custom properties.
 
 
 ## **1.2 Core Design Principles**
@@ -455,14 +460,14 @@ The UI is built with standard web technologies via JUCE 8’s WebBrowserComponen
 
 ## **7.2 The Waveform Scope**
 
-waver’s primary visualization is a **slowly evolving waveform scope** tinted in the dusty amber accent color (C4A46C). This replaces unravel’s Lissajous orb as the product’s visual identity.
+waver’s primary visualization is a **slowly evolving waveform scope** rendered in the coastal blue-gray surface color (7D8FA0), shifting toward cream (E4E4D8) as age increases. When arp mode is active, the waveform tints to muted lavender (AD97B1). This replaces unravel’s Lissajous orb as the product’s visual identity.
 
 **7.2.1 Specification**
 
 - **Data source.** The audio thread writes a rolling buffer of 256–512 post-mixdown samples into the WaverState struct. The scope reads from this buffer at the display refresh rate.
-- **Rendering.** Canvas 2D polyline with anti-aliased strokes. The waveform line uses C4A46C at 70% opacity, with a subtle glow/bloom effect (achieved via a second, blurred, lower-opacity copy of the polyline offset by 1–2px).
+- **Rendering.** Canvas 2D polyline with anti-aliased strokes. The waveform line uses the surface base color at 80% opacity, with a subtle glow/bloom effect (achieved via a second, blurred, lower-opacity copy of the polyline offset by 1–2px). A filled region below the waveform uses the cream palette color, reinforcing the coastal visual metaphor.
 - **Behavior.** The scope is not a traditional oscilloscope — it does not attempt zero-crossing trigger sync. Instead, it displays a continuous, free-running waveform that drifts and evolves, reinforcing the "breathing" emotional target. When no audio is playing, the scope shows a faint, slow sine-like idle animation rather than going blank.
-- **Age coupling.** As the Y-axis increases, the scope’s visual treatment becomes more degraded: the line becomes slightly thicker and more diffuse, a subtle noise texture overlays the waveform, and the amber tint shifts slightly warmer (toward copper).
+- **Age coupling.** As the Y-axis increases, the scope’s visual treatment becomes more degraded: the line becomes slightly thicker and more diffuse, a subtle noise texture overlays the waveform, and the blue-gray tint shifts toward warmer cream tones.
 - **Reduced motion.** When prefers-reduced-motion is active, the scope displays a static waveform snapshot updated once per second rather than continuous animation.
 
 **7.2.2 Shell Integration**
@@ -489,11 +494,13 @@ The puck traverses a continuous sound map populated by preset landmark states. R
 - **X-Axis (Harmonic Presence):** Moves DCO toward brighter waveforms, increases drive, raises Toy FM modulation index.
 - **Y-Axis (Nostalgia/Age):** Deeply coupled to the engine’s core. Moving up increases tape wear and BBD depth, forces OPLL envelope stepping to become harsher, increases Organ key-click/leakage, causes compander noise to breathe aggressively, and makes OU drift stickier and slower.
 
-## **7.4 Moment Mode (Deep Recalibration)**
+## **7.4 Moment Mode (Always-On Recalibration)**
 
-Pressing the Moment button re-rolls the PRNG seed, causing new voice-level component tolerances, slight ± shifts in RBF landmark radii (σ), and micro-changes to macro-to-parameter mapping curves. This gives "today’s waver" a different personality while remaining entirely deterministic and recallable once saved.
+Moment Mode is always active. Each new plugin instance receives a unique PRNG seed derived from the system clock, giving it subtly different voice-level component tolerances, slight ± shifts in RBF landmark radii (σ), and micro-changes to the morph surface character. There is no Moment button in the UI — the imperfection is automatic and invisible, like picking up a different physical instrument off the shelf.
 
-Visual feedback: a subtle warmth shift in the dusty amber accent elements and a gentle ripple on the waveform scope. Transition uses ease-out timing (200 ms), snapping without animation when prefers-reduced-motion is active.
+The seed is saved in the DAW session state, so reloading a project restores the exact same "today's waver." On preset load, the frontend regenerates sigma offsets from the current seed, ensuring each preset change subtly reshapes the morph surface.
+
+Visual feedback: a subtle ripple on the waveform scope when a preset loads. Transition uses ease-out timing (200 ms), snapping without animation when prefers-reduced-motion is active.
 
 ## **7.5 The Advanced Drawer**
 
@@ -883,7 +890,7 @@ Each phase produces a playable, DAW-loadable build that can be evaluated musical
 
 ## **Phase 5: UI and Morphing (Weeks 13–16)**
 
-- WebView UI (vanilla JS via @threadbare/shell) with puck controller and dusty amber waveform scope
+- WebView UI (vanilla JS via @threadbare/shell) with puck controller and coastal waveform scope
 - RBF interpolation engine (perceptual space)
 - Landmark preset system with JSON import/export
 - Moment Mode with PRNG seed save/restore

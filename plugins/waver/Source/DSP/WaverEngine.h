@@ -36,6 +36,11 @@ public:
     void setToyParams(float modIndex, float ratioNorm, float feedback) noexcept;
     void setLayerLevels(float dco, float toy) noexcept;
     void setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept;
+    void setFilterKeyTrack(float amount) noexcept;
+    void setEnvToFilter(float amount) noexcept;
+    void setNoiseColor(float color) noexcept;
+    void setStereoWidth(float width) noexcept;
+    void setSubOctave(int octaveChoice) noexcept;
 
     void setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept;
     void setOrganLevel(float level) noexcept;
@@ -62,5 +67,15 @@ private:
     PrintChain printChain;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> organLevel;
     bool arpEnabled = false;
+
+    struct BiquadStage
+    {
+        float b0 = 1.0f, b1 = -2.0f, b2 = 1.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+        float s1L = 0.0f, s2L = 0.0f;
+        float s1R = 0.0f, s2R = 0.0f;
+    };
+    // 4th-order Butterworth HPF (two cascaded biquad sections).
+    BiquadStage hpfStage1, hpfStage2;
 };
 } // namespace threadbare::dsp
