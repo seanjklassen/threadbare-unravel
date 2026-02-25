@@ -41,6 +41,7 @@ void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     outputGainSmoothed.setCurrentAndTargetValue(
         juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
     applyQualityMode(qualityMode);
+    lastQualityModeParam = static_cast<int>(qualityMode);
     stateQueue.reset();
     uiEventQueue.reset();
 }
@@ -78,6 +79,7 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float filterRes = apvts.getRawParameterValue("filterRes")->load();
     const int filterMode = static_cast<int>(apvts.getRawParameterValue("filterMode")->load());
     const float outputGainDb = apvts.getRawParameterValue("outputGain")->load();
+    const int qualityModeParam = static_cast<int>(apvts.getRawParameterValue("qualityMode")->load());
     const float macroShape = apvts.getRawParameterValue("macroShape")->load();
     const float lfoToPwm = apvts.getRawParameterValue("lfoToPwm")->load();
     const float driftAmt = apvts.getRawParameterValue("driftAmount")->load();
@@ -99,6 +101,12 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float ageNorm = (puckY + 1.0f) * 0.5f;
 
     const bool arpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
+    const int clampedQualityMode = juce::jlimit(0, 2, qualityModeParam);
+    if (clampedQualityMode != lastQualityModeParam)
+    {
+        applyQualityMode(static_cast<QualityMode>(clampedQualityMode));
+        lastQualityModeParam = clampedQualityMode;
+    }
     if (arpOn && !prevArpOn)
         frozenAgeNorm = ageNorm;
     prevArpOn = arpOn;
@@ -458,8 +466,8 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 2.0f}, {"driftAmount", 0.6f},
             {"portaTime", 350.0f}, {"portaMode", 0.0f},
             {"envAttack", 0.3f}, {"envDecay", 1.0f}, {"envSustain", 0.5f}, {"envRelease", 2.0f},
-            {"driveGain", 0.15f}, {"tapeSat", 0.3f}, {"wowDepth", 0.15f}, {"flutterDepth", 0.06f},
-            {"hissLevel", 0.07f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
+            {"driveGain", 0.09f}, {"tapeSat", 0.26f}, {"wowDepth", 0.15f}, {"flutterDepth", 0.06f},
+            {"hissLevel", 0.07f}, {"printMix", 0.66f}, {"outputGain", -1.0f}
         }, 0.45f, -0.05f},
 
         {"Jed's Memory", {
@@ -469,8 +477,8 @@ void WaverProcessor::initialiseFactoryPresets()
             {"lfoRate", 1.2f}, {"lfoToPwm", 0.25f}, {"lfoToVibrato", 15.0f},
             {"chorusMode", 3.0f}, {"driftAmount", 0.85f},
             {"envAttack", 0.5f}, {"envDecay", 2.5f}, {"envSustain", 0.55f}, {"envRelease", 4.0f},
-            {"driveGain", 0.1f}, {"tapeSat", 0.35f}, {"wowDepth", 0.25f}, {"flutterDepth", 0.1f},
-            {"hissLevel", 0.1f}, {"printMix", 0.8f}, {"outputGain", -2.0f}
+            {"driveGain", 0.08f}, {"tapeSat", 0.27f}, {"wowDepth", 0.16f}, {"flutterDepth", 0.06f},
+            {"hissLevel", 0.1f}, {"printMix", 0.74f}, {"outputGain", -2.0f}
         }, 0.1f, 0.55f},
 
         // --- HUSH (quiet, intimate, barely there) ---
@@ -542,7 +550,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"chorusMode", 0.0f}, {"driftAmount", 0.15f},
             {"portaTime", 250.0f}, {"portaMode", 0.0f},
             {"envAttack", 0.01f}, {"envDecay", 0.5f}, {"envSustain", 0.6f}, {"envRelease", 0.4f},
-            {"driveGain", 0.2f}, {"tapeSat", 0.1f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
+            {"driveGain", 0.12f}, {"tapeSat", 0.1f}, {"wowDepth", 0.03f}, {"flutterDepth", 0.01f},
             {"hissLevel", 0.02f}, {"printMix", 0.45f}, {"outputGain", 1.0f}
         }, 0.65f, -0.35f},
 
@@ -555,7 +563,7 @@ void WaverProcessor::initialiseFactoryPresets()
             {"lfoRate", 0.6f}, {"lfoToPwm", 0.0f}, {"lfoToVibrato", 1.0f},
             {"chorusMode", 1.0f}, {"driftAmount", 0.3f},
             {"envAttack", 0.15f}, {"envDecay", 1.0f}, {"envSustain", 0.85f}, {"envRelease", 2.0f},
-            {"driveGain", 0.15f}, {"tapeSat", 0.3f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
+            {"driveGain", 0.12f}, {"tapeSat", 0.3f}, {"wowDepth", 0.1f}, {"flutterDepth", 0.04f},
             {"hissLevel", 0.06f}, {"printMix", 0.7f}, {"outputGain", -1.0f}
         }, -0.55f, -0.35f},
 
@@ -567,8 +575,8 @@ void WaverProcessor::initialiseFactoryPresets()
             {"lfoRate", 1.0f}, {"lfoToPwm", 0.0f}, {"lfoToVibrato", 0.0f},
             {"chorusMode", 2.0f}, {"driftAmount", 0.4f},
             {"envAttack", 0.01f}, {"envDecay", 0.5f}, {"envSustain", 0.9f}, {"envRelease", 0.5f},
-            {"driveGain", 0.1f}, {"tapeSat", 0.4f}, {"wowDepth", 0.2f}, {"flutterDepth", 0.08f},
-            {"hissLevel", 0.12f}, {"printMix", 0.85f}, {"outputGain", -2.0f}
+            {"driveGain", 0.07f}, {"tapeSat", 0.28f}, {"wowDepth", 0.16f}, {"flutterDepth", 0.06f},
+            {"hissLevel", 0.12f}, {"printMix", 0.75f}, {"outputGain", -2.0f}
         }, 0.0f, 0.35f},
 
         {"Fambly Tape", {
@@ -579,8 +587,8 @@ void WaverProcessor::initialiseFactoryPresets()
             {"lfoRate", 2.0f}, {"lfoToPwm", 0.1f}, {"lfoToVibrato", 4.0f},
             {"chorusMode", 3.0f}, {"driftAmount", 0.5f},
             {"envAttack", 0.1f}, {"envDecay", 1.5f}, {"envSustain", 0.65f}, {"envRelease", 3.0f},
-            {"driveGain", 0.25f}, {"tapeSat", 0.5f}, {"wowDepth", 0.3f}, {"flutterDepth", 0.1f},
-            {"hissLevel", 0.15f}, {"printMix", 0.9f}, {"outputGain", -3.0f}
+            {"driveGain", 0.08f}, {"tapeSat", 0.26f}, {"wowDepth", 0.16f}, {"flutterDepth", 0.06f},
+            {"hissLevel", 0.15f}, {"printMix", 0.74f}, {"outputGain", -3.0f}
         }, -0.2f, 0.7f},
 
         // --- SHOWCASE / HYBRID ---

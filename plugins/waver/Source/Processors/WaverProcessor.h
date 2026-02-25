@@ -119,6 +119,7 @@ private:
     DeterminismState determinismState;
     threadbare::tuning::waver::RateDependent rateDependent;
     QualityMode qualityMode = QualityMode::standard;
+    int lastQualityModeParam = static_cast<int>(QualityMode::standard);
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampling;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGainSmoothed;
     std::uint32_t preparedBlockSize = 0;

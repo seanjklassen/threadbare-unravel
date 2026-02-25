@@ -25,7 +25,7 @@ const GROUPS = [
     label: "print",
     ids: [
       "driveGain", "tapeSat", "wowDepth", "flutterDepth",
-      "hissLevel", "humFreq", "printMix", "outputGain",
+      "hissLevel", "humFreq", "printMix", "outputGain", "qualityMode",
     ],
   },
 ]

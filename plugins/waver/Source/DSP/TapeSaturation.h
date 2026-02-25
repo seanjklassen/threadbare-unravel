@@ -19,6 +19,8 @@ private:
     // Tape head bandwidth LPF (~13kHz one-pole).
     float headCoeff = 0.0f;
     float headZ1 = 0.0f;
+    float postCoeff = 0.0f;
+    float postZ1 = 0.0f;
 
     // Hysteresis state (one-sample feedback).
     float hystState = 0.0f;

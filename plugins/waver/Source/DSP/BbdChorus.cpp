@@ -10,6 +10,7 @@ void BbdChorus::prepare(double newSampleRate, std::size_t maxBlockSize)
     const auto maxDelaySamples = static_cast<std::size_t>(sampleRate * 0.02); // 20 ms headroom
     delayL.assign(maxDelaySamples + maxBlockSize + 8, 0.0f);
     delayR.assign(maxDelaySamples + maxBlockSize + 8, 0.0f);
+    subLpCoeff = 1.0f - std::exp((-2.0f * std::numbers::pi_v<float> * 150.0f) / static_cast<float>(sampleRate));
     reset();
 }
 
@@ -22,6 +23,7 @@ void BbdChorus::reset() noexcept
     phase2 = 0.5f;
     noiseState = 0.0f;
     noiseRng = 0x6D2B79F5u;
+    subLpState = 0.0f;
 }
 
 void BbdChorus::process(float* left, float* right, int numSamples) noexcept
@@ -39,6 +41,9 @@ void BbdChorus::process(float* left, float* right, int numSamples) noexcept
         float inL = left[i];
         float inR = right[i];
         const float mono = 0.5f * (inL + inR);
+        subLpState += subLpCoeff * (mono - subLpState);
+        const float subBass = subLpState;
+        const float upperBand = mono - subBass;
 
         noiseRng = noiseRng * 1664525u + 1013904223u;
         const float white = (static_cast<float>((noiseRng >> 8) & 0x00FFFFFFu) / static_cast<float>(0x00FFFFFFu)) * 2.0f - 1.0f;
@@ -51,8 +56,8 @@ void BbdChorus::process(float* left, float* right, int numSamples) noexcept
         if (phase1 >= 1.0f) phase1 -= 1.0f;
         if (phase2 >= 1.0f) phase2 -= 1.0f;
 
-        delayL[writeIndex] = mono;
-        delayR[writeIndex] = mono;
+        delayL[writeIndex] = upperBand;
+        delayR[writeIndex] = upperBand;
 
         float depthA = depthSamples * (0.5f + 0.5f * lfo1);
         float depthB = depthSamples * (0.5f + 0.5f * lfo2);
@@ -65,10 +70,8 @@ void BbdChorus::process(float* left, float* right, int numSamples) noexcept
         float wetL = readDelaySample(delayL, dL, writeIndex);
         float wetR = readDelaySample(delayR, dR, writeIndex);
 
-        // Keep sub bass mono below crossover approximation.
-        const float subMono = mono * 0.5f;
-        left[i] = subMono + 0.65f * wetL + 0.35f * inL;
-        right[i] = subMono + 0.65f * wetR + 0.35f * inR;
+        left[i] = subBass + 0.65f * wetL + 0.35f * inL;
+        right[i] = subBass + 0.65f * wetR + 0.35f * inR;
 
         writeIndex = (writeIndex + 1) % delayL.size();
     }

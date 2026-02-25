@@ -11,12 +11,14 @@ void TapeSaturation::prepare(double sampleRate) noexcept
 {
     sr = std::max(1.0, sampleRate);
     headCoeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * 13000.0f / static_cast<float>(sr));
+    postCoeff = 1.0f - std::exp(-2.0f * std::numbers::pi_v<float> * 10000.0f / static_cast<float>(sr));
     reset();
 }
 
 void TapeSaturation::reset() noexcept
 {
     headZ1 = 0.0f;
+    postZ1 = 0.0f;
     hystState = 0.0f;
 }
 
@@ -44,7 +46,9 @@ float TapeSaturation::processSample(float input) noexcept
 
     hystState = sat * 0.3f;
 
-    return sat / driveScale;
+    const float out = sat / driveScale;
+    postZ1 += postCoeff * (out - postZ1);
+    return postZ1;
 }
 
 } // namespace threadbare::dsp

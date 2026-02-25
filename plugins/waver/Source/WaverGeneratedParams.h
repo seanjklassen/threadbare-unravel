@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2026-02-23T18:05:40.102Z
+// Generated at: 2026-02-25T00:57:45.914Z
 // =============================================================================
 #pragma once
 
@@ -31,6 +31,8 @@ struct WaverGeneratedParams
         params.push_back(std::make_unique<juce::AudioParameterBool>("arpEnabled", "arp", false));
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>("outputGain", "output", -24.0f, 12.0f, 0.0f));
+
+        params.push_back(std::make_unique<juce::AudioParameterChoice>("qualityMode", "quality", juce::StringArray{ "Lite", "Standard", "HQ" }, 1));
 
         {
             auto range = juce::NormalisableRange<float>(20.0f, 20000.0f);
@@ -139,6 +141,7 @@ struct WaverGeneratedParams
         static constexpr const char* MOMENT_TRIGGER = "momentTrigger";
         static constexpr const char* ARP_ENABLED = "arpEnabled";
         static constexpr const char* OUTPUT_GAIN = "outputGain";
+        static constexpr const char* QUALITY_MODE = "qualityMode";
         static constexpr const char* FILTER_CUTOFF = "filterCutoff";
         static constexpr const char* FILTER_RES = "filterRes";
         static constexpr const char* FILTER_MODE = "filterMode";
@@ -200,6 +203,8 @@ struct WaverGeneratedParams
         static constexpr float kOUTPUT_GAIN_MIN = -24.0f;
         static constexpr float kOUTPUT_GAIN_MAX = 12.0f;
         static constexpr float kOUTPUT_GAIN_DEFAULT = 0.0f;
+        static constexpr int kQUALITY_MODE_DEFAULT = 1;
+        static constexpr const char* kQUALITY_MODE_OPTIONS = "Lite,Standard,HQ";
         static constexpr float kFILTER_CUTOFF_MIN = 20.0f;
         static constexpr float kFILTER_CUTOFF_MAX = 20000.0f;
         static constexpr float kFILTER_CUTOFF_DEFAULT = 8000.0f;

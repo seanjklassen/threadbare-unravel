@@ -55,6 +55,13 @@
       "unit": "dB"
     },
     {
+      "id": "qualityMode",
+      "name": "quality",
+      "type": "choice",
+      "options": ["Lite", "Standard", "HQ"],
+      "default": 1
+    },
+    {
       "id": "filterCutoff",
       "name": "cutoff",
       "type": "float",

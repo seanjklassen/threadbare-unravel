@@ -37,5 +37,7 @@ private:
     float phase2 = 0.5f;
     float noiseState = 0.0f;
     std::uint32_t noiseRng = 0x6D2B79F5u;
+    float subLpCoeff = 0.0f;
+    float subLpState = 0.0f;
 };
 } // namespace threadbare::dsp

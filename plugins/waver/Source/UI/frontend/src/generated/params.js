@@ -1,7 +1,7 @@
 // =============================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
 // Generated from: params.json
-// Generated at: 2026-02-23T18:05:40.106Z
+// Generated at: 2026-02-25T00:57:45.920Z
 // =============================================================================
 
 /**
@@ -62,6 +62,13 @@ export const PARAMS = {
     max: 12,
     default: 0,
     unit: 'dB'
+  },
+  qualityMode: {
+    id: 'qualityMode',
+    name: 'quality',
+    type: 'choice',
+    options: ['Lite', 'Standard', 'HQ'],
+    default: 1
   },
   filterCutoff: {
     id: 'filterCutoff',
@@ -391,6 +398,7 @@ export const PARAM_IDS = [
   'momentTrigger',
   'arpEnabled',
   'outputGain',
+  'qualityMode',
   'filterCutoff',
   'filterRes',
   'filterMode',
