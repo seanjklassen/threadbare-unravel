@@ -899,13 +899,14 @@ class Controls {
    * States: 'idle' | 'recording' | 'looping'
    */
   updateLooperVisual() {
-    if (!this.freezeBtn) return;
-    this.freezeBtn.classList.remove("idle", "recording", "looping");
-    this.freezeBtn.classList.add(this.looperState);
-    if (this.looperState !== "idle" && this.isLooperArmed) {
-      this.setLooperArmed(false);
+    if (this.freezeBtn) {
+      this.freezeBtn.classList.remove("idle", "recording", "looping");
+      this.freezeBtn.classList.add(this.looperState);
+      if (this.looperState !== "idle" && this.isLooperArmed) {
+        this.setLooperArmed(false);
+      }
+      this.updateLooperAria();
     }
-    this.updateLooperAria();
     if (this.puck) {
       this.puck.classList.remove("idle", "recording", "looping");
       this.puck.classList.add(this.looperState);

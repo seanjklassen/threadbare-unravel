@@ -725,20 +725,20 @@ export class Controls {
    * States: 'idle' | 'recording' | 'looping'
    */
   updateLooperVisual() {
-    if (!this.freezeBtn) return
-    
-    // Remove all looper state classes from button
-    this.freezeBtn.classList.remove('idle', 'recording', 'looping')
-    
-    // Add current state class to button
-    this.freezeBtn.classList.add(this.looperState)
-    
-    if (this.looperState !== 'idle' && this.isLooperArmed) {
-      this.setLooperArmed(false)
-    }
+    if (this.freezeBtn) {
+      // Remove all looper state classes from button
+      this.freezeBtn.classList.remove('idle', 'recording', 'looping')
 
-    // Update aria for accessibility
-    this.updateLooperAria()
+      // Add current state class to button
+      this.freezeBtn.classList.add(this.looperState)
+
+      if (this.looperState !== 'idle' && this.isLooperArmed) {
+        this.setLooperArmed(false)
+      }
+
+      // Update aria for accessibility
+      this.updateLooperAria()
+    }
     
     // === PUCK VISUAL STATE ===
     // Update puck classes for pupil color + breathing animation
