@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <cstdint>
 
 namespace threadbare::dsp
@@ -21,7 +22,7 @@ private:
     float pinkFilter(float white) noexcept;
 
     double sr = 44100.0;
-    float hissGain = 0.0f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> hissGain;
     float humPhase = 0.0f;
     float humInc = 0.0f;
     float whirPhase = 0.0f;

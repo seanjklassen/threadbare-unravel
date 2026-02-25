@@ -47,6 +47,10 @@ void WaverVoice::prepare(double newSampleRate, int voiceIndex, std::uint32_t dri
 
     ouDrift.prepare(sampleRate, driftSeed + static_cast<std::uint32_t>(voiceIndex) * 0x9E3779B9u);
     toyEngine.prepare(sampleRate);
+    layerDcoLevel.reset(sampleRate, 0.015);
+    layerToyLevel.reset(sampleRate, 0.015);
+    layerDcoLevel.setCurrentAndTargetValue(1.0f);
+    layerToyLevel.setCurrentAndTargetValue(0.0f);
 
     const std::uint32_t tolSeed = driftSeed ^ (static_cast<std::uint32_t>(voiceIndex) * 2654435761u);
     tolerances.computeFromSeed(tolSeed);
@@ -84,6 +88,8 @@ void WaverVoice::reset() noexcept
     dcY1 = 0.0f;
     retriggerStartSample = 0.0f;
     lastOutputSample = 0.0f;
+    layerDcoLevel.setCurrentAndTargetValue(1.0f);
+    layerToyLevel.setCurrentAndTargetValue(0.0f);
     ouDrift.reset();
     toyEngine.reset();
 }
@@ -224,7 +230,9 @@ float WaverVoice::processSample() noexcept
     const float toyOut = toyEngine.processSample(envelope);
 
     // Layer mix.
-    float layerMixed = dcoOut * layerDcoLevel + toyOut * layerToyLevel;
+    const float dcoLevel = layerDcoLevel.getNextValue();
+    const float toyLevel = layerToyLevel.getNextValue();
+    float layerMixed = dcoOut * dcoLevel + toyOut * toyLevel;
 
     // Filter with drift and component tolerances.
     const float filterDriftScale = 1.0f + drift *
@@ -409,8 +417,8 @@ void WaverVoice::setToyParams(float modIndex, float ratioNorm, float feedback) n
 
 void WaverVoice::setLayerLevels(float dco, float toy) noexcept
 {
-    layerDcoLevel = std::clamp(dco, 0.0f, 1.0f);
-    layerToyLevel = std::clamp(toy, 0.0f, 1.0f);
+    layerDcoLevel.setTargetValue(std::clamp(dco, 0.0f, 1.0f));
+    layerToyLevel.setTargetValue(std::clamp(toy, 0.0f, 1.0f));
 }
 
 void WaverVoice::setEnvelopeParams(float attack, float decay, float sustain, float release) noexcept

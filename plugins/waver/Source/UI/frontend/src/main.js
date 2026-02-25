@@ -65,7 +65,7 @@ function applyRbfInterpolation(puckX, puckY) {
   if (!activeSurface) return
 
   const now = performance.now()
-  if (now - rbfThrottle < 100) return
+  if (now - rbfThrottle < 30) return
   rbfThrottle = now
 
   const sigma = activeSurface.sigma ?? 0.32

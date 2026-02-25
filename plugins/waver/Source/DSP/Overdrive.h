@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 namespace threadbare::dsp
 {
 
@@ -14,7 +16,7 @@ public:
 
 private:
     double sr = 44100.0;
-    float gain = 1.0f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> gain;
 
     // Pre-emphasis bandpass (1kHz, Q ~0.8).
     float preB0 = 0.0f, preB1 = 0.0f, preB2 = 0.0f;
