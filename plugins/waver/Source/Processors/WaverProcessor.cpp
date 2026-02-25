@@ -45,6 +45,9 @@ void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     transitionFade.reset(rateDependent.sampleRate, 0.30);
     transitionFade.setCurrentAndTargetValue(1.0f);
     transitionPhase = TransitionPhase::idle;
+    arpLatchGain.reset(rateDependent.sampleRate, 0.05);
+    arpLatchGain.setCurrentAndTargetValue(1.0f);
+    arpLatchPhase = ArpLatchPhase::idle;
     pendingPresetIndex.store(-1, std::memory_order_relaxed);
     stateQueue.reset();
     uiEventQueue.reset();
@@ -59,6 +62,8 @@ void WaverProcessor::reset()
         juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
     transitionFade.setCurrentAndTargetValue(1.0f);
     transitionPhase = TransitionPhase::idle;
+    arpLatchGain.setCurrentAndTargetValue(1.0f);
+    arpLatchPhase = ArpLatchPhase::idle;
     stateQueue.reset();
     uiEventQueue.reset();
 }
@@ -131,8 +136,16 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         applyQualityMode(static_cast<QualityMode>(clampedQualityMode));
         lastQualityModeParam = clampedQualityMode;
     }
+    const bool arpStateChanged = arpOn != prevArpOn;
     if (arpOn && !prevArpOn)
         frozenAgeNorm = ageNorm;
+    if (arpStateChanged)
+    {
+        arpLatchPhase = ArpLatchPhase::dip;
+        arpLatchGain.reset(rateDependent.sampleRate, 0.075);
+        arpLatchGain.setCurrentAndTargetValue(1.0f);
+        arpLatchGain.setTargetValue(0.90f);
+    }
     prevArpOn = arpOn;
     latestState.arpEnabled = arpOn;
 
@@ -268,6 +281,19 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
         {
             const float t = transitionFade.getNextValue();
             gain *= t * t * (3.0f - 2.0f * t);
+        }
+        const float latchGain = arpLatchGain.getNextValue();
+        gain *= latchGain;
+        if (arpLatchPhase == ArpLatchPhase::dip && latchGain <= 0.901f)
+        {
+            arpLatchPhase = ArpLatchPhase::recover;
+            arpLatchGain.reset(rateDependent.sampleRate, 0.22);
+            arpLatchGain.setTargetValue(1.0f);
+        }
+        else if (arpLatchPhase == ArpLatchPhase::recover && latchGain >= 0.999f)
+        {
+            arpLatchPhase = ArpLatchPhase::idle;
+            arpLatchGain.setCurrentAndTargetValue(1.0f);
         }
         left[sample] *= gain;
         right[sample] *= gain;

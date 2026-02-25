@@ -4427,6 +4427,7 @@ function onArpStateChanged(nowEnabled) {
   const app = document.getElementById("app");
   if (nowEnabled && !arpEnabled) {
     savedPuckState = { puckX: morphState.puckX, puckY: morphState.puckY };
+    document.dispatchEvent(new CustomEvent("tb:close-presets"));
     app?.classList.add("arping");
     if (shell?.controls?.toggleSettingsView) {
       shell.controls.toggleSettingsView(false, { reason: "arp-lock" });
@@ -5833,19 +5834,37 @@ body {
 
 .preset-pill {
   color: var(--waver-text-lower);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
+  transition:
+    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 360ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .arp-mode-label {
-  display: none;
+  display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  position: absolute;
+  right: 36px;
+  top: 24px;
   height: 48px;
-  padding: 0 20px 0 12px;
-  border-radius: 21px;
+  padding: 0 2px;
   color: var(--waver-text-lower);
   font-size: 21px;
   letter-spacing: -0.01em;
   text-transform: lowercase;
+  text-align: right;
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+  filter: blur(10px);
   pointer-events: none;
+  transition:
+    opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 360ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tb-app.presets-open .preset-pill {
@@ -6151,13 +6170,15 @@ body {
 
 .tb-app.arping .preset-pill {
   opacity: 0;
-  visibility: hidden;
+  transform: translateY(-8px) scale(0.985);
+  filter: blur(10px);
   pointer-events: none;
-  transition: opacity 0.3s ease;
 }
 
 .tb-app.arping .arp-mode-label {
-  display: inline-flex;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0px);
 }
 
 .tb-app.arping .btn-settings {

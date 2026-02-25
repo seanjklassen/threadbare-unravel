@@ -232,6 +232,7 @@ function onArpStateChanged(nowEnabled) {
 
   if (nowEnabled && !arpEnabled) {
     savedPuckState = { puckX: morphState.puckX, puckY: morphState.puckY }
+    document.dispatchEvent(new CustomEvent("tb:close-presets"))
     app?.classList.add("arping")
     if (shell?.controls?.toggleSettingsView) {
       shell.controls.toggleSettingsView(false, { reason: "arp-lock" })
