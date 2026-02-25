@@ -29,7 +29,7 @@ let sigmaOffsets = activeSurface
 let rbfThrottle = 0
 let lastLoadedPresetIndex = -1
 let arpEnabled = false
-let transportPlaying = false
+let transportActive = false
 let savedPuckState = null
 let isRestoringFromArp = false
 
@@ -179,6 +179,7 @@ function initApp() {
   const arpBtn = document.querySelector(".btn-arp")
   if (arpBtn) {
     arpBtn.addEventListener("click", () => {
+      if (transportActive) return
       const next = !arpEnabled
       if (!next && savedPuckState && typeof sendMorphSnapshotNative === "function") {
         sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend)
@@ -192,14 +193,15 @@ function syncArpButton(enabled) {
   const btn = document.querySelector(".btn-arp")
   if (!btn) return
   btn.classList.toggle("active", enabled)
-  btn.classList.toggle("playing", enabled && transportPlaying)
+  btn.classList.toggle("playing", enabled && transportActive)
+  btn.classList.toggle("transport-hidden", transportActive && !enabled)
   btn.setAttribute("aria-pressed", String(enabled))
 }
 
 function syncPlaybackState(value) {
-  transportPlaying = Boolean(value)
+  transportActive = Boolean(value)
   const app = document.getElementById("app")
-  app?.classList.toggle("playing", transportPlaying)
+  app?.classList.toggle("playing", transportActive)
   syncArpButton(arpEnabled)
 }
 
@@ -212,6 +214,17 @@ function parsePlayingState(value) {
     if (normalized === "0" || normalized === "false" || normalized === "stopped" || normalized === "stop") return false
   }
   return null
+}
+
+function parseTransportState(parsed) {
+  const directState = parsePlayingState(parsed?.transportActive)
+  if (directState !== null) return directState
+
+  const playingState = parsePlayingState(parsed?.isPlaying)
+  const recordingState = parsePlayingState(parsed?.isRecording)
+  if (playingState === null && recordingState === null) return null
+
+  return Boolean(playingState) || Boolean(recordingState)
 }
 
 function onArpStateChanged(nowEnabled) {
@@ -262,7 +275,7 @@ function handleBackendState(payload) {
       onArpStateChanged(nowEnabled)
     }
   }
-  const parsedPlaying = parsePlayingState(parsed?.isPlaying)
+  const parsedPlaying = parseTransportState(parsed)
   if (parsedPlaying !== null) {
     syncPlaybackState(parsedPlaying)
   }

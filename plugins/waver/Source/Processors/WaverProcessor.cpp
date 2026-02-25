@@ -105,8 +105,26 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float envR = apvts.getRawParameterValue("envRelease")->load();
 
     const float ageNorm = (puckY + 1.0f) * 0.5f;
+    bool isPlaying = false;
+    bool isRecording = false;
+    double hostBpm = 0.0;
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto pos = playHead->getPosition())
+        {
+            isPlaying = pos->getIsPlaying();
+            isRecording = pos->getIsRecording();
+            if (auto bpm = pos->getBpm())
+                hostBpm = *bpm;
+        }
+    }
+    const bool transportActive = isPlaying || isRecording;
+    latestState.isPlaying = isPlaying;
+    latestState.isRecording = isRecording;
+    latestState.transportActive = transportActive;
 
-    const bool arpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
+    const bool requestedArpOn = apvts.getRawParameterValue("arpEnabled")->load() > 0.5f;
+    const bool arpOn = transportActive ? prevArpOn : requestedArpOn;
     const int clampedQualityMode = juce::jlimit(0, 2, qualityModeParam);
     if (clampedQualityMode != lastQualityModeParam)
     {
@@ -185,17 +203,7 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     engine.setArpEnabled(arpOn);
     if (arpOn)
         engine.setArpPuck(latestState.puckX, latestState.puckY);
-
-    if (auto* playHead = getPlayHead())
-    {
-        if (auto pos = playHead->getPosition())
-        {
-            if (auto bpm = pos->getBpm())
-                engine.setArpHostTempo(*bpm);
-            else
-                engine.setArpHostTempo(0.0);
-        }
-    }
+    engine.setArpHostTempo(hostBpm);
 
     const auto renderRange = [&](int startSample, int endSample)
     {

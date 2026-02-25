@@ -9,6 +9,7 @@ namespace
 {
 constexpr int kEditorWidth = 420;
 constexpr int kEditorHeight = 700;
+constexpr double kTransportStateStaleMs = 1000.0;
 
 std::optional<juce::WebBrowserComponent::Resource> getWaverResource(const juce::String& url)
 {
@@ -161,6 +162,7 @@ WaverEditor::WaverEditor(WaverProcessor& proc)
     setSize(kEditorWidth, kEditorHeight);
     addAndMakeVisible(webView);
     webView.goToURL(threadbare::core::WebViewBridge::getInitialURL());
+    lastVisualStatePopMs = juce::Time::getMillisecondCounterHiRes();
     vblankAttachment = std::make_unique<juce::VBlankAttachment>(&webView, [this] { handleUpdate(); });
 }
 
@@ -171,10 +173,20 @@ void WaverEditor::resized()
 
 void WaverEditor::handleUpdate()
 {
-    WaverProcessor::WaverState state{};
-    if (!processorRef.popVisualState(state))
+    const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+    WaverProcessor::WaverState dequeued{};
+    if (processorRef.popVisualState(dequeued))
+    {
+        cachedVisualState = dequeued;
+        hasCachedVisualState = true;
+        lastVisualStatePopMs = nowMs;
+    }
+
+    if (!hasCachedVisualState)
         return;
 
+    const auto& state = cachedVisualState;
+    const bool transportStateIsStale = (nowMs - lastVisualStatePopMs) > kTransportStateStaleMs;
     auto* obj = new juce::DynamicObject();
     obj->setProperty("puckX", state.puckX);
     obj->setProperty("puckY", state.puckY);
@@ -184,6 +196,9 @@ void WaverEditor::handleUpdate()
     obj->setProperty("rms", state.rmsLevel);
     obj->setProperty("peak", state.peakLevel);
     obj->setProperty("arpEnabled", state.arpEnabled);
+    obj->setProperty("isPlaying", transportStateIsStale ? false : state.isPlaying);
+    obj->setProperty("isRecording", transportStateIsStale ? false : state.isRecording);
+    obj->setProperty("transportActive", transportStateIsStale ? false : state.transportActive);
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());
 
     webView.emitEventIfBrowserIsVisible("updateState", juce::JSON::toString(juce::var(obj)));

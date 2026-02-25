@@ -50,6 +50,9 @@ public:
         float rmsLevel = 0.0f;
         float peakLevel = 0.0f;
         bool arpEnabled = false;
+        bool isPlaying = false;
+        bool isRecording = false;
+        bool transportActive = false;
     };
 
     struct DeterminismState

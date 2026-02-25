@@ -4237,7 +4237,7 @@ let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.
 let rbfThrottle = 0;
 let lastLoadedPresetIndex = -1;
 let arpEnabled = false;
-let transportPlaying = false;
+let transportActive = false;
 let savedPuckState = null;
 const PRESET_TO_SURFACE_INDEX = [
   0,
@@ -4382,6 +4382,7 @@ function initApp() {
   const arpBtn = document.querySelector(".btn-arp");
   if (arpBtn) {
     arpBtn.addEventListener("click", () => {
+      if (transportActive) return;
       const next = !arpEnabled;
       if (!next && savedPuckState && typeof sendMorphSnapshotNative === "function") {
         sendMorphSnapshotNative(savedPuckState.puckX, savedPuckState.puckY, morphState.blend);
@@ -4394,13 +4395,14 @@ function syncArpButton(enabled) {
   const btn = document.querySelector(".btn-arp");
   if (!btn) return;
   btn.classList.toggle("active", enabled);
-  btn.classList.toggle("playing", enabled && transportPlaying);
+  btn.classList.toggle("playing", enabled && transportActive);
+  btn.classList.toggle("transport-hidden", transportActive && !enabled);
   btn.setAttribute("aria-pressed", String(enabled));
 }
 function syncPlaybackState(value) {
-  transportPlaying = Boolean(value);
+  transportActive = Boolean(value);
   const app = document.getElementById("app");
-  app?.classList.toggle("playing", transportPlaying);
+  app?.classList.toggle("playing", transportActive);
   syncArpButton(arpEnabled);
 }
 function parsePlayingState(value) {
@@ -4412,6 +4414,14 @@ function parsePlayingState(value) {
     if (normalized === "0" || normalized === "false" || normalized === "stopped" || normalized === "stop") return false;
   }
   return null;
+}
+function parseTransportState(parsed) {
+  const directState = parsePlayingState(parsed?.transportActive);
+  if (directState !== null) return directState;
+  const playingState = parsePlayingState(parsed?.isPlaying);
+  const recordingState = parsePlayingState(parsed?.isRecording);
+  if (playingState === null && recordingState === null) return null;
+  return Boolean(playingState) || Boolean(recordingState);
 }
 function onArpStateChanged(nowEnabled) {
   const app = document.getElementById("app");
@@ -4460,7 +4470,7 @@ function handleBackendState(payload) {
       onArpStateChanged(nowEnabled);
     }
   }
-  const parsedPlaying = parsePlayingState(parsed?.isPlaying);
+  const parsedPlaying = parseTransportState(parsed);
   if (parsedPlaying !== null) {
     syncPlaybackState(parsedPlaying);
   }
@@ -5825,6 +5835,19 @@ body {
   color: var(--waver-text-lower);
 }
 
+.arp-mode-label {
+  display: none;
+  align-items: center;
+  height: 48px;
+  padding: 0 20px 0 12px;
+  border-radius: 21px;
+  color: var(--waver-text-lower);
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
 .tb-app.presets-open .preset-pill {
   color: var(--waver-text-lower);
 }
@@ -6118,9 +6141,25 @@ body {
   display: block;
 }
 
+.btn-arp.transport-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* ===== ARP MODE UI LOCK ===== */
 
-.tb-app.arping .preset-pill,
+.tb-app.arping .preset-pill {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.tb-app.arping .arp-mode-label {
+  display: inline-flex;
+}
+
 .tb-app.arping .btn-settings {
   opacity: 0.35;
   pointer-events: none;
@@ -6169,6 +6208,7 @@ body {
           </span>
           <span class="preset-name">waver</span>
         </div>
+        <span class="arp-mode-label">arp mode</span>
         <span class="logo-glyph" role="img" aria-label="Threadbare glyph">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M12 0C5.37258 0 0 5.37258 0 12C0 18.6274 5.37258 24 12 24V21.6C8.93482 21.6 6.45 19.1152 6.45 16.05C6.45 12.9848 8.93482 10.5 12 10.5V8.1C7.60934 8.1 4.05 11.6593 4.05 16.05C4.05 16.58 4.10186 17.0978 4.20077 17.5987C3.06745 16.0228 2.4 14.0893 2.4 12C2.4 6.69807 6.69807 2.4 12 2.4V0Z" fill="currentColor" />

@@ -28,7 +28,11 @@ struct WaverGeneratedParams
 
         params.push_back(std::make_unique<juce::AudioParameterBool>("momentTrigger", "moment trigger", false));
 
-        params.push_back(std::make_unique<juce::AudioParameterBool>("arpEnabled", "arp", false));
+        params.push_back(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID{ "arpEnabled", 1 },
+            "arp",
+            false,
+            juce::AudioParameterBoolAttributes().withAutomatable(false)));
 
         params.push_back(std::make_unique<juce::AudioParameterFloat>("outputGain", "output", -24.0f, 12.0f, 0.0f));
 

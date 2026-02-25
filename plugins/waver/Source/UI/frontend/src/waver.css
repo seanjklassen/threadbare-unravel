@@ -52,6 +52,19 @@
   color: var(--waver-text-lower);
 }
 
+.arp-mode-label {
+  display: none;
+  align-items: center;
+  height: 48px;
+  padding: 0 20px 0 12px;
+  border-radius: 21px;
+  color: var(--waver-text-lower);
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  text-transform: lowercase;
+  pointer-events: none;
+}
+
 .tb-app.presets-open .preset-pill {
   color: var(--waver-text-lower);
 }
@@ -345,9 +358,25 @@
   display: block;
 }
 
+.btn-arp.transport-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* ===== ARP MODE UI LOCK ===== */
 
-.tb-app.arping .preset-pill,
+.tb-app.arping .preset-pill {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.tb-app.arping .arp-mode-label {
+  display: inline-flex;
+}
+
 .tb-app.arping .btn-settings {
   opacity: 0.35;
   pointer-events: none;
