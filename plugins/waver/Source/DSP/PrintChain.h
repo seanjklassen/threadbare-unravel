@@ -1,11 +1,14 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include "NoiseFloor.h"
 #include "Overdrive.h"
 #include "TapeSaturation.h"
 #include "WowFlutter.h"
 
 #include <cstddef>
+#include <vector>
 
 namespace threadbare::dsp
 {
@@ -33,7 +36,8 @@ private:
     TapeSaturation tapeL, tapeR;
     WowFlutter wowFlutter;
     NoiseFloor noiseFloor;
-    float mix = 0.75f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mix;
+    std::vector<float> wetMixScratch;
 };
 
 } // namespace threadbare::dsp

@@ -59,7 +59,7 @@ private:
     BbdChorus chorus;
     OrganEngine organ;
     PrintChain printChain;
-    float organLevel = 0.3f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> organLevel;
     bool arpEnabled = false;
 };
 } // namespace threadbare::dsp

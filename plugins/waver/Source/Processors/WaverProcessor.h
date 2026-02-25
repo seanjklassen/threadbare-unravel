@@ -120,6 +120,7 @@ private:
     threadbare::tuning::waver::RateDependent rateDependent;
     QualityMode qualityMode = QualityMode::standard;
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampling;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGainSmoothed;
     std::uint32_t preparedBlockSize = 0;
     std::uint32_t preparedChannels = 0;
     std::atomic<float> morphPuckX { 0.0f };

@@ -37,6 +37,9 @@ void WaverProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         spec.maximumBlockSize = static_cast<juce::uint32>(preparedBlockSize * oversampling->getOversamplingFactor());
     }
     engine.prepare(spec, static_cast<std::uint32_t>(determinismState.globalSeed & 0xFFFFFFFFu));
+    outputGainSmoothed.reset(rateDependent.sampleRate, 0.02);
+    outputGainSmoothed.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
     applyQualityMode(qualityMode);
     stateQueue.reset();
     uiEventQueue.reset();
@@ -47,6 +50,8 @@ void WaverProcessor::releaseResources() {}
 void WaverProcessor::reset()
 {
     engine.reset();
+    outputGainSmoothed.setCurrentAndTargetValue(
+        juce::Decibels::decibelsToGain(apvts.getRawParameterValue("outputGain")->load()));
     stateQueue.reset();
     uiEventQueue.reset();
 }
@@ -199,11 +204,12 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     renderRange(cursor, numSamples);
     midiMessages.clear();
 
-    const float gain = juce::Decibels::decibelsToGain(outputGainDb);
+    outputGainSmoothed.setTargetValue(juce::Decibels::decibelsToGain(outputGainDb));
     float sumSq = 0.0f;
     float peak = 0.0f;
     for (int sample = 0; sample < numSamples; ++sample)
     {
+        const float gain = outputGainSmoothed.getNextValue();
         left[sample] *= gain;
         right[sample] *= gain;
         const float mono = (left[sample] + right[sample]) * 0.5f;

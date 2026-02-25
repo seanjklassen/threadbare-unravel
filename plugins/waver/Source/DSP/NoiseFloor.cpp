@@ -10,6 +10,8 @@ namespace threadbare::dsp
 void NoiseFloor::prepare(double sampleRate) noexcept
 {
     sr = std::max(1.0, sampleRate);
+    hissGain.reset(sr, 0.02);
+    hissGain.setCurrentAndTargetValue(std::pow(10.0f, -60.0f / 20.0f));
     humPhase = 0.0f;
     humInc = 60.0f / static_cast<float>(sr);
     whirPhase = 0.0f;
@@ -27,13 +29,14 @@ void NoiseFloor::reset() noexcept
     humPhase = 0.0f;
     whirPhase = 0.0f;
     whirAmpPhase = 0.0f;
+    hissGain.setCurrentAndTargetValue(hissGain.getTargetValue());
 }
 
 void NoiseFloor::setHissLevel(float level01) noexcept
 {
     // -60 to -48 dBFS range.
     const float dB = -60.0f + std::clamp(level01, 0.0f, 1.0f) * 12.0f;
-    hissGain = std::pow(10.0f, dB / 20.0f);
+    hissGain.setTargetValue(std::pow(10.0f, dB / 20.0f));
 }
 
 void NoiseFloor::setHumFreq(float hz) noexcept
@@ -51,7 +54,7 @@ float NoiseFloor::processSample() noexcept
     constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
 
     // Tape hiss (pink noise).
-    const float hiss = pinkFilter(nextWhite()) * hissGain;
+    const float hiss = pinkFilter(nextWhite()) * hissGain.getNextValue();
 
     // AC hum: fundamental + 2nd + 3rd harmonics at ~-72dBFS.
     constexpr float humGain = 0.00025f;

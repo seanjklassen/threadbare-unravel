@@ -108,8 +108,8 @@ private:
     float driftAmount = 0.0f;
     float ageParam = 0.0f;
     float lfoToVibratoCents = 0.0f;
-    float layerDcoLevel = 1.0f;
-    float layerToyLevel = 0.0f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerDcoLevel;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerToyLevel;
 
     float baseFilterCutoffHz = 8000.0f;
     float baseFilterRes = 0.15f;

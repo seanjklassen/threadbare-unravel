@@ -13,6 +13,8 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
     chorus.setMode(BbdChorus::Mode::modeI);
     organ.prepare(spec.sampleRate);
     printChain.prepare(spec.sampleRate, static_cast<std::size_t>(spec.maximumBlockSize));
+    organLevel.reset(spec.sampleRate, 0.02);
+    organLevel.setCurrentAndTargetValue(0.3f);
 }
 
 void WaverEngine::reset() noexcept
@@ -22,6 +24,7 @@ void WaverEngine::reset() noexcept
     chorus.reset();
     organ.reset();
     printChain.reset();
+    organLevel.setCurrentAndTargetValue(organLevel.getTargetValue());
 }
 
 void WaverEngine::process(std::span<float> left, std::span<float> right) noexcept
@@ -48,7 +51,7 @@ void WaverEngine::process(std::span<float> left, std::span<float> right) noexcep
 
     for (std::size_t i = 0; i < left.size(); ++i)
     {
-        const float organSample = organ.processSample() * organLevel;
+        const float organSample = organ.processSample() * organLevel.getNextValue();
         left[i] += organSample;
         right[i] += organSample;
     }
@@ -163,7 +166,7 @@ void WaverEngine::setOrganDrawbars(float sub16, float fund8, float harm4, float 
 
 void WaverEngine::setOrganLevel(float level) noexcept
 {
-    organLevel = std::clamp(level, 0.0f, 1.0f);
+    organLevel.setTargetValue(std::clamp(level, 0.0f, 1.0f));
 }
 
 void WaverEngine::setPrintParams(float driveGain, float tapeSat, float wowDepth,

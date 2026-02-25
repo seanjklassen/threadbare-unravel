@@ -10,6 +10,8 @@ namespace threadbare::dsp
 void Overdrive::prepare(double sampleRate) noexcept
 {
     sr = std::max(1.0, sampleRate);
+    gain.reset(sr, 0.02);
+    gain.setCurrentAndTargetValue(1.0f);
     recalcCoeffs();
     reset();
 }
@@ -19,15 +21,18 @@ void Overdrive::reset() noexcept
     preZ1 = 0.0f;
     preZ2 = 0.0f;
     postZ1 = 0.0f;
+    gain.setCurrentAndTargetValue(gain.getTargetValue());
 }
 
 void Overdrive::setGain(float gain01) noexcept
 {
-    gain = 1.0f + std::clamp(gain01, 0.0f, 1.0f) * 15.0f;
+    gain.setTargetValue(1.0f + std::clamp(gain01, 0.0f, 1.0f) * 15.0f);
 }
 
 float Overdrive::processSample(float input) noexcept
 {
+    const float drive = gain.getNextValue();
+
     // Pre-emphasis bandpass.
     const float bpOut = preB0 * input + preB1 * preZ1 + preB2 * preZ2
                       - preA1 * preZ1 - preA2 * preZ2;
@@ -39,9 +44,9 @@ float Overdrive::processSample(float input) noexcept
     // Asymmetric tanh waveshaping.
     float shaped;
     if (mid >= 0.0f)
-        shaped = std::tanh(gain * mid);
+        shaped = std::tanh(drive * mid);
     else
-        shaped = std::tanh(gain * mid * 0.7f);
+        shaped = std::tanh(drive * mid * 0.7f);
 
     // Post-emphasis one-pole LPF.
     postZ1 += postCoeff * (shaped - postZ1);

@@ -13,6 +13,9 @@ void PrintChain::prepare(double sampleRate, std::size_t maxBlockSize) noexcept
     tapeR.prepare(sampleRate);
     wowFlutter.prepare(sampleRate, maxBlockSize);
     noiseFloor.prepare(sampleRate);
+    mix.reset(sampleRate, 0.02);
+    mix.setCurrentAndTargetValue(0.75f);
+    wetMixScratch.assign(maxBlockSize, mix.getCurrentValue());
 }
 
 void PrintChain::reset() noexcept
@@ -23,6 +26,7 @@ void PrintChain::reset() noexcept
     tapeR.reset();
     wowFlutter.reset();
     noiseFloor.reset();
+    mix.setCurrentAndTargetValue(mix.getTargetValue());
 }
 
 void PrintChain::setDriveGain(float gain01) noexcept
@@ -59,7 +63,7 @@ void PrintChain::setHumFreq(float hz) noexcept
 
 void PrintChain::setMix(float mix01) noexcept
 {
-    mix = std::clamp(mix01, 0.0f, 1.0f);
+    mix.setTargetValue(std::clamp(mix01, 0.0f, 1.0f));
 }
 
 void PrintChain::setAge(float age) noexcept
@@ -70,11 +74,16 @@ void PrintChain::setAge(float age) noexcept
 
 void PrintChain::process(float* left, float* right, int numSamples) noexcept
 {
-    const float wet = mix;
-    const float dry = 1.0f - mix;
+    if (numSamples <= 0)
+        return;
+    const std::size_t scratchSize = wetMixScratch.size();
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const float wet = mix.getNextValue();
+        const float dry = 1.0f - wet;
+        if (static_cast<std::size_t>(i) < scratchSize)
+            wetMixScratch[static_cast<std::size_t>(i)] = wet;
         const float dryL = left[i];
         const float dryR = right[i];
 
@@ -87,11 +96,6 @@ void PrintChain::process(float* left, float* right, int numSamples) noexcept
         left[i] = wL;
         right[i] = wR;
 
-        // Store dry for mix (we'll blend after wow/flutter).
-        // Temporarily stash dry in the upper bits of the wet signal
-        // — actually, just blend immediately before wow/flutter.
-        // Wow/flutter should process the wet signal only; dry stays clean.
-        // So we process wow/flutter on the wet portion, then mix.
         left[i] = dryL * dry + wL * wet;
         right[i] = dryR * dry + wR * wet;
     }
@@ -103,6 +107,9 @@ void PrintChain::process(float* left, float* right, int numSamples) noexcept
     for (int i = 0; i < numSamples; ++i)
     {
         const float noiseVal = noiseFloor.processSample();
+        const float wet = static_cast<std::size_t>(i) < scratchSize
+            ? wetMixScratch[static_cast<std::size_t>(i)]
+            : mix.getCurrentValue();
         left[i] += noiseVal * wet;
         right[i] += noiseVal * wet;
     }

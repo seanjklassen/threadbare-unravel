@@ -20,6 +20,8 @@ const CHOICE_PARAMS = new Set([
   "dcoSubOctave",
 ])
 
+const LAYER_SUM_CEILING = 1.0
+
 function toPerceptual(id, raw) {
   if (LOG_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6))
   if (LOG_TIME_PARAMS.has(id)) return Math.log(Math.max(raw, 1e-6))
@@ -105,6 +107,20 @@ export function interpolate(puckX, puckY, landmarks, sigma, sigmaOffsets) {
 
     if (wSum > 1e-12) {
       result[paramId] = fromPerceptual(paramId, sum / wSum)
+    }
+  }
+
+  if (
+    result.layerDco !== undefined &&
+    result.layerToy !== undefined &&
+    result.layerOrgan !== undefined
+  ) {
+    const layerSum = result.layerDco + result.layerToy + result.layerOrgan
+    if (layerSum > LAYER_SUM_CEILING) {
+      const scale = LAYER_SUM_CEILING / layerSum
+      result.layerDco *= scale
+      result.layerToy *= scale
+      result.layerOrgan *= scale
     }
   }
 
