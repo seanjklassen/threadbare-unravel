@@ -43,6 +43,35 @@ void WaverEngine::prepare(const juce::dsp::ProcessSpec& spec, std::uint32_t drif
 
     computeHpfStage(hpfStage1, q1);
     computeHpfStage(hpfStage2, q2);
+
+    // Low-end mono collapse: 2nd-order Butterworth LP at 200 Hz (per-channel).
+    {
+        constexpr float mcCutoff = 200.0f;
+        const float mcW0 = 2.0f * std::numbers::pi_v<float> * mcCutoff / srF;
+        const float mcCos = std::cos(mcW0);
+        const float mcSin = std::sin(mcW0);
+        const float mcAlpha = mcSin / std::sqrt(2.0f);
+        const float mcA0 = 1.0f + mcAlpha;
+
+        auto initLp = [&](BiquadStage& s) {
+            s.b0 = ((1.0f - mcCos) * 0.5f) / mcA0;
+            s.b1 = (1.0f - mcCos) / mcA0;
+            s.b2 = s.b0;
+            s.a1 = (-2.0f * mcCos) / mcA0;
+            s.a2 = (1.0f - mcAlpha) / mcA0;
+            s.s1L = s.s2L = 0.0f;
+            s.s1R = s.s2R = 0.0f;
+        };
+        initLp(monoCollapseL);
+        initLp(monoCollapseR);
+    }
+
+    // Gentle HF rolloff: one-pole LP at 18 kHz.
+    {
+        const float g = std::tan(std::numbers::pi_v<float> * std::min(18000.0f, srF * 0.49f) / srF);
+        hfCoeff = g / (1.0f + g);
+        hfStateL = hfStateR = 0.0f;
+    }
 }
 
 void WaverEngine::reset() noexcept
@@ -57,6 +86,11 @@ void WaverEngine::reset() noexcept
     hpfStage1.s1R = hpfStage1.s2R = 0.0f;
     hpfStage2.s1L = hpfStage2.s2L = 0.0f;
     hpfStage2.s1R = hpfStage2.s2R = 0.0f;
+    monoCollapseL.s1L = monoCollapseL.s2L = 0.0f;
+    monoCollapseL.s1R = monoCollapseL.s2R = 0.0f;
+    monoCollapseR.s1L = monoCollapseR.s2L = 0.0f;
+    monoCollapseR.s1R = monoCollapseR.s2R = 0.0f;
+    hfStateL = hfStateR = 0.0f;
 }
 
 void WaverEngine::process(std::span<float> left, std::span<float> right) noexcept
@@ -94,21 +128,41 @@ void WaverEngine::process(std::span<float> left, std::span<float> right) noexcep
     // Print chain (overdrive -> tape -> wow/flutter -> noise floor).
     printChain.process(left.data(), right.data(), static_cast<int>(left.size()));
 
-    // 4th-order Butterworth HPF (35 Hz, 24 dB/oct) for mix-ready low end.
-    auto applyStage = [](BiquadStage& s, float inL, float inR, float& outL, float& outR) {
-        outL = s.b0 * inL + s.s1L;
-        s.s1L = s.b1 * inL - s.a1 * outL + s.s2L;
-        s.s2L = s.b2 * inL - s.a2 * outL;
-        outR = s.b0 * inR + s.s1R;
-        s.s1R = s.b1 * inR - s.a1 * outR + s.s2R;
-        s.s2R = s.b2 * inR - s.a2 * outR;
+    // --- Master output chain ---
+    auto applyBiquad = [](BiquadStage& s, float in, float& s1, float& s2) {
+        const float out = s.b0 * in + s1;
+        s1 = s.b1 * in - s.a1 * out + s2;
+        s2 = s.b2 * in - s.a2 * out;
+        return out;
     };
 
     for (std::size_t i = 0; i < left.size(); ++i)
     {
-        float tmpL, tmpR;
-        applyStage(hpfStage1, left[i], right[i], tmpL, tmpR);
-        applyStage(hpfStage2, tmpL, tmpR, left[i], right[i]);
+        float L = left[i];
+        float R = right[i];
+
+        // 1. Subsonic HPF (4th-order Butterworth, 45 Hz, 24 dB/oct).
+        L = applyBiquad(hpfStage1, L, hpfStage1.s1L, hpfStage1.s2L);
+        L = applyBiquad(hpfStage2, L, hpfStage2.s1L, hpfStage2.s2L);
+        R = applyBiquad(hpfStage1, R, hpfStage1.s1R, hpfStage1.s2R);
+        R = applyBiquad(hpfStage2, R, hpfStage2.s1R, hpfStage2.s2R);
+
+        // 2. Low-end mono collapse (sum L+R below 200 Hz).
+        const float bassL = applyBiquad(monoCollapseL, L, monoCollapseL.s1L, monoCollapseL.s2L);
+        const float bassR = applyBiquad(monoCollapseR, R, monoCollapseR.s1L, monoCollapseR.s2L);
+        const float monoBass = 0.5f * (bassL + bassR);
+        L = L - bassL + monoBass;
+        R = R - bassR + monoBass;
+
+        // 3. HF rolloff (one-pole LP, 18 kHz).
+        hfStateL += hfCoeff * (L - hfStateL);
+        L = hfStateL;
+        hfStateR += hfCoeff * (R - hfStateR);
+        R = hfStateR;
+
+        // 4. Soft clipper (tanh waveshaper).
+        left[i] = std::tanh(L);
+        right[i] = std::tanh(R);
     }
 }
 

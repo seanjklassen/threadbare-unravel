@@ -75,7 +75,15 @@ private:
         float s1L = 0.0f, s2L = 0.0f;
         float s1R = 0.0f, s2R = 0.0f;
     };
+
     // 4th-order Butterworth HPF (two cascaded biquad sections).
     BiquadStage hpfStage1, hpfStage2;
+
+    // Low-end mono collapse (2nd-order Butterworth LP at 200 Hz, per-channel).
+    BiquadStage monoCollapseL, monoCollapseR;
+
+    // Gentle HF rolloff (one-pole LP at 18 kHz).
+    float hfCoeff = 0.0f;
+    float hfStateL = 0.0f, hfStateR = 0.0f;
 };
 } // namespace threadbare::dsp
