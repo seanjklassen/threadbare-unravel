@@ -22,6 +22,8 @@ void ArpEngine::reset() noexcept
     patternIndex = 0;
     ascending = true;
     currentNote = -1;
+    pendingHead = 0;
+    pendingCount = 0;
 }
 
 void ArpEngine::setEnabled(bool on) noexcept
@@ -34,6 +36,8 @@ void ArpEngine::setEnabled(bool on) noexcept
         patternIndex = 0;
         ascending = true;
         currentNote = -1;
+        pendingHead = 0;
+        pendingCount = 0;
     }
     enabled = on;
 }
@@ -159,62 +163,128 @@ void ArpEngine::allNotesOff() noexcept
     sortedCount = 0;
 }
 
+void ArpEngine::pushEvent(const NoteEvent& e) noexcept
+{
+    if (pendingCount >= kMaxPendingEvents)
+        return;
+    const int idx = (pendingHead + pendingCount) % kMaxPendingEvents;
+    pendingEvents[static_cast<std::size_t>(idx)] = e;
+    ++pendingCount;
+}
+
+ArpEngine::NoteEvent ArpEngine::popEvent() noexcept
+{
+    if (pendingCount <= 0)
+        return {};
+    const auto& e = pendingEvents[static_cast<std::size_t>(pendingHead)];
+    pendingHead = (pendingHead + 1) % kMaxPendingEvents;
+    --pendingCount;
+    return e;
+}
+
 ArpEngine::NoteEvent ArpEngine::advance(int numSamples) noexcept
 {
-    NoteEvent event;
+    if (pendingCount > 0)
+        return popEvent();
 
     if (!enabled)
-        return event;
+        return {};
 
     if (sortedCount == 0)
     {
         if (noteIsOn && currentNote >= 0)
         {
             noteIsOn = false;
-            event.noteNumber = currentNote;
-            event.velocity = 0.0f;
-            event.isNoteOn = false;
+            NoteEvent off;
+            off.noteNumber = currentNote;
+            off.velocity = 0.0f;
+            off.isNoteOn = false;
             currentNote = -1;
+            return off;
         }
-        return event;
+        return {};
     }
 
-    const double stepDuration = sr / static_cast<double>(rateHz);
-    const bool isSwungStep = (currentStep & 1) != 0;
-    const double swingOffset = isSwungStep ? swingAmount * stepDuration * 0.5 : 0.0;
-    const double effectiveStepDuration = stepDuration + (isSwungStep ? swingOffset : -swingOffset * 0.5);
+    auto calcStepTiming = [&]() {
+        const double stepDuration = sr / static_cast<double>(rateHz);
+        const bool isSwung = (currentStep & 1) != 0;
+        const double swing = isSwung ? swingAmount * stepDuration * 0.5 : 0.0;
+        const double eDur = stepDuration + (isSwung ? swing : -swing * 0.5);
+        return std::pair<double, double>{ eDur, eDur * gateRatio };
+    };
 
-    const double gateEnd = effectiveStepDuration * gateRatio;
+    auto [effectiveStepDuration, gateEnd] = calcStepTiming();
+
+    // Bug C fix: if a rate change moved gateEnd behind the current phase
+    // since the last advance call, catch the missed note-off now (before
+    // advancing phase further).
+    if (noteIsOn && phase >= gateEnd)
+    {
+        noteIsOn = false;
+        NoteEvent off;
+        off.noteNumber = currentNote;
+        off.velocity = 0.0f;
+        off.isNoteOn = false;
+        pushEvent(off);
+    }
 
     const double prevPhase = phase;
-    phase += static_cast<double>(numSamples);
+    phase += static_cast<double>(std::max(0, numSamples));
 
+    // Normal gate-end crossing detection within this block.
     if (noteIsOn && phase >= gateEnd && prevPhase < gateEnd)
     {
         noteIsOn = false;
-        event.noteNumber = currentNote;
-        event.velocity = 0.0f;
-        event.isNoteOn = false;
-        return event;
+        NoteEvent off;
+        off.noteNumber = currentNote;
+        off.velocity = 0.0f;
+        off.isNoteOn = false;
+        pushEvent(off);
     }
 
-    if (phase >= effectiveStepDuration)
+    // Advance through step boundaries. Recalculate timing per step (Bug D fix).
+    // Push noteOff + noteOn pairs so no events are lost (Bug B fix).
+    int safety = 0;
+    while (phase >= effectiveStepDuration && safety++ < 8)
     {
+        if (noteIsOn)
+        {
+            noteIsOn = false;
+            NoteEvent off;
+            off.noteNumber = currentNote;
+            off.velocity = 0.0f;
+            off.isNoteOn = false;
+            pushEvent(off);
+        }
+
         phase -= effectiveStepDuration;
         ++currentStep;
+
+        std::tie(effectiveStepDuration, gateEnd) = calcStepTiming();
 
         const int note = nextPatternNote();
         if (note >= 0)
         {
             currentNote = heldNotes[static_cast<std::size_t>(note)].noteNumber;
-            noteIsOn = true;
-            event.noteNumber = currentNote;
-            event.velocity = heldNotes[static_cast<std::size_t>(note)].velocity;
-            event.isNoteOn = true;
+
+            // Only start the note if there's audible gate time remaining.
+            // If the phase remainder already exceeds gateEnd, the note's
+            // entire duration fell within this block -- skip it to avoid
+            // zero-duration note-on/off pairs that accumulate release tails.
+            if (phase < gateEnd)
+            {
+                noteIsOn = true;
+
+                NoteEvent on;
+                on.noteNumber = currentNote;
+                on.velocity = heldNotes[static_cast<std::size_t>(note)].velocity;
+                on.isNoteOn = true;
+                pushEvent(on);
+            }
         }
     }
 
-    return event;
+    return popEvent();
 }
 
 int ArpEngine::nextPatternNote() noexcept

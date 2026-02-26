@@ -82,6 +82,14 @@ private:
     int currentNote = -1;
 
     std::uint32_t rngState = 1;
+
+    static constexpr int kMaxPendingEvents = 8;
+    std::array<NoteEvent, kMaxPendingEvents> pendingEvents{};
+    int pendingHead = 0;
+    int pendingCount = 0;
+
+    void pushEvent(const NoteEvent& e) noexcept;
+    NoteEvent popEvent() noexcept;
 };
 
 } // namespace threadbare::dsp

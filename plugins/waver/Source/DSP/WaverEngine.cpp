@@ -94,9 +94,14 @@ void WaverEngine::process(std::span<float> left, std::span<float> right) noexcep
 {
     if (arpEnabled)
     {
-        auto event = arp.advance(static_cast<int>(left.size()));
-        if (event.noteNumber >= 0)
+        bool first = true;
+        for (int safety = 0; safety < 10; ++safety)
         {
+            auto event = arp.advance(first ? static_cast<int>(left.size()) : 0);
+            first = false;
+            if (event.noteNumber < 0)
+                break;
+
             if (event.isNoteOn)
             {
                 voiceAllocator.noteOn(event.noteNumber, event.velocity);

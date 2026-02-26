@@ -320,6 +320,18 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     }
     latestState.rmsLevel = numSamples > 0 ? std::sqrt(sumSq / static_cast<float>(numSamples)) : 0.0f;
     latestState.peakLevel = peak;
+    {
+        bool anyVoiceActive = false;
+        for (auto& voice : engine.getAllocator().getVoices())
+        {
+            if (voice.isActive())
+            {
+                anyVoiceActive = true;
+                break;
+            }
+        }
+        latestState.noteActive = anyVoiceActive;
+    }
     stateQueue.push(latestState);
 }
 
@@ -822,11 +834,35 @@ void WaverProcessor::initialiseFactoryPresets()
 
 void WaverProcessor::applyPreset(const Preset& preset)
 {
-    for (const auto& [id, value] : preset.parameters)
+    const auto applyParam = [&](const juce::String& id, float value)
     {
         if (auto* param = apvts.getParameter(id))
             param->setValueNotifyingHost(param->convertTo0to1(value));
-    }
+    };
+
+    // Apply any parameters present in the preset.
+    for (const auto& [id, value] : preset.parameters)
+        applyParam(id, value);
+
+    // Ensure every parameter has a deterministic value after a preset load.
+    // Factory presets that omit a parameter get the params.json default,
+    // preventing "carry-over" from the previously loaded preset.
+    const auto has = [&](const char* id) { return preset.parameters.find(id) != preset.parameters.end(); };
+    if (!has("portaTime"))      applyParam("portaTime",      0.0f);
+    if (!has("portaMode"))      applyParam("portaMode",      0.0f);
+    if (!has("toyIndex"))       applyParam("toyIndex",       0.25f);
+    if (!has("toyRatio"))       applyParam("toyRatio",       0.5f);
+    if (!has("organ16"))        applyParam("organ16",        5.0f);
+    if (!has("organ8"))         applyParam("organ8",         4.0f);
+    if (!has("organ4"))         applyParam("organ4",         2.0f);
+    if (!has("organMix"))       applyParam("organMix",       3.0f);
+    if (!has("lfoShape"))       applyParam("lfoShape",       0.0f);
+    if (!has("humFreq"))        applyParam("humFreq",        1.0f);
+    if (!has("filterKeyTrack")) applyParam("filterKeyTrack", 0.5f);
+    if (!has("envToFilter"))    applyParam("envToFilter",    0.3f);
+    if (!has("noiseColor"))     applyParam("noiseColor",     0.35f);
+    if (!has("stereoWidth"))    applyParam("stereoWidth",    0.8f);
+    if (!has("dcoSubOctave"))   applyParam("dcoSubOctave",   0.0f);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
