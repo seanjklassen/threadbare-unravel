@@ -6,22 +6,22 @@
 
 I kept trying to make modern synths sound like the keyboards on the records I love. Detuning things, adding noise, running the output through tape emulations. But it never quite landed because the imperfection wasn't coming from inside the instrument. It was always painted on after.
 
-Waver is a synthesizer where the wear is built into the architecture. Three layers — an analog polysynth, a toy FM keyboard, and a divide-down organ — all running through a print chain that models cassette tape, not as an effect, but as a fundamental part of the sound. The drift is in the oscillators. The age is in the envelopes. The warmth comes from the same place it always did: things not working perfectly.
+Waver is a synthesizer where the life comes from inside. The drift is in the oscillators. The breathing is in the chorus. Every voice moves independently, every instance has its own personality. One control reshapes the whole instrument. The sound was never meant to sit still.
 
 ---
 
 ## one main control. you drag it.
 
-**clear to weathered.**
+**focused to warm.**
 Left is present, bright, defined.
 
-Right adds tape hiss, chorus depth, and the creaking warmth of old circuits.
+Right adds chorus depth, tape hiss, and the slow warmth of everything starting to move.
 
-**young to old.**
+**steady to restless.**
 
-Down sounds new and precise.
+Down sounds focused and precise.
 
-Up makes the oscillators drift, the envelopes step, the tape wow deepen, and the whole instrument start to feel like something you found in a closet.
+Up makes the oscillators drift, the envelopes loosen, the wow deepen, and the whole instrument start breathing on its own.
 
 Presence and age. Two axes. Every parameter moves at once. I've found more sounds dragging the puck slowly across one diagonal than I ever have opening a menu. The synth reshapes itself under your hand.
 
@@ -39,15 +39,11 @@ No extra knobs. No rate dropdown. No swing slider. Just the puck.
 
 The puck is the instrument. The drawer is the workbench. Most of the time the puck is all you need — it maps across every parameter simultaneously and the morph between presets is musical by design. But if you want the filter at exactly 1.4 kHz at midnight for reasons you can't explain, the drawer is there. Open it, make the tweak, close it. The puck keeps working either way, scaling relative to whatever you've set.
 
-### three layers
+### the sound
 
-The sound engine blends three synthesis layers simultaneously.
+It can be warm and wide — slow chorus breathing underneath a pad. Bright and percussive — nasal digital chimes that sound like they cost $40 new. Deep and still — dense harmonic beds with gravity. Or all three at once, blended through the puck.
 
-**analog.** A digitally-controlled oscillator modeled on the one you can find in a Juno-60. The chorus you know is here. You can feel it breathing harder as its age goes up. 
-
-**toy.** A two-operator phase modulation engine modeled on the YM2413 chip. 9-bit DAC quantization, stepped envelopes, snapped operator ratios. It sounds like a $40 keyboard from 1988, which is exactly the point. 
-
-**organ.** A divide-down organ modeled on a Baldwin spinet As age increases, you get key-click bleed and oscillator leakage, the sound of a church organ that hasn't been serviced in decades. 
+Its voice draws on analog polysynths, consumer FM keyboards, and divide-down organs — not as separate modes you switch between, but fused into a single instrument the puck moves through continuously.
 
 ### tone
 
@@ -63,7 +59,7 @@ LFO with vibrato and pulse-width modulation. Chorus mode selection. Drift amount
 
 ### etc.
 
-Overdrive modeled on the SD-1 mid-push, cassette tape saturation with hysteresis, wow and flutter from a simulated transport mechanism, a noise floor made of tape hiss, mains hum, mechanical whir, and more buzzwords.
+Overdrive with an SD-1-style mid-push, cassette tape saturation with hysteresis, wow and flutter from a tape transport mechanism, a noise floor made of tape hiss, mains hum, mechanical whir, and more buzzwords.
 
 ### moment
 
@@ -79,16 +75,16 @@ The chorus develops left and right independently. The print chain processes both
 
 ## what it can sound like
 
-1. **settle** — Warm Juno pad, slow chorus, light tape. Where most people start. [Play]
+1. **settle** — Warm pad, slow chorus, light tape. Where most people start. [Play]
 2. **glow** — Golden and sustained. Long attack, open filter, gentle drift. The sunset preset. [Play]
 3. **worn** — Heavy print chain. Cassette compression, hiss floor, wow pulling at the pitch. Intimate and close. [Play]
-4. **flicker** — Toy layer forward. Bright, nasal, slightly broken FM melody tones. [Play]
-5. **anchor** — Organ bed, 16' and 8' drawbars, maximum gravity. Everything else sits on top of this. [Play]
+4. **flicker** — Bright, nasal, slightly broken digital melody tones. [Play]
+5. **anchor** — Deep harmonic bed, 16' and 8' drawbars, maximum gravity. Everything else sits on top of this. [Play]
 6. **sway** — Chorus depth turned up, drift wandering. The pad moves under your hands. [Play]
 7. **whisper** — Quiet, filtered, hiss-heavy. Like listening through a wall. [Play]
-8. **spark** — Toy layer with fast attack, short decay. Percussive digital chime. Arp-ready. [Play]
+8. **spark** — Bright digital chime, fast attack, short decay. Percussive and sharp. Arp-ready. [Play]
 9. **tide** — Slow arpeggio with long gates and heavy swing. Puck Y up. Patient and swung. [Play]
-10. **dusk** — All three layers. Organ below, analog middle, toy on top. Age at 60%. The whole instrument breathing together. [Play]
+10. **dusk** — Everything breathing together. Deep below, warm in the middle, bright on top. The whole instrument alive at once. [Play]
 
 ---
 
@@ -124,12 +120,12 @@ On purpose. Waver makes the sound. Unravel makes the space. They're designed to 
 Threadbare -- Waver
 
 **Short Description:**
-Character-driven soft synthesizer with tri-layer architecture: Juno-60-modeled DCO with BBD chorus, YM2413-modeled toy FM, and Baldwin divide-down organ. One 2D puck macro control morphs across the entire parameter space. Built-in cassette print chain with hysteresis saturation, wow/flutter, and tape noise. Deterministic analog drift. Arpeggiator. For indie, dream pop, shoegaze, lo-fi.
+A polyphonic synthesizer that sounds tenderly alive. One 2D puck control reshapes the entire sound — warm analog pads, bright digital chimes, deep harmonic beds, all breathing with independent drift and variation. Built-in tape print chain. Puck-controlled arpeggiator. For indie, dream pop, shoegaze, lo-fi.
 
 **Full Description:**
-Every soft synth tries to sound pristine. This one tries to sound like it's been left in a van for ten years.
+Every soft synth tries to sound perfect. This one sounds alive.
 
-Tri-layer sound engine: (1) DCO layer — PolyBLEP sawtooth + PolyBLAM pulse with continuous crossfade, sub-oscillator, noise generator, BBD ensemble chorus (3 modes with MN3009 bandwidth limiting, compander noise, 150 Hz sub-bass crossover mono). (2) Toy FM layer — 2-operator phase modulation referencing the YM2413/OPLL, 9-bit DAC quantization, 13 discrete operator ratios, age-coupled envelope stepping. (3) Organ layer — 12 pitch-class phase accumulators with octave division, 4 drawbars (16', 8', 4', mixture), formant bandpass (800-1200 Hz, Q 0.7-1.2), key-click transient, full polyphony with zero voice stealing.
+Sound engine with three fused layers: (1) DCO layer — PolyBLEP sawtooth + PolyBLAM pulse with continuous crossfade, sub-oscillator, noise generator, BBD ensemble chorus (3 modes with MN3009 bandwidth limiting, compander noise, 150 Hz sub-bass crossover mono). (2) Toy FM layer — 2-operator phase modulation referencing the YM2413/OPLL, 9-bit DAC quantization, 13 discrete operator ratios, age-coupled envelope stepping. (3) Organ layer — 12 pitch-class phase accumulators with octave division, 4 drawbars (16', 8', 4', mixture), formant bandpass (800-1200 Hz, Q 0.7-1.2), key-click transient, full polyphony with zero voice stealing.
 
 Filter: IR3109 OTA 4-pole lowpass (TPT implementation) as default, Huovilainen Moog ladder as alternate. Per-stage polynomial soft-clip. Oversampled (2x standard, 4x HQ).
 

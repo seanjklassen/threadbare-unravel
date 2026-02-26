@@ -4,9 +4,9 @@
 
 ## reverb with a memory problem.
 
-I had reverbs I liked. They were all simulating spaces — halls, plates, springs. I kept reaching for one that sounded less like a room and more like something slipping away from me. What happens to a sound after you stop paying attention to it. The way it comes back softer, shifted, not quite right.
+I have reverbs I like. They simulate spaces like halls, plates, springs. But I started imagining one for one that sounded less like a room and more like something slipping away from me. What happens to a sound after you stop paying attention to it. The way it comes back softer, shifted, not quite right.
 
-Unravel holds onto a few seconds of what you just played and dissolves it into the tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
+Unravel holds onto fragments of what you just played and dissolves it into a reverb-like tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
 
 ---
 
@@ -123,10 +123,10 @@ At default settings, CPU is fine. If you max the ghost engine, scatter, and disi
 Threadbare -- Unravel
 
 **Short Description:**
-Granular memory reverb with 8x8 FDN. Maintains a 2-second rolling buffer of your performance, spawning detuned grains with reverse playback and shimmer directly into the reverb network. One 2D puck macro control. Disintegration looper with tape-modeled entropy. For shoegaze, ambient, dream pop.
+Reverb with a memory problem. Holds onto fragments of what you just played and dissolves them into the tail — some pitched up, some reversed, all fading. One 2D puck control reshapes the entire space. Disintegration looper with real-time entropy. For shoegaze, ambient, dream pop.
 
 **Full Description:**
-Every reverb plugin simulates a room. This one simulates memory.
+Every reverb plugin recreates a room. This one holds onto memory.
 
 The Ghost Engine maintains a circular buffer of your input and spawns up to 8 simultaneous granular voices (Hann-windowed, micro-detuned, with Catmull-Rom interpolation). At high settings, ~25% of grains play in reverse with mirrored stereo panning. Shimmer grains pitch up +12 semitones. All granular output feeds directly into the FDN input, not mixed in post.
 

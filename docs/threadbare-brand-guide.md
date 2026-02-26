@@ -1,6 +1,8 @@
 # Threadbare — Brand Style Guide
 
-*Reference for visual identity, voice, and design language across all Threadbare products. Version 1.0 — February 2026.*
+*Visual identity, voice, and design language across all Threadbare products. Companion to the Strategic Brand Framework (brand_strategy.md) which defines purpose, positioning, and messaging hierarchy.*
+
+*Version 2.0 — February 2026*
 
 ---
 
@@ -8,11 +10,11 @@
 
 ### 1.1 Name
 
-**threadbare** — always lowercase in running text, logos, and product UI. The name is the aesthetic: stripped down, worn in, honest. Nothing unnecessary.
+**threadbare** — always lowercase in running text, logos, and product UI. The word means worn thin — the barrier between you and the sound you're looking for should be that thin. Nothing unnecessary.
 
 ### 1.2 Positioning Statement
 
-Threadbare makes audio tools for people who care more about how music feels than how many features are on the box. Every product has a point of view.
+Threadbare makes tools for music creation — each one built around a single idea taken further than it's been taken before. Every product shares the same interaction model: one surface that gets you 80% of the way, and architecture underneath for the other 20%. See the Strategic Brand Framework (brand_strategy.md) for full purpose, positioning, and messaging hierarchy.
 
 ### 1.3 Brand Personality
 
@@ -22,15 +24,15 @@ Threadbare makes audio tools for people who care more about how music feels than
 | **Warm** | Approachable without being casual. First-person is fine. Humor is dry, never loud. |
 | **Honest** | If a feature has a trade-off, say so. If the CPU spikes at max settings, acknowledge it. |
 | **Craft-oriented** | Respect for the process. Language that sounds like it was written by someone who makes music, not someone who markets software. |
-| **Nostalgic** | Not retro kitsch. The kind of nostalgia that aches slightly — memory, impermanence, the beauty of things fading. |
+| **Alive** | Forward-looking, not backward-looking. We draw from the past as material, not as a destination. The sound is living, not vintage. |
 
 ### 1.4 Brand Values (Design Decisions Flow From These)
 
-1. **Character over neutrality.** Every product has a sonic identity.
-2. **Simplicity over flexibility.** Fewer controls, deeper expression.
-3. **Real-time safety.** No compromises in the audio path.
-4. **Emotional resonance.** Names, presets, and copy evoke feelings.
-5. **Craftsmanship.** Fewer products, each one excellent.
+1. **Innovative, not emulative.** We build on the foundations of classic instruments to create things that didn't exist before.
+2. **Immediately understandable.** One surface that gets you 80% of the way, and architecture underneath for the other 20%. Playable before it's understood.
+3. **Alive by design.** Sound that moves, breathes, and varies. Responsive instruments invite play. Play is where the joy lives.
+4. **Modular.** Each product is a focused, complete tool that does one thing well. Like pedals on a board or modules in a rack, they combine in whatever way serves the musician.
+5. **Craftsmanship.** Fewer products, each one excellent. Names, presets, and copy evoke feelings.
 
 ---
 
@@ -38,13 +40,23 @@ Threadbare makes audio tools for people who care more about how music feels than
 
 ### 2.1 Writing Voice
 
-Write like a musician explaining their favorite pedal to a friend. First person is fine. Technical accuracy matters, but it should never feel like a spec sheet unless it literally is one.
+Lead with feel, then function, then mechanism. Write the way a musician talks about gear they love — what does it sound like, then what does it do, then (only if the audience wants it) how does it work.
+
+"We" and "our" in brand-level communication. "I" is acceptable in founder-voice contexts — blog posts, interviews, launch announcements. Never in product UI or spec copy. Technical accuracy matters, but it should never feel like a spec sheet unless it literally is one.
+
+The product name does more work than any descriptor — trust it. "Waver" already implies instability and tenderness. "Unravel" already implies decay and transformation. Don't overwrite what the name is doing.
 
 **Good:**
 > I had reverbs I liked. They were all simulating spaces. I kept reaching for one that sounded less like a room and more like something slipping away from me.
 
+> Waver's voices wander apart over time — each note ages slightly differently, the way a held chord shifts on a real instrument.
+
 **Bad:**
 > Introducing our revolutionary new reverb plugin featuring cutting-edge granular synthesis technology and an innovative 8x8 FDN architecture!
+
+> Lush, cinematic pads.
+
+See the Strategic Brand Framework (brand_strategy.md) for expanded copy principles with inline examples.
 
 ### 2.2 Tone Spectrum
 
@@ -197,7 +209,7 @@ The palette is warm, muted, and slightly desaturated. It should feel like lookin
 
 The puck is the instrument. The drawer is the workbench.
 
-Most users should be able to get a great sound using only the puck. The drawer exists for precision and edge cases. This hierarchy should be reflected in visual weight: the puck and orb dominate; the drawer is secondary.
+One surface gets you 80% of the way. The drawer exists for the other 20% — precision and edge cases. This hierarchy should be reflected in visual weight: the puck and visualization dominate; the drawer is secondary.
 
 ### 4.2 Slider Design
 
@@ -229,21 +241,45 @@ Most users should be able to get a great sound using only the puck. The drawer e
 
 ## 5. Product-Specific Branding
 
-### 5.1 Unravel
+Products fall into two categories: **Instruments** (generate sound with personality built in) and **Effects** (reshape sound in ways that respond to what you're actually playing). Whether it makes the sound or changes the sound, it should feel like the same family of tools. Each product has its own accent color, emotional targets, and identity.
+
+### 5.1 Unravel (Effect)
 
 | Element | Value |
 |---|---|
+| Category | Effect |
 | Accent color | `#E0E993` (lime) |
 | Emotional targets | Spectral, Wistful, Diffuse |
 | Key metaphor | Memory — fading, dissolving, replaying |
-| Orb color | `#E8B8A8` (dusty coral) |
+| Visualization | Lissajous orb (dusty coral `#E8B8A8`) |
 | Sound words | dissolving, modulated, cloud, ghost, drift, bloom, haze, fog |
+| Bonus feature | Disintegration looper |
 
-### 5.2 Future Products
+### 5.2 Waver (Instrument)
+
+| Element | Value |
+|---|---|
+| Category | Instrument |
+| Surface base | `#7D8FA0` (coastal blue-gray) |
+| Surface hover | `#E8B8A8` (warm sand / blush) |
+| Panel ink soft | `#E4E4D8` (cream / sea-foam) |
+| Text / panel ink | `#31312B` (dark driftwood) |
+| Arp tint | `#AD97B1` (muted lavender / twilight) |
+| Foundation background | `#31312B` (dark driftwood, via CSS) |
+| Emotional targets | Weathered, Tender, Breathing |
+| Key metaphor | Life — breathing, drifting, never sitting still |
+| Visualization | Waveform scope (coastal blue-gray) |
+| Sound words | breathing, tender, warm, drifting, wandering, gentle, restless, alive |
+| Bonus feature | Arpeggiator (puck-controlled) |
+
+The palette is conceptually a bird's-eye view of a beach with waves: coastal blue-gray surface, cream foam, warm sand accents, dark driftwood text, and twilight lavender for arp mode. All palette values live in `palette.js` and are applied as CSS custom properties.
+
+### 5.3 Future Products
 
 Each new product:
+- Belongs to a category (Instrument or Effect).
 - Gets its own accent color (contrasting with existing products).
-- Shares the neutral foundation (`#31312b` background, `#C8C7B8` text).
+- Shares the neutral foundation or establishes a product-specific palette (as Waver does with its darker background).
 - Has its own emotional target set and key metaphor.
 - Follows the same layout philosophy (primary control surface + secondary drawer).
 - Uses the same technical stack and architecture patterns.
@@ -282,11 +318,21 @@ Two tiers of description:
 
 ### 6.4 Words to Use
 
-dissolving, modulated, cloud, ghost, drift, bloom, haze, fog, memory, fading, spectral, wistful, diffuse, vaporous, weightless, bittersweet, haunting, warm, soft, gentle, traces, moments, fragments, recollection, evaporates
+**Brand-level (all products):** alive, breathing, responsive, tender, gentle, warm, drifts, wanders, moves, never quite the same twice, unreliable, reactive, evocative, plays with you, feels like
+
+**Unravel:** dissolving, modulated, cloud, ghost, drift, bloom, haze, fog, memory, fading, spectral, wistful, diffuse, vaporous, weightless, traces, fragments, recollection, evaporates
+
+**Waver:** breathing, tender, restless, wandering, gentle, golden, quiet, close, intimate, swaying, settling, glowing
+
+When describing what Threadbare products sound like, prefer language that implies life and responsiveness over language that implies damage or aging. See the Strategic Brand Framework (brand_strategy.md) for the full guidance table.
 
 ### 6.5 Words to Avoid
 
-revolutionary, game-changing, next-generation, best-in-class, powerful, unleash, supercharge, amazing, incredible, ultimate, state-of-the-art, cutting-edge, innovative (unless genuinely describing a novel technique in a technical context)
+**Hype language:** revolutionary, game-changing, next-generation, best-in-class, powerful, unleash, supercharge, amazing, incredible, ultimate, state-of-the-art, cutting-edge
+
+**Emulation language (when describing our own products):** emulates, models, simulates, recreates, clone, replica. These position the original as the standard and us as the copy. Use "draws on," "inspired by," or "its voice comes from" when referencing lineage in deeper copy.
+
+**Decay language (as default):** aged, worn, degraded, deteriorated, broken, damaged. These are acceptable in specific contexts (the "broken but beautiful" tagline, the Waver print chain description) but should not be the default vocabulary. Lead with life, not decay.
 
 ---
 
@@ -300,14 +346,20 @@ revolutionary, game-changing, next-generation, best-in-class, powerful, unleash,
 
 ### 7.2 File Naming
 
-| Platform | Format | Binary Name |
-|---|---|---|
-| macOS | AU | `unravel.component` |
-| macOS | VST3 | `unravel.vst3` |
-| macOS | Standalone | `unravel.app` |
-| Windows | VST3 | `unravel.vst3` |
-| macOS installer (current scripts) | .pkg | `Unravel-{version}.pkg` |
-| Windows installer (current scripts) | .exe | `Unravel-Installer.exe` |
+| Product | Platform | Format | Binary Name |
+|---|---|---|---|
+| Unravel | macOS | AU | `unravel.component` |
+| Unravel | macOS | VST3 | `unravel.vst3` |
+| Unravel | macOS | Standalone | `unravel.app` |
+| Unravel | Windows | VST3 | `unravel.vst3` |
+| Unravel | macOS installer | .pkg | `Unravel-{version}.pkg` |
+| Unravel | Windows installer | .exe | `Unravel-Installer.exe` |
+| Waver | macOS | AU | `waver.component` |
+| Waver | macOS | VST3 | `waver.vst3` |
+| Waver | macOS | Standalone | `waver.app` |
+| Waver | Windows | VST3 | `waver.vst3` |
+| Waver | macOS installer | .pkg | `Waver-{version}.pkg` |
+| Waver | Windows installer | .exe | `Waver-Installer.exe` |
 
 ### 7.3 Icon
 
@@ -319,19 +371,20 @@ revolutionary, game-changing, next-generation, best-in-class, powerful, unleash,
 
 ## 8. Applying This Guide to New Products
 
-When starting a new Threadbare product:
+Start with the Strategic Brand Framework (brand_strategy.md) to define the product's position, promise, and proof. Then use this guide for execution:
 
-1. **Choose a name.** Single evocative word, lowercase. Test: does it suggest a process, texture, or feeling?
-2. **Define emotional targets.** Three adjectives that serve as the north star for all design decisions.
-3. **Pick an accent color.** Must utilize the same principles as unravel but be distinct.
-4. **Write the tagline.** Short, lowercase, slightly odd. A sentence fragment.
-5. **Design the primary control.** What is the "puck" of this product? One gesture that controls everything.
-6. **Build the drawer.** What precision controls exist behind the primary interface?
-7. **Name the presets.** Follow the naming conventions in section 2.4.
-8. **Write the landing page copy.** Follow the voice rules in section 2. Personal, evocative, honest.
-9. **Create the DSP in `Source/DSP/`.** Follow real-time safety rules. Pull constants from a tuning header.
-10. **Follow the monorepo pattern.** `plugins/{name}/`, shared core, params.json, WebView UI.
+1. **Choose a category.** Instrument or Effect.
+2. **Choose a name.** Single evocative word, lowercase. Test: does it suggest a process, texture, or feeling?
+3. **Define emotional targets.** Three adjectives that serve as the north star for all design decisions.
+4. **Pick an accent color.** Distinct from existing products. Shares the neutral foundation or establishes a product-specific palette.
+5. **Write the tagline.** Short, lowercase, slightly odd. A sentence fragment.
+6. **Design the primary control.** What is the "puck" of this product? One gesture that controls everything.
+7. **Build the drawer.** What precision controls exist behind the primary interface?
+8. **Name the presets.** Follow the naming conventions in section 2.4.
+9. **Write the landing page copy.** Follow the voice rules in section 2 and the messaging hierarchy in the strategy doc. Personal, evocative, honest.
+10. **Create the DSP in `Source/DSP/`.** Follow real-time safety rules. Pull constants from a tuning header.
+11. **Follow the monorepo pattern.** `plugins/{name}/`, shared core, params.json, WebView UI.
 
 ---
 
-*This guide defines the Threadbare brand across all touchpoints. It is a living document — update it as the brand evolves, but protect the core identity: understated, warm, honest, craft-oriented, and always in service of how music feels.*
+*This guide handles execution — visual identity, voice, naming, and design language. The Strategic Brand Framework (brand_strategy.md) handles purpose, positioning, and messaging hierarchy. Together they form the complete brand platform.*
