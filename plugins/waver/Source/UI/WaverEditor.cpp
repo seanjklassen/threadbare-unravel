@@ -197,7 +197,11 @@ void WaverEditor::handleUpdate()
     obj->setProperty("peak", state.peakLevel);
     obj->setProperty("arpEnabled", state.arpEnabled);
     obj->setProperty("noteActive", state.noteActive);
-    obj->setProperty("isPlaying", transportStateIsStale ? false : state.isPlaying);
+    // Note: `isPlaying` is used by the viz to gate animation. In many hosts (Logic),
+    // live MIDI input happens while transport is stopped. We keep `transportActive`
+    // authoritative for UI/ARP locking, but allow the viz to animate when notes are held.
+    obj->setProperty("isPlaying",
+                     (transportStateIsStale ? false : state.isPlaying) || state.noteActive);
     obj->setProperty("isRecording", transportStateIsStale ? false : state.isRecording);
     obj->setProperty("transportActive", transportStateIsStale ? false : state.transportActive);
     obj->setProperty("currentPreset", processorRef.getCurrentProgram());

@@ -57,13 +57,20 @@ export class WaverViz {
 
   update(state) {
     this.state = state || {}
-    const playing = (state?.isPlaying ?? true) || Boolean(state?.noteActive)
+    const rmsRaw = state?.rms ?? 0
+    const peakRaw = state?.peak ?? 0
+    const playing =
+      Boolean(state?.transportActive) ||
+      Boolean(state?.isPlaying ?? true) ||
+      Boolean(state?.noteActive) ||
+      rmsRaw > 0.0002 ||
+      peakRaw > 0.0005
     const playTarget = playing ? 1 : 0
     this.playMix += (playTarget - this.playMix) * 0.06
     if (this.playMix < 0.005) this.playMix = 0
 
-    const rms = playing ? (state?.rms ?? 0) : 0
-    const peak = playing ? (state?.peak ?? 0) : 0
+    const rms = playing ? rmsRaw : 0
+    const peak = playing ? peakRaw : 0
     this.smoothRms += (rms - this.smoothRms) * 0.12
     this.smoothPeak += (peak - this.smoothPeak) * 0.15
     const arpTarget = state?.arpEnabled ? 1 : 0

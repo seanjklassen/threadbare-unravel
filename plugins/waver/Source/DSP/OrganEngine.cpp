@@ -52,13 +52,12 @@ void OrganEngine::noteOn(int noteNumber) noexcept
         return;
 
     auto& n = notes[static_cast<std::size_t>(noteNumber)];
+    const bool wasActive = n.active;
     n.active = true;
     n.wasActivated = true;
     n.leakEnvelope = 1.0f;
 
-    const float clickMs = 8.0f;
-    n.clickRemaining = static_cast<float>(sampleRate) * (clickMs * 0.001f);
-    n.clickGain = 0.15f + ageParam * 0.45f;
+    (void)wasActive;
 }
 
 void OrganEngine::noteOff(int noteNumber) noexcept
@@ -115,7 +114,7 @@ float OrganEngine::processSample() noexcept
             n.leakEnvelope *= leakDecayCoeff;
 
         const bool hasLeakage = n.wasActivated && !n.active && n.leakEnvelope > 1e-6f && leakageLevel > 0.0f;
-        if (!n.active && n.clickRemaining <= 0.0f && !hasLeakage)
+        if (!n.active && !hasLeakage)
             continue;
 
         const float fund = std::sin(twoPi * n.phase);
@@ -136,12 +135,8 @@ float OrganEngine::processSample() noexcept
         if (hasLeakage)
             contribution = tone * leakageLevel * n.leakEnvelope;
 
-        if (n.clickRemaining > 0.0f)
-        {
-            const float clickEnv = n.clickRemaining / (static_cast<float>(sampleRate) * 0.008f);
-            contribution += n.clickGain * clickEnv * fund * 0.3f;
-            n.clickRemaining -= 1.0f;
-        }
+        (void)n.clickRemaining;
+        (void)n.clickGain;
 
         sum += contribution;
     }

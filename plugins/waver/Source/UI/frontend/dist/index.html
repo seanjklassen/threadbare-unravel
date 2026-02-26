@@ -1883,12 +1883,14 @@ class WaverViz {
   }
   update(state) {
     this.state = state || {};
-    const playing = state?.isPlaying ?? true;
+    const rmsRaw = state?.rms ?? 0;
+    const peakRaw = state?.peak ?? 0;
+    const playing = Boolean(state?.transportActive) || Boolean(state?.isPlaying ?? true) || Boolean(state?.noteActive) || rmsRaw > 2e-4 || peakRaw > 5e-4;
     const playTarget = playing ? 1 : 0;
     this.playMix += (playTarget - this.playMix) * 0.06;
     if (this.playMix < 5e-3) this.playMix = 0;
-    const rms = playing ? state?.rms ?? 0 : 0;
-    const peak = playing ? state?.peak ?? 0 : 0;
+    const rms = playing ? rmsRaw : 0;
+    const peak = playing ? peakRaw : 0;
     this.smoothRms += (rms - this.smoothRms) * 0.12;
     this.smoothPeak += (peak - this.smoothPeak) * 0.15;
     const arpTarget = state?.arpEnabled ? 1 : 0;
@@ -4226,14 +4228,14 @@ function buildChoiceRow(id, param, sendParam2) {
 const getNativeFunction = createNativeFunctionBridge();
 const sendHostParam = createParamSender(getNativeFunction);
 const sendMorphSnapshotNative = getNativeFunction("setMorphSnapshot");
-const enqueueUiEventNative = getNativeFunction("enqueueUiEvent");
+getNativeFunction("enqueueUiEvent");
 let morphState = {
   puckX: 0,
   puckY: 0,
   blend: 0.35
 };
 let activeSurface = FACTORY_SURFACES.length > 0 ? FACTORY_SURFACES[0] : null;
-let momentSeed = 42;
+let momentSeed = Date.now() * 2654435761 >>> 0 || 1;
 let sigmaOffsets = activeSurface ? generateSigmaOffsets(activeSurface.landmarks.length, momentSeed) : [];
 let rbfThrottle = 0;
 let lastLoadedPresetIndex = -1;
@@ -4264,8 +4266,15 @@ const PRESET_TO_SURFACE_INDEX = [
   0,
   3,
   0,
-  1
+  1,
   // Showcase / hybrid
+  0,
+  3,
+  2,
+  4,
+  3,
+  1
+  // Celluloid
 ];
 const SURFACE_LABELS = {
   amber: { left: "veiled", right: "shimmering", top: "worn", bottom: "tender" },
@@ -4314,17 +4323,6 @@ const sendParam = (id, value) => {
     return;
   }
   if (id === "momentTrigger") {
-    momentSeed = momentSeed * 1664525 + 1013904223 >>> 0;
-    if (activeSurface) {
-      sigmaOffsets = generateSigmaOffsets(activeSurface.landmarks.length, momentSeed);
-    }
-    if (typeof enqueueUiEventNative === "function") {
-      enqueueUiEventNative("moment");
-    }
-    if (shell?.viz) {
-      shell.viz.triggerMoment?.();
-    }
-    applyRbfInterpolation(morphState.puckX, morphState.puckY);
     return;
   }
   sendHostParam(id, value);
@@ -4344,10 +4342,12 @@ function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
   const surface = getSurfaceByIndex(mappedSurfaceIndex);
   if (surface) {
     activeSurface = surface;
+    momentSeed = momentSeed * 1664525 + 1013904223 >>> 0;
     sigmaOffsets = generateSigmaOffsets(
       activeSurface.landmarks.length,
       momentSeed
     );
+    shell?.viz?.triggerMoment?.();
     const clampedX = Math.max(-1, Math.min(1, Number(presetPuckX) || 0));
     const clampedY = Math.max(-1, Math.min(1, Number(presetPuckY) || 0));
     const normX = (clampedX + 1) * 0.5;
@@ -4379,7 +4379,6 @@ function initApp() {
   if (drawerContent) {
     drawer = buildDrawer(drawerContent, sendParam);
   }
-  applyRbfInterpolation(morphState.puckX, morphState.puckY);
   const arpBtn = document.querySelector(".btn-arp");
   if (arpBtn) {
     arpBtn.addEventListener("click", () => {
