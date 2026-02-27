@@ -192,10 +192,12 @@ float WaverVoice::processSample() noexcept
 
     // LFO vibrato: pitch modulation in cents.
     const float lfoValue = lfo.processSample();
-    const float vibratoMultiplier = std::pow(2.0f, (lfoToVibratoCents * lfoValue) / 1200.0f);
+    const float effectiveVibrato = lfoToVibratoCents * modWheelDepth;
+    const float vibratoMultiplier = std::pow(2.0f, (effectiveVibrato * lfoValue) / 1200.0f);
+    const float pitchBendMultiplier = std::pow(2.0f, pitchBendSemitones / 12.0f);
 
     currentFrequencyHz += (targetFrequencyHz - currentFrequencyHz) * (1.0f - glideCoeff);
-    const float driftedFreq = currentFrequencyHz * pitchMultiplier * vibratoMultiplier;
+    const float driftedFreq = currentFrequencyHz * pitchMultiplier * vibratoMultiplier * pitchBendMultiplier;
     phaseIncrement = driftedFreq / static_cast<float>(sampleRate);
     const float subFreq = currentFrequencyHz * pitchMultiplier;
     subPhaseIncrement = (subFreq * subOctaveMultiplier) / static_cast<float>(sampleRate);
@@ -259,7 +261,8 @@ float WaverVoice::processSample() noexcept
     const float envFilterScale = 1.0f + envToFilterAmount * envelope * 4.0f;
     const float effectiveCutoff = filterCutoffSmoothed.getNextValue()
         * filterDriftScale * tolerances.filterCutoffScale
-        * keyTrackScale * std::max(envFilterScale, 0.05f);
+        * keyTrackScale * std::max(envFilterScale, 0.05f)
+        + aftertouchCutoffHz;
     const float effectiveRes = filterResSmoothed.getNextValue() * tolerances.filterResScale;
 
     otaFilter.setCutoffHz(std::clamp(effectiveCutoff, 20.0f, 20000.0f));
@@ -478,5 +481,20 @@ void WaverVoice::setNoiseColor(float color) noexcept
 void WaverVoice::setSubOctave(int octaveChoice) noexcept
 {
     subOctaveMultiplier = (octaveChoice == 1) ? 0.25f : 0.5f;
+}
+
+void WaverVoice::setPitchBendSemitones(float semitones) noexcept
+{
+    pitchBendSemitones = semitones;
+}
+
+void WaverVoice::setModWheelDepth(float depth01) noexcept
+{
+    modWheelDepth = std::clamp(depth01, 0.0f, 1.0f);
+}
+
+void WaverVoice::setAftertouchCutoffOffset(float offsetHz) noexcept
+{
+    aftertouchCutoffHz = std::max(0.0f, offsetHz);
 }
 } // namespace threadbare::dsp
