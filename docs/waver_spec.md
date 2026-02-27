@@ -19,7 +19,7 @@ Emotional targets: *Weathered · Tender · Breathing*
 
 # **1 Design Philosophy and Sonic Identity**
 
-This specification defines the complete architecture for **waver**, a software synthesizer built under the threadbare brand identity. The instrument captures the lo-fi, nostalgic, and deeply emotive sonic signature associated with indie rock artists such as Jason Lytle of Grandaddy, where consumer-grade keyboards, tape machines, and aging analog circuits converge into something greater than the sum of their parts.
+This specification defines the complete architecture for **waver**, a software synthesizer built under the threadbare brand identity. The instrument captures the lo-fi, nostalgic, and deeply emotive sonic signature associated with indie rock artists such as Jason Lytle of Grandaddy and the instructional melancholy of old educational films, where consumer-grade keyboards, tape machines, and aging analog circuits converge into something greater than the sum of their parts.
 
 ## **1.1 Brand Identity and Product Metadata**
 
@@ -707,7 +707,29 @@ Factory presets are organized by emotional/sensory intent:
 | weight   | Organ beds, drones, static harmonic foundations.         | anchor, root, floor, mass   |
 
 
-Each category ships with 8–12 presets. Total factory library: 40–60 sounds.
+Each category ships with 3 presets. Total factory library: 15 sounds.
+
+### **8.3.1 Factory Preset Curation Matrix (15 total)**
+
+Balanced grit policy: a compact, high-contrast set with roughly 4-5 intentionally gritty presets; the rest stay clean-to-moderate so each preset has a clear job.
+
+| Preset | Category | Role | Grit Tier | Inspiration Anchor |
+| ------ | -------- | ---- | --------- | ------------------ |
+| pad for opening scene | amber | pad | clean | Grandaddy-style sunrise pad |
+| pad but a little brighter | amber | pad | moderate | soft cassette pop bloom |
+| classroom pad no panic | amber | keybed | clean | school AV reel warmth |
+| slow drift for verses | drift | motion pad | moderate | wandering chorus motion |
+| glide lead not flashy | drift | glide lead | moderate | road-film lead line |
+| wobbly memory pad | drift | evolving texture | gritty | unstable chorus tape memory |
+| quiet keys for intro | hush | intimate keys | clean | close-mic apartment keyboard |
+| soft organ for feelings | hush | organ pad | clean | tender indie hymn bed |
+| tape pad after midnight | hush | tape pad | moderate | softened cassette edge |
+| toy lead for obvious hook | signal | toy lead | clean | pocket synth sparkle |
+| bell lead mildly broken | signal | bell | gritty | chipped digital bell transient |
+| pulse lead for the chorus | signal | pulse lead | gritty | angular TV-theme pulse |
+| low bed for serious parts | weight | bass bed | gritty | grounded low-end frame |
+| organ for final chorus | weight | organ bed | gritty | melancholic drawbar mass |
+| tape weight for ending | weight | weighted hybrid | moderate | domestic tape density |
 
 ## **8.4 DAW State Serialization**
 
@@ -896,12 +918,12 @@ Each phase produces a playable, DAW-loadable build that can be evaluated musical
 - Moment Mode with PRNG seed save/restore
 - Advanced drawer with all four parameter groups (Tone, Shape, Motion, Print); arp is puck-controlled when on (no drawer controls)
 - Arpeggiator mode (Section 3.5): toggle button only; rate, pattern, gate, swing driven by puck when arp on; deterministic for bounce-in-place
-- MIDI CC mapping for puck axes
+- MIDI expression mapping (velocity, pitch bend, mod wheel, aftertouch, sustain)
 - Age coupling verified across all engine layers
 
 ## **Phase 6: Polish and Release (Weeks 17–20)**
 
-- Factory preset library: 40–60 presets across 5 categories
+- Factory preset library: 15 presets across 5 categories
 - CPU optimization pass (SIMD where applicable, cache alignment)
 - Automated regression test suite in CI
 - Bounce-in-place validation at multiple sample rates

@@ -123,7 +123,7 @@ Threadbare -- Waver
 A polyphonic synthesizer that sounds tenderly alive. One 2D puck control reshapes the entire sound — warm analog pads, bright digital chimes, deep harmonic beds, all breathing with independent drift and variation. Built-in tape print chain. Puck-controlled arpeggiator. For indie, dream pop, shoegaze, lo-fi.
 
 **Full Description:**
-Every soft synth tries to sound perfect. This one sounds alive.
+Every soft synth tries to sound perfect. This one sounds alive, tuned for the emotional lane between Grandaddy records and old educational film soundtracks.
 
 Sound engine with three fused layers: (1) DCO layer — PolyBLEP sawtooth + PolyBLAM pulse with continuous crossfade, sub-oscillator, noise generator, BBD ensemble chorus (3 modes with MN3009 bandwidth limiting, compander noise, 150 Hz sub-bass crossover mono). (2) Toy FM layer — 2-operator phase modulation referencing the YM2413/OPLL, 9-bit DAC quantization, 13 discrete operator ratios, age-coupled envelope stepping. (3) Organ layer — 12 pitch-class phase accumulators with octave division, 4 drawbars (16', 8', 4', mixture), formant bandpass (800-1200 Hz, Q 0.7-1.2), key-click transient, full polyphony with zero voice stealing.
 
@@ -137,7 +137,7 @@ One 2D puck macro control. X-axis: Presence (waveform brightness, drive, FM inde
 
 Arpeggiator mode: Puck-controlled rate, pattern (Up/Down/Up-Down/Down-Up/Random), gate, and swing. Fixed-size held-note buffer. Deterministic for bounce-in-place. No additional controls — puck X drives rate and pattern, puck Y drives gate and swing.
 
-8-voice polyphony with priority-weighted quiet-voice stealing and 2-5 ms crossfade. Portamento (legato/always, log-frequency domain). Full MIDI: velocity, pitch bend, mod wheel, CC 74 (puck X), CC 11 (puck Y), aftertouch, sustain. 46 automatable parameters. 40-60 factory presets across 5 categories (amber, drift, hush, signal, weight).
+8-voice polyphony with priority-weighted quiet-voice stealing and 2-5 ms crossfade. Portamento (legato/always, log-frequency domain). Full MIDI expression: velocity, pitch bend, mod wheel, aftertouch, sustain. 46 automatable parameters. 15 curated factory presets across 5 categories (amber, drift, hush, signal, weight), voiced for strong contrast with a balanced grit profile (mostly clean/moderate, select intentionally gritty outliers).
 
 No built-in reverb by design — pairs with Threadbare Unravel or any reverb plugin.
 

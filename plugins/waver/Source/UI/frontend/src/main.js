@@ -39,8 +39,6 @@ const PRESET_TO_SURFACE_INDEX = [
   2, 2, 2, // Hush
   3, 3, 3, // Signal
   4, 4, 4, // Weight
-  0, 3, 0, 1, // Showcase / hybrid
-  0, 3, 2, 4, 3, 1, // Celluloid
 ]
 
 const SURFACE_LABELS = {
