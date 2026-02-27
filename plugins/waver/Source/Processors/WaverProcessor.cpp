@@ -17,17 +17,9 @@ WaverProcessor::WaverProcessor()
     {
         const auto& preset = factoryPresets.front();
         if (auto* px = apvts.getParameter("puckX"))
-        {
-            px->beginChangeGesture();
-            px->setValueNotifyingHost(px->convertTo0to1(preset.puckX));
-            px->endChangeGesture();
-        }
+            px->setValue(px->convertTo0to1(preset.puckX));
         if (auto* py = apvts.getParameter("puckY"))
-        {
-            py->beginChangeGesture();
-            py->setValueNotifyingHost(py->convertTo0to1(preset.puckY));
-            py->endChangeGesture();
-        }
+            py->setValue(py->convertTo0to1(preset.puckY));
     }
 }
 
@@ -397,7 +389,6 @@ void WaverProcessor::setCurrentProgram(int index)
         py->endChangeGesture();
     }
     pendingPresetIndex.store(currentProgramIndex, std::memory_order_release);
-    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
     pushCurrentState();
 }
 
@@ -458,7 +449,6 @@ void WaverProcessor::onRestoreState(const juce::ValueTree& tree)
 
 void WaverProcessor::onStateRestored()
 {
-    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
     pushCurrentState();
 }
 
@@ -476,16 +466,6 @@ void WaverProcessor::setStateInformation(const void* data, int sizeInBytes)
         hasRestoredInitialState = true;
         onStateRestored();
     }
-}
-
-int WaverProcessor::consumePresetNotify() noexcept
-{
-    return uiPresetNotify.exchange(-1, std::memory_order_acq_rel);
-}
-
-void WaverProcessor::requestPresetNotify() noexcept
-{
-    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
 }
 
 bool WaverProcessor::popVisualState(WaverState& out) noexcept

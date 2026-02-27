@@ -167,7 +167,6 @@ WaverEditor::WaverEditor(WaverProcessor& proc)
     webView.goToURL(threadbare::core::WebViewBridge::getInitialURL());
     lastVisualStatePopMs = juce::Time::getMillisecondCounterHiRes();
     vblankAttachment = std::make_unique<juce::VBlankAttachment>(&webView, [this] { handleUpdate(); });
-    processorRef.requestPresetNotify();
 }
 
 void WaverEditor::resized()
@@ -207,9 +206,7 @@ void WaverEditor::handleUpdate()
     obj->setProperty("isRecording", transportStateIsStale ? false : state.isRecording);
     obj->setProperty("transportActive", transportStateIsStale ? false : state.transportActive);
 
-    const int presetNotify = processorRef.consumePresetNotify();
-    if (presetNotify >= 0)
-        obj->setProperty("currentPreset", presetNotify);
+    obj->setProperty("currentPreset", processorRef.getCurrentProgram());
 
     webView.emitEventIfBrowserIsVisible("updateState", juce::JSON::toString(juce::var(obj)));
 }

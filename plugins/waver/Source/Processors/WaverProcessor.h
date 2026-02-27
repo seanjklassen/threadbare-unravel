@@ -66,9 +66,6 @@ public:
     void setMorphSnapshot(float puckX, float puckY, float blend) noexcept;
     void enqueueMomentTrigger() noexcept;
 
-    int consumePresetNotify() noexcept;
-    void requestPresetNotify() noexcept;
-
     void setStateInformation(const void* data, int sizeInBytes) override;
 
 protected:
@@ -147,7 +144,6 @@ private:
     ArpLatchPhase arpLatchPhase = ArpLatchPhase::idle;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> arpLatchGain;
     std::atomic<int> pendingPresetIndex { -1 };
-    std::atomic<int> uiPresetNotify { -1 };
     bool hasRestoredInitialState = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaverProcessor)
