@@ -53,6 +53,9 @@ public:
     void setEnvToFilter(float amount) noexcept;
     void setNoiseColor(float color) noexcept;
     void setSubOctave(int octaveChoice) noexcept;
+    void setPitchBendSemitones(float semitones) noexcept;
+    void setModWheelDepth(float depth01) noexcept;
+    void setAftertouchCutoffOffset(float offsetHz) noexcept;
 
     float processSample() noexcept;
 
@@ -116,6 +119,9 @@ private:
     float envToFilterAmount = 0.0f;
     float noiseColorMix = 0.0f;
     float subOctaveMultiplier = 0.5f;
+    float pitchBendSemitones = 0.0f;
+    float modWheelDepth = 0.0f;
+    float aftertouchCutoffHz = 0.0f;
     float pinkB0 = 0.0f, pinkB1 = 0.0f, pinkB2 = 0.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerDcoLevel;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> layerToyLevel;
