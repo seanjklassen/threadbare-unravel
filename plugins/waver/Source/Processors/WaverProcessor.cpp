@@ -16,10 +16,18 @@ WaverProcessor::WaverProcessor()
     if (!factoryPresets.empty())
     {
         const auto& preset = factoryPresets.front();
-        presetPuckX.store(preset.puckX, std::memory_order_relaxed);
-        presetPuckY.store(preset.puckY, std::memory_order_relaxed);
-        morphPuckX.store(preset.puckX, std::memory_order_relaxed);
-        morphPuckY.store(preset.puckY, std::memory_order_relaxed);
+        if (auto* px = apvts.getParameter("puckX"))
+        {
+            px->beginChangeGesture();
+            px->setValueNotifyingHost(px->convertTo0to1(preset.puckX));
+            px->endChangeGesture();
+        }
+        if (auto* py = apvts.getParameter("puckY"))
+        {
+            py->beginChangeGesture();
+            py->setValueNotifyingHost(py->convertTo0to1(preset.puckY));
+            py->endChangeGesture();
+        }
     }
 }
 
@@ -78,10 +86,10 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     juce::ScopedNoDenormals noDenormals;
     drainUiEvents();
 
-    latestState.puckX = morphPuckX.load(std::memory_order_relaxed);
-    latestState.puckY = morphPuckY.load(std::memory_order_relaxed);
-    latestState.presetPuckX = presetPuckX.load(std::memory_order_relaxed);
-    latestState.presetPuckY = presetPuckY.load(std::memory_order_relaxed);
+    const float apvtsPuckX = apvts.getRawParameterValue("puckX")->load();
+    const float apvtsPuckY = apvts.getRawParameterValue("puckY")->load();
+    latestState.puckX = apvtsPuckX;
+    latestState.puckY = apvtsPuckY;
     latestState.mix = morphBlend.load(std::memory_order_relaxed);
 
     const auto numSamples = buffer.getNumSamples();
@@ -99,7 +107,7 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
     const float macroShape = apvts.getRawParameterValue("macroShape")->load();
     const float lfoToPwm = apvts.getRawParameterValue("lfoToPwm")->load();
     const float driftAmt = apvts.getRawParameterValue("driftAmount")->load();
-    const float puckY = morphPuckY.load(std::memory_order_relaxed);
+    const float puckY = apvtsPuckY;
     const float dcoSubLvl = apvts.getRawParameterValue("dcoSubLevel")->load();
     const float noiseLvl = apvts.getRawParameterValue("noiseLevel")->load();
     const float lfoRateHz = apvts.getRawParameterValue("lfoRate")->load();
@@ -265,11 +273,26 @@ void WaverProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBu
             engine.arpNoteOn(message.getNoteNumber(), message.getFloatVelocity());
         else if (message.isNoteOff())
             engine.arpNoteOff(message.getNoteNumber(), message.getFloatVelocity());
+        else if (message.isPitchWheel())
+        {
+            constexpr float kBendRange = 2.0f;
+            const float bend = (static_cast<float>(message.getPitchWheelValue()) - 8192.0f) / 8192.0f;
+            engine.setPitchBendSemitones(bend * kBendRange);
+        }
+        else if (message.isChannelPressure())
+        {
+            const float pressure = static_cast<float>(message.getChannelPressureValue()) / 127.0f;
+            engine.setAftertouchCutoffOffset(pressure * 4000.0f);
+        }
         else if (message.isController())
         {
             const int cc = message.getControllerNumber();
+            const float val01 = static_cast<float>(message.getControllerValue()) / 127.0f;
+
             if (cc == 64)
                 engine.setSustainPedal(message.getControllerValue() >= 64);
+            else if (cc == 1)
+                engine.setModWheelDepth(val01);
             else if (cc == 123 || cc == 120)
                 engine.arpAllNotesOff();
         }
@@ -355,13 +378,27 @@ void WaverProcessor::setCurrentProgram(int index)
     if (factoryPresets.empty())
         return;
 
-    currentProgramIndex = juce::jlimit(0, getNumPrograms() - 1, index);
+    const int clamped = juce::jlimit(0, getNumPrograms() - 1, index);
+    if (clamped == currentProgramIndex)
+        return;
+
+    currentProgramIndex = clamped;
     const auto& preset = factoryPresets[static_cast<size_t>(currentProgramIndex)];
-    presetPuckX.store(preset.puckX, std::memory_order_relaxed);
-    presetPuckY.store(preset.puckY, std::memory_order_relaxed);
-    morphPuckX.store(preset.puckX, std::memory_order_relaxed);
-    morphPuckY.store(preset.puckY, std::memory_order_relaxed);
+    if (auto* px = apvts.getParameter("puckX"))
+    {
+        px->beginChangeGesture();
+        px->setValueNotifyingHost(px->convertTo0to1(preset.puckX));
+        px->endChangeGesture();
+    }
+    if (auto* py = apvts.getParameter("puckY"))
+    {
+        py->beginChangeGesture();
+        py->setValueNotifyingHost(py->convertTo0to1(preset.puckY));
+        py->endChangeGesture();
+    }
     pendingPresetIndex.store(currentProgramIndex, std::memory_order_release);
+    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
+    pushCurrentState();
 }
 
 const juce::String WaverProcessor::getProgramName(int index)
@@ -419,6 +456,38 @@ void WaverProcessor::onRestoreState(const juce::ValueTree& tree)
     }
 }
 
+void WaverProcessor::onStateRestored()
+{
+    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
+    pushCurrentState();
+}
+
+void WaverProcessor::setStateInformation(const void* data, int sizeInBytes)
+{
+    auto tree = juce::ValueTree::readFromData(data, static_cast<std::size_t>(sizeInBytes));
+    if (!tree.isValid())
+        return;
+
+    onRestoreState(tree);
+    apvts.replaceState(tree);
+
+    if (!hasRestoredInitialState)
+    {
+        hasRestoredInitialState = true;
+        onStateRestored();
+    }
+}
+
+int WaverProcessor::consumePresetNotify() noexcept
+{
+    return uiPresetNotify.exchange(-1, std::memory_order_acq_rel);
+}
+
+void WaverProcessor::requestPresetNotify() noexcept
+{
+    uiPresetNotify.store(currentProgramIndex, std::memory_order_release);
+}
+
 bool WaverProcessor::popVisualState(WaverState& out) noexcept
 {
     WaverState latest;
@@ -431,11 +500,18 @@ bool WaverProcessor::popVisualState(WaverState& out) noexcept
     return popped;
 }
 
-void WaverProcessor::setMorphSnapshot(float puckX, float puckY, float blend) noexcept
+void WaverProcessor::setMorphSnapshot(float /*puckX*/, float /*puckY*/, float blend) noexcept
 {
-    morphPuckX.store(juce::jlimit(-1.0f, 1.0f, puckX), std::memory_order_relaxed);
-    morphPuckY.store(juce::jlimit(-1.0f, 1.0f, puckY), std::memory_order_relaxed);
     morphBlend.store(juce::jlimit(0.15f, 0.60f, blend), std::memory_order_relaxed);
+}
+
+void WaverProcessor::pushCurrentState() noexcept
+{
+    WaverState state{};
+    state.puckX = apvts.getRawParameterValue("puckX")->load();
+    state.puckY = apvts.getRawParameterValue("puckY")->load();
+    state.mix   = morphBlend.load(std::memory_order_relaxed);
+    stateQueue.push(state);
 }
 
 void WaverProcessor::enqueueMomentTrigger() noexcept
@@ -837,7 +913,12 @@ void WaverProcessor::applyPreset(const Preset& preset)
     const auto applyParam = [&](const juce::String& id, float value)
     {
         if (auto* param = apvts.getParameter(id))
-            param->setValueNotifyingHost(param->convertTo0to1(value));
+        {
+            const auto normalised = param->convertTo0to1(value);
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(normalised);
+            param->endChangeGesture();
+        }
     };
 
     // Apply any parameters present in the preset.
