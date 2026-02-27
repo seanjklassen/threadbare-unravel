@@ -3,14 +3,16 @@
   --waver-surface-base-hover: #DD8469;
   --waver-text-primary: #D3C7BB;
   --waver-panel-ink: #31312B;
-  --waver-panel-ink-soft: #7F9BA5;
-  --waver-waveform-shadow-drift: #7F9BA5;
+  --waver-panel-ink-soft: #9AADB8;
+  --waver-waveform-shadow-drift: #9AADB8;
   --waver-text-upper: #D3C7BB;
   --waver-text-lower: #31312B;
+  --waver-preset-option: #31312B;
   --waver-overlay-surface: rgba(127, 155, 165, 0.3);
   --waver-overlay-panel: rgba(49, 49, 43, 0.42);
   --waver-border-soft: rgba(127, 155, 165, 0.15);
-  --waver-arp-tint: #AD97B1;
+  --waver-preset-selected: #3D1848;
+  --waver-arp-tint: #A896AA;
   --waver-arp-ring: rgba(204, 138, 126, 0.65);
   --waver-arp-ring-fade: rgba(204, 138, 126, 0);
   --waver-arp-overlay-bg: #AD97B1;
@@ -134,11 +136,11 @@
 }
 
 .tb-app .preset-option {
-  color: var(--waver-text-upper);
+  color: var(--waver-preset-option);
 }
 
 .tb-app .preset-option.selected {
-  color: var(--waver-surface-base-hover);
+  color: var(--waver-preset-selected);
 }
 
 .tb-app.presets-open .preset-option:hover,
@@ -166,7 +168,7 @@
 }
 
 .settings-view.open {
-  background: var(--waver-ground-fill, #78929A);
+  background: var(--waver-ground-fill, #9AADB8);
   transition:
     opacity 480ms cubic-bezier(0.16, 0.84, 0.44, 1),
     transform 540ms cubic-bezier(0.16, 0.84, 0.44, 1),

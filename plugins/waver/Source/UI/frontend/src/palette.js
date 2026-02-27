@@ -1,13 +1,15 @@
 const WAVER_PALETTE = Object.freeze({
-  surfaceBase: "#7D8FA0",
+  surfaceBase: "#9AADB8",
   surfaceBaseHover: "#E8B8A8",
   textPrimary: "#31312B",
-  panelInk: "#7D8FA0",
+  panelInk: "#9AADB8",
   panelInkSoft: "#E4E4D8",
   waveformShadowDrift: "#E4E4D8",
   textUpper: "#31312B",
   textLower: "#31312B",
-  arpTint: "#AD97B1",
+  presetOption: "#4e5f75",
+  presetSelected: "#111111",
+  arpTint: "#A896AA",
 })
 
 function hexToRgb(hex) {
@@ -36,6 +38,8 @@ function applyWaverPaletteCssVars(target = document.documentElement) {
   target.style.setProperty("--waver-waveform-shadow-drift", WAVER_PALETTE.waveformShadowDrift)
   target.style.setProperty("--waver-text-upper", WAVER_PALETTE.textUpper)
   target.style.setProperty("--waver-text-lower", WAVER_PALETTE.textLower)
+  target.style.setProperty("--waver-preset-option", WAVER_PALETTE.presetOption)
+  target.style.setProperty("--waver-preset-selected", WAVER_PALETTE.presetSelected)
   target.style.setProperty("--waver-arp-tint", WAVER_PALETTE.arpTint)
   target.style.setProperty("--waver-overlay-surface", alpha(WAVER_PALETTE.panelInkSoft, 0.3))
   target.style.setProperty("--waver-overlay-panel", alpha(WAVER_PALETTE.panelInk, 0.42))
