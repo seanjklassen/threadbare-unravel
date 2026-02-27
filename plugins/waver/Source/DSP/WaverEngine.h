@@ -41,6 +41,9 @@ public:
     void setNoiseColor(float color) noexcept;
     void setStereoWidth(float width) noexcept;
     void setSubOctave(int octaveChoice) noexcept;
+    void setPitchBendSemitones(float semitones) noexcept;
+    void setModWheelDepth(float depth01) noexcept;
+    void setAftertouchCutoffOffset(float offsetHz) noexcept;
 
     void setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept;
     void setOrganLevel(float level) noexcept;

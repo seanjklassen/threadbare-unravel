@@ -265,6 +265,24 @@ int WaverVoiceAllocator::countHeldVoices() const noexcept
     return held;
 }
 
+void WaverVoiceAllocator::setPitchBendSemitones(float semitones) noexcept
+{
+    for (auto& voice : voices)
+        voice.setPitchBendSemitones(semitones);
+}
+
+void WaverVoiceAllocator::setModWheelDepth(float depth01) noexcept
+{
+    for (auto& voice : voices)
+        voice.setModWheelDepth(depth01);
+}
+
+void WaverVoiceAllocator::setAftertouchCutoffOffset(float offsetHz) noexcept
+{
+    for (auto& voice : voices)
+        voice.setAftertouchCutoffOffset(offsetHz);
+}
+
 float WaverVoiceAllocator::midiNoteToHz(int noteNumber) noexcept
 {
     return 440.0f * std::pow(2.0f, (static_cast<float>(noteNumber) - 69.0f) / 12.0f);

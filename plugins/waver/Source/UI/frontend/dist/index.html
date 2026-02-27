@@ -4322,6 +4322,9 @@ const sendParam = (id, value) => {
     if ((id === "puckX" || id === "puckY") && !arpEnabled) {
       applyRbfInterpolation(morphState.puckX, morphState.puckY);
     }
+    if (id === "puckX" || id === "puckY") {
+      sendHostParam(id, value);
+    }
     return;
   }
   if (id === "momentTrigger") {
@@ -4337,7 +4340,7 @@ const THEME = {
 };
 let shell = null;
 let drawer = null;
-function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
+function onPresetLoaded(index, puckX, puckY) {
   if (index === lastLoadedPresetIndex) return;
   lastLoadedPresetIndex = index;
   const mappedSurfaceIndex = PRESET_TO_SURFACE_INDEX[index] ?? 0;
@@ -4350,15 +4353,14 @@ function onPresetLoaded(index, presetPuckX = 0, presetPuckY = 0) {
       momentSeed
     );
     shell?.viz?.triggerMoment?.();
-    const clampedX = Math.max(-1, Math.min(1, Number(presetPuckX) || 0));
-    const clampedY = Math.max(-1, Math.min(1, Number(presetPuckY) || 0));
-    const normX = (clampedX + 1) * 0.5;
-    const normY = (1 - clampedY) * 0.5;
-    morphState = { ...morphState, puckX: clampedX, puckY: clampedY };
-    if (typeof sendMorphSnapshotNative === "function") {
-      sendMorphSnapshotNative(clampedX, clampedY, morphState.blend);
+    if (typeof puckX === "number" && typeof puckY === "number") {
+      const clampedX = Math.max(-1, Math.min(1, puckX));
+      const clampedY = Math.max(-1, Math.min(1, puckY));
+      morphState = { ...morphState, puckX: clampedX, puckY: clampedY };
+      if (typeof sendMorphSnapshotNative === "function") {
+        sendMorphSnapshotNative(clampedX, clampedY, morphState.blend);
+      }
     }
-    shell?.controls?.animatePuckTo(normX, normY);
     applyAxisLabels();
   }
 }
@@ -4478,7 +4480,7 @@ function handleBackendState(payload) {
     syncPlaybackState(parsedPlaying);
   }
   if (parsed?.currentPreset !== void 0) {
-    onPresetLoaded(parsed.currentPreset, parsed?.presetPuckX, parsed?.presetPuckY);
+    onPresetLoaded(parsed.currentPreset, parsed?.puckX, parsed?.puckY);
   }
   shell?.updateState(payload);
   if (typeof parsed === "object" && parsed !== null) {

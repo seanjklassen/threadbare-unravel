@@ -38,6 +38,9 @@ public:
     void setEnvToFilter(float amount) noexcept;
     void setNoiseColor(float color) noexcept;
     void setSubOctave(int octaveChoice) noexcept;
+    void setPitchBendSemitones(float semitones) noexcept;
+    void setModWheelDepth(float depth01) noexcept;
+    void setAftertouchCutoffOffset(float offsetHz) noexcept;
 
     void render(std::span<float> left, std::span<float> right) noexcept;
 

@@ -290,6 +290,21 @@ void WaverEngine::setSubOctave(int octaveChoice) noexcept
     voiceAllocator.setSubOctave(octaveChoice);
 }
 
+void WaverEngine::setPitchBendSemitones(float semitones) noexcept
+{
+    voiceAllocator.setPitchBendSemitones(semitones);
+}
+
+void WaverEngine::setModWheelDepth(float depth01) noexcept
+{
+    voiceAllocator.setModWheelDepth(depth01);
+}
+
+void WaverEngine::setAftertouchCutoffOffset(float offsetHz) noexcept
+{
+    voiceAllocator.setAftertouchCutoffOffset(offsetHz);
+}
+
 void WaverEngine::setOrganDrawbars(float sub16, float fund8, float harm4, float mixture) noexcept
 {
     organ.setDrawbars(sub16, fund8, harm4, mixture);
