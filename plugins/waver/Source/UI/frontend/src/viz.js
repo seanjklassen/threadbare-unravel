@@ -1,7 +1,7 @@
 import { WAVER_PALETTE, hexToRgb } from "./palette.js"
 
 const { r: AMBER_R, g: AMBER_G, b: AMBER_B } = hexToRgb(WAVER_PALETTE.surfaceBase)
-const { r: COPPER_R, g: COPPER_G, b: COPPER_B } = hexToRgb(WAVER_PALETTE.waveformShadowDrift)
+
 const { r: BG_R, g: BG_G, b: BG_B } = hexToRgb(WAVER_PALETTE.panelInkSoft)
 
 const { r: ARP_R, g: ARP_G, b: ARP_B } = hexToRgb(WAVER_PALETTE.arpTint)
@@ -9,6 +9,9 @@ const { r: ARP_R, g: ARP_G, b: ARP_B } = hexToRgb(WAVER_PALETTE.arpTint)
 const TRAIL_COUNT = 3
 const POINT_COUNT = 80
 const OVERSHOOT = 30
+
+const VIZ_GATE_DB = -48
+const VIZ_GATE_LINEAR = Math.pow(10, VIZ_GATE_DB / 20)
 
 export class WaverViz {
   constructor(canvas) {
@@ -59,18 +62,18 @@ export class WaverViz {
     this.state = state || {}
     const rmsRaw = state?.rms ?? 0
     const peakRaw = state?.peak ?? 0
+    const gated = rmsRaw > VIZ_GATE_LINEAR
     const playing =
       Boolean(state?.transportActive) ||
       Boolean(state?.isPlaying ?? true) ||
       Boolean(state?.noteActive) ||
-      rmsRaw > 0.0002 ||
-      peakRaw > 0.0005
+      gated
     const playTarget = playing ? 1 : 0
     this.playMix += (playTarget - this.playMix) * 0.06
     if (this.playMix < 0.005) this.playMix = 0
 
-    const rms = playing ? rmsRaw : 0
-    const peak = playing ? peakRaw : 0
+    const rms = gated ? rmsRaw : 0
+    const peak = gated ? peakRaw : 0
     this.smoothRms += (rms - this.smoothRms) * 0.12
     this.smoothPeak += (peak - this.smoothPeak) * 0.15
     const arpTarget = state?.arpEnabled ? 1 : 0
@@ -223,9 +226,9 @@ export class WaverViz {
 
     const lerp = (a, b, t) => Math.round(a + (b - a) * t)
 
-    const baseR = Math.round(AMBER_R + (COPPER_R - AMBER_R) * shift)
-    const baseG = Math.round(AMBER_G + (COPPER_G - AMBER_G) * shift)
-    const baseB = Math.round(AMBER_B + (COPPER_B - AMBER_B) * shift)
+    const baseR = AMBER_R
+    const baseG = AMBER_G
+    const baseB = AMBER_B
     const lineBlend = this.state?.arpEnabled ? 1 : 0
     const r = lerp(baseR, ARP_R, lineBlend)
     const g = lerp(baseG, ARP_G, lineBlend)

@@ -41,8 +41,6 @@ public:
     {
         float puckX = 0.0f;
         float puckY = 0.0f;
-        float presetPuckX = 0.0f;
-        float presetPuckY = 0.0f;
         float mix = 0.5f;
         float output = 0.0f;
         float inLevel = 0.0f;
@@ -68,9 +66,12 @@ public:
     void setMorphSnapshot(float puckX, float puckY, float blend) noexcept;
     void enqueueMomentTrigger() noexcept;
 
+    void setStateInformation(const void* data, int sizeInBytes) override;
+
 protected:
     void onSaveState(juce::ValueTree& state) override;
     void onRestoreState(const juce::ValueTree& tree) override;
+    void onStateRestored() override;
 
     bool acceptsMidi() const override { return true; }
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
@@ -102,6 +103,7 @@ private:
     };
 
     void drainUiEvents() noexcept;
+    void pushCurrentState() noexcept;
 
     struct Preset
     {
@@ -131,11 +133,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> outputGainSmoothed;
     std::uint32_t preparedBlockSize = 0;
     std::uint32_t preparedChannels = 0;
-    std::atomic<float> morphPuckX { 0.0f };
-    std::atomic<float> morphPuckY { 0.0f };
     std::atomic<float> morphBlend { 0.35f };
-    std::atomic<float> presetPuckX { 0.0f };
-    std::atomic<float> presetPuckY { 0.0f };
     float frozenAgeNorm = 0.5f;
     bool prevArpOn = false;
     std::vector<Preset> factoryPresets;
@@ -146,6 +144,7 @@ private:
     ArpLatchPhase arpLatchPhase = ArpLatchPhase::idle;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> arpLatchGain;
     std::atomic<int> pendingPresetIndex { -1 };
+    bool hasRestoredInitialState = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaverProcessor)
 };
