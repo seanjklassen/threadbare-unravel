@@ -47,9 +47,19 @@ Threadbare occupies the space between boutique pedal makers (Chase Bliss, Meris)
 **Platforms:** macOS (Universal binary arm64 + x86_64), Windows.
 **Price:** $45.
 
-### 2.2 Future Products
+### 2.2 Waver (v0.7.0 — Current)
 
-The monorepo (`threadbare-unravel`) supports multiple plugins via `add_subdirectory`. Future products (e.g. Weave) follow the same architecture, shared core, and brand guidelines documented here.
+**Role:** Character-driven soft synthesizer — "broken but beautiful synthesis."
+**Status:** In active development.
+**Formats:** VST3, AU, Standalone.
+**Platforms:** macOS (Universal binary arm64 + x86_64), Windows.
+**Price:** TBD.
+
+*For the detailed spec, see `docs/waver_spec.md`.*
+
+### 2.3 Future Products
+
+The monorepo (`threadbare-unravel`) supports multiple plugins via `add_subdirectory`. Future products follow the same architecture, shared core, and brand guidelines documented here.
 
 ---
 
@@ -71,17 +81,26 @@ The monorepo (`threadbare-unravel`) supports multiple plugins via `add_subdirect
 ```
 threadbare-unravel/
 ├── plugins/
-│   └── unravel/            # Each plugin is self-contained
-│       ├── config/         # params.json (parameter source of truth)
-│       ├── assets/         # Icons, branding
+│   ├── unravel/            # Reverb plugin
+│   │   ├── config/         # params.json (parameter source of truth)
+│   │   ├── assets/         # Icons, branding
+│   │   └── Source/
+│   │       ├── DSP/        # Pure C++ signal processing
+│   │       ├── Processors/ # JUCE AudioProcessor integration
+│   │       └── UI/         # WebView editor + frontend/
+│   └── waver/              # Synth plugin (same structure)
+│       ├── config/
+│       ├── assets/
 │       └── Source/
-│           ├── DSP/        # Pure C++ signal processing
-│           ├── Processors/ # JUCE AudioProcessor integration
-│           └── UI/         # WebView editor + frontend/
+│           ├── DSP/
+│           ├── Processors/
+│           └── UI/
 ├── shared/
 │   ├── core/               # ProcessorBase, WebViewBridge, StateQueue
-│   ├── scripts/            # generate_params.js
-│   └── ui/shell/           # Shared UI components (future)
+│   ├── scripts/            # generate_params.js, scaffold-plugin.js
+│   └── ui/
+│       ├── shell/          # Shared UI components (puck, sliders, presets, elastic-slider)
+│       └── bridge/         # juce-bridge.js (JUCE 8 native function bridge)
 ├── installer/              # Platform installer resources
 ├── scripts/                # Build & packaging automation
 ├── docs/                   # Product specs, guides, this file
@@ -1082,6 +1101,7 @@ Note: when using `shared/scripts/scaffold-plugin.js`, steps 1-10 are generated b
 |---|---|
 | `docs/threadbare-prd.md` | This file. Product requirements, architecture, and standards. |
 | `docs/threadbare-brand-guide.md` | Visual identity, voice, and design language. |
+| `docs/brand_strategy.md` | Strategic brand framework — purpose, positioning, messaging hierarchy. |
 | `docs/build_guide.md` | Build instructions and CI setup. |
 | `docs/webview_integration_guide.md` | JUCE 8 WebView setup and troubleshooting. |
 | `docs/installer_ux_completion_map.md` | Installer UX implementation status. |
@@ -1100,6 +1120,15 @@ Note: when using `shared/scripts/scaffold-plugin.js`, steps 1-10 are generated b
 | `docs/unravel_landing_page_copy.md` | Marketing copy for landing page and store listing. |
 | `plugins/unravel/config/params.json` | Parameter definitions (source of truth). |
 | `plugins/unravel/Source/UnravelTuning.h` | All DSP tuning constants. |
+
+**Waver-specific:**
+
+| Document | Purpose |
+|---|---|
+| `docs/waver_spec.md` | Detailed Waver product spec (v6.0). |
+| `docs/waver_landing_page_copy.md` | Marketing copy for landing page and store listing. |
+| `plugins/waver/config/params.json` | Parameter definitions (source of truth). |
+| `plugins/waver/Source/WaverTuning.h` | DSP tuning constants. |
 
 ---
 

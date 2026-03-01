@@ -260,11 +260,11 @@ Products fall into two categories: **Instruments** (generate sound with personal
 | Element | Value |
 |---|---|
 | Category | Instrument |
-| Surface base | `#7D8FA0` (coastal blue-gray) |
+| Surface base | `#9AADB8` (coastal blue-gray) |
 | Surface hover | `#E8B8A8` (warm sand / blush) |
 | Panel ink soft | `#E4E4D8` (cream / sea-foam) |
 | Text / panel ink | `#31312B` (dark driftwood) |
-| Arp tint | `#AD97B1` (muted lavender / twilight) |
+| Arp tint | `#A896AA` (muted lavender / twilight) |
 | Foundation background | `#31312B` (dark driftwood, via CSS) |
 | Emotional targets | Weathered, Tender, Breathing |
 | Key metaphor | Life — breathing, drifting, never sitting still |

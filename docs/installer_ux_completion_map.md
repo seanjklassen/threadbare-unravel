@@ -58,3 +58,13 @@ This maps `installer_ux_plan` goals to what is implemented on branch `installer-
 - Fix existing Windows compile errors in shared code (`shared/core/WebViewBridge.cpp`) before enabling Windows job.
 - Replace placeholder installer copy/branding assets and final legal text.
 
+## Waver installer gap
+
+The entire installer pipeline is currently Unravel-only:
+- `installer/product.json` contains only Unravel metadata (`productName: "Unravel"`, `productId: "unravel"`).
+- Build scripts (`scripts/build-installer.sh`, `scripts/build-installer.ps1`) hardcode `product_name="unravel"`.
+- CI workflow (`.github/workflows/installer-build.yml`) only references Unravel paths and artefacts.
+- No `installer/product.json` equivalent exists for Waver.
+
+Before shipping Waver, the installer infrastructure needs to be parameterized per plugin or duplicated. See PRD section 6.10 for the recommended migration path.
+

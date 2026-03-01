@@ -1,14 +1,17 @@
-# Unravel Plugin Build Guide
+# Threadbare Build Guide
+
+Build instructions for all Threadbare plugins (Unravel, Waver).
 
 ## Prerequisites
 
 - CMake (3.22+)
 - C++20 compatible compiler (Clang on macOS)
+- Node.js 18+ (for frontend bundling)
 - JUCE 8 (included via CMake FetchContent)
 
 ## Quick Build (Most Common)
 
-After making code changes, rebuild and install with:
+After making code changes, rebuild and install all plugins with:
 
 ```bash
 cd /Users/seanklassen-mercury/threadbare-unravel
@@ -18,10 +21,10 @@ cmake --build build --config Release
 This will:
 1. Compile changed source files
 2. Link the plugin binaries
-3. Automatically install to system plugin folders:
-   - **AU**: `~/Library/Audio/Plug-Ins/Components/unravel.component`
-   - **VST3**: `~/Library/Audio/Plug-Ins/VST3/unravel.vst3`
-   - **Standalone**: `build/plugins/unravel/ThreadbareUnravel_artefacts/Release/Standalone/unravel.app`
+3. Automatically install to user plugin folders:
+   - **AU**: `~/Library/Audio/Plug-Ins/Components/{product}.component`
+   - **VST3**: `~/Library/Audio/Plug-Ins/VST3/{product}.vst3`
+   - **Standalone**: `build/plugins/{product}/Threadbare{Product}_artefacts/Release/Standalone/{product}.app`
 
 ## Full Clean Build
 
@@ -36,37 +39,37 @@ cmake --build build --config Release
 
 ## Frontend Only
 
-If you only changed frontend files (`plugins/unravel/Source/UI/frontend/`):
+If you only changed frontend files for a specific plugin (`plugins/{product}/Source/UI/frontend/`):
 
 ```bash
-# 1. Build frontend assets
-cd plugins/unravel/Source/UI/frontend
+# 1. Build frontend assets (replace {product} with unravel or waver)
+cd plugins/{product}/Source/UI/frontend
 npm run build
 
 # 2. Force regenerate resources and rebuild plugin
 cd /Users/seanklassen-mercury/threadbare-unravel
-cmake --build build --target UnravelResources --config Release -- -B
+cmake --build build --target {Product}Resources --config Release -- -B
 cmake --build build --config Release
 ```
 
 ## Parameter Changes
 
-If you modified `plugins/unravel/config/params.json`:
+If you modified `plugins/{product}/config/params.json`:
 
 ```bash
-# 1. Regenerate C++ and JS parameter files
+# 1. Regenerate C++ and JS parameter files (replace {product}/{Product} appropriately)
 node shared/scripts/generate_params.js \
-  plugins/unravel/config/params.json \
-  plugins/unravel/Source/UnravelGeneratedParams.h \
-  plugins/unravel/Source/UI/frontend/src/generated/params.js
+  plugins/{product}/config/params.json \
+  plugins/{product}/Source/{Product}GeneratedParams.h \
+  plugins/{product}/Source/UI/frontend/src/generated/params.js
 
 # 2. Rebuild frontend (params.js changed)
-cd plugins/unravel/Source/UI/frontend
+cd plugins/{product}/Source/UI/frontend
 npm run build
 
 # 3. Rebuild plugin
 cd /Users/seanklassen-mercury/threadbare-unravel
-cmake --build build --target UnravelResources --config Release -- -B
+cmake --build build --target {Product}Resources --config Release -- -B
 cmake --build build --config Release
 ```
 
@@ -78,13 +81,16 @@ After building:
 2. **Reopen the DAW** - most DAWs rescan plugins on launch
 3. If changes don't appear, manually rescan plugins in DAW preferences
 
-### Standalone App Location
+### Standalone App Locations
 
 ```
-/Users/seanklassen-mercury/threadbare-unravel/build/plugins/unravel/ThreadbareUnravel_artefacts/Release/Standalone/unravel.app
+build/plugins/unravel/ThreadbareUnravel_artefacts/Release/Standalone/unravel.app
+build/plugins/waver/ThreadbareWaver_artefacts/Release/Standalone/waver.app
 ```
 
 ## Build Targets
+
+### Unravel
 
 | Target | Description |
 |--------|-------------|
@@ -94,9 +100,19 @@ After building:
 | `ThreadbareUnravel_VST3` | VST3 plugin |
 | `UnravelResources` | Frontend binary resources |
 
+### Waver
+
+| Target | Description |
+|--------|-------------|
+| `ThreadbareWaver` | Shared code library |
+| `ThreadbareWaver_Standalone` | Standalone application |
+| `ThreadbareWaver_AU` | Audio Unit plugin |
+| `ThreadbareWaver_VST3` | VST3 plugin |
+| `WaverResources` | Frontend binary resources |
+
 Build a specific target:
 ```bash
-cmake --build build --target ThreadbareUnravel_VST3 --config Release
+cmake --build build --target ThreadbareWaver_VST3 --config Release
 ```
 
 ## Installer Builds
@@ -201,8 +217,8 @@ The workflow signs the Windows installer only when `AZURE_CLIENT_ID` is set. End
 - Check that the install paths match where your DAW looks for plugins
 
 ### Frontend changes not appearing
-- Make sure to run `npm run build` in the frontend folder
-- Rebuild `UnravelResources` target with `-B` flag to force regeneration
+- Make sure to run `npm run build` in the correct plugin's frontend folder
+- Rebuild the `{Product}Resources` target with `-B` flag to force regeneration (e.g. `UnravelResources` or `WaverResources`)
 - Rebuild the main plugin after resources
 
 ### Build errors after pulling changes

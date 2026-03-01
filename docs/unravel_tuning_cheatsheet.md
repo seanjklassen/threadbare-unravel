@@ -31,8 +31,6 @@ Reference for the designer-facing constants defined in `Source/UnravelTuning.h`.
 - `kReverseGainReduction = 0.75`: -2.5dB for reverse grains.
 - `kMinLookbackMs = 150`, `kMaxLookbackMs = 750`: puck X memory proximity.
 - `kMinPanWidth = 0.3`, `kMaxPanWidth = 0.85`: stereo width scaling.
-- `kFreezeShimmerProbability = 0.40`: increased shimmer when frozen.
-
 ## Freeze (Legacy Multi-Head Loop)
 *Note: These constants support internal FDN freeze behavior. See Disintegration for the main looper feature.*
 - `kLoopBufferSeconds = 5.0`: multi-head loop buffer duration.

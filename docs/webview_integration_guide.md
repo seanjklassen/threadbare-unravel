@@ -1,13 +1,15 @@
 # JUCE 8 WebView Integration Guide
 
-This document describes how to properly set up WebBrowserComponent with embedded resources and native function integration in JUCE 8.
+This document describes how to properly set up WebBrowserComponent with embedded resources and native function integration in JUCE 8. It applies to all Threadbare plugins (Unravel, Waver, and future products).
 
 ## Overview
 
-The Threadbare Unravel plugin uses a WebView-based UI with:
+All Threadbare plugins use a WebView-based UI with:
 - HTML/CSS/JS frontend built with Vite
 - Binary-embedded resources via `juce_add_binary_data`
 - Native C++ ↔ JavaScript communication via JUCE 8's native function protocol
+- Shared UI shell (`shared/ui/shell/`) providing puck, sliders, presets, and elastic-slider components
+- Shared bridge module (`shared/ui/bridge/juce-bridge.js`) wrapping the JUCE native function protocol
 
 ---
 
@@ -19,14 +21,14 @@ The Threadbare Unravel plugin uses a WebView-based UI with:
 # Glob all files from the built frontend dist folder
 file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS "${UI_DIR}/frontend/dist/*")
 
-# Create binary data target with custom namespace
-juce_add_binary_data(UnravelResources
-    NAMESPACE UnravelResources
+# Create binary data target with custom namespace (one per plugin)
+juce_add_binary_data({Product}Resources
+    NAMESPACE {Product}Resources
     SOURCES ${UI_RESOURCES}
 )
 
 # Link to your plugin
-target_link_libraries(YourPlugin PRIVATE UnravelResources)
+target_link_libraries(Threadbare{Product} PRIVATE {Product}Resources)
 ```
 
 ### Generated Files
@@ -35,7 +37,7 @@ JUCE generates:
 - `BinaryData.h` - Header with resource declarations
 - `BinaryData1.cpp`, `BinaryData2.cpp`, etc. - Resource data
 
-**Important:** The header is always named `BinaryData.h` regardless of target name. The namespace inside matches what you specified (`UnravelResources`).
+**Important:** The header is always named `BinaryData.h` regardless of target name. The namespace inside matches what you specified (e.g. `UnravelResources`, `WaverResources`).
 
 ### Resource Name Mangling
 
@@ -94,7 +96,7 @@ std::optional<juce::WebBrowserComponent::Resource> getResource(const juce::Strin
     
     // 3. Look up resource
     int dataSize = 0;
-    const char* data = UnravelResources::getNamedResource(mangled.toRawUTF8(), dataSize);
+    const char* data = {Product}Resources::getNamedResource(mangled.toRawUTF8(), dataSize);
     
     // 4. Return with MIME type
     if (data != nullptr && dataSize > 0)
@@ -252,24 +254,26 @@ const loadPresets = async () => {
 
 ### vite-plugin-singlefile
 
-We use `vite-plugin-singlefile` to bundle everything into one HTML file for easy embedding.
+We use `vite-plugin-singlefile` to bundle everything into one HTML file for easy embedding. Each plugin's `vite.config.js` also aliases the shared UI modules.
 
 ```javascript
 // vite.config.js
 import { defineConfig } from 'vite'
 import { viteSingleFile } from 'vite-plugin-singlefile'
+import path from 'path'
 
 export default defineConfig({
   plugins: [viteSingleFile()],
+  resolve: {
+    alias: {
+      '@threadbare/shell': path.resolve(__dirname, '../../../../../shared/ui/shell/src'),
+      '@threadbare/bridge': path.resolve(__dirname, '../../../../../shared/ui/bridge')
+    }
+  },
   build: {
     outDir: 'dist',
-    assetsInlineLimit: 100000000,  // Inline all assets
-    cssCodeSplit: false,
-    rollupOptions: {
-      output: {
-        inlineDynamicImports: true
-      }
-    }
+    minify: false,
+    sourcemap: false
   }
 })
 ```
@@ -299,18 +303,18 @@ if (document.readyState === 'loading') {
 ### Build Steps
 
 ```bash
-# 1. Build frontend
-cd Source/UI/frontend
+# 1. Build frontend (replace {product} with unravel or waver)
+cd plugins/{product}/Source/UI/frontend
 npm run build
 
 # 2. Rebuild C++ (picks up new binary resources)
-cd ../../../build
-ninja  # or cmake --build .
+cd /path/to/threadbare-unravel
+cmake --build build --config Release
 
-# Plugin is now at:
-# - build/ThreadbareUnravel_artefacts/Debug/Standalone/
-# - build/ThreadbareUnravel_artefacts/Debug/VST3/
-# - build/ThreadbareUnravel_artefacts/Debug/AU/
+# Plugins are now at:
+# - build/plugins/{product}/Threadbare{Product}_artefacts/Release/Standalone/
+# - build/plugins/{product}/Threadbare{Product}_artefacts/Release/VST3/
+# - build/plugins/{product}/Threadbare{Product}_artefacts/Release/AU/
 ```
 
 ### Debugging Tips
@@ -345,23 +349,36 @@ console.log('Backend methods:', Object.keys(window.__JUCE__?.backend || {}))
 
 ## 7. File Structure Reference
 
+Each plugin follows this structure. Shared controls (puck, sliders, presets) live in `shared/ui/shell/src/` and are imported via the `@threadbare/shell` alias. The JUCE native function bridge lives in `shared/ui/bridge/juce-bridge.js` and is imported via `@threadbare/bridge`.
+
 ```
-Source/
+plugins/{product}/Source/
 ├── UI/
-│   ├── UnravelEditor.cpp      # WebView setup, resource provider
-│   ├── UnravelEditor.h
+│   ├── {Product}Editor.cpp      # WebView setup, resource provider
+│   ├── {Product}Editor.h
 │   └── frontend/
-│       ├── dist/              # Built output (embedded in binary)
-│       │   └── index.html     # Single-file bundle
+│       ├── dist/                # Built output (embedded in binary)
+│       │   └── index.html       # Single-file bundle
 │       ├── src/
-│       │   ├── main.js        # Entry point with JUCE polyfill
-│       │   ├── controls.js    # UI controls
-│       │   └── ...
-│       ├── index.html         # Dev template
+│       │   ├── main.js          # Entry point, imports @threadbare/shell and @threadbare/bridge
+│       │   ├── viz.js           # Plugin-specific visualization (e.g. orb.js for Unravel)
+│       │   └── generated/
+│       │       └── params.js    # Auto-generated from params.json
+│       ├── index.html           # Dev template
 │       ├── package.json
-│       └── vite.config.js
+│       └── vite.config.js       # Includes @threadbare/* aliases
 └── Processors/
-    └── UnravelProcessor.cpp   # Audio processing
+    └── {Product}Processor.cpp   # Audio processing
+
+shared/ui/
+├── shell/src/
+│   ├── index.js                 # initShell() — shared shell initializer
+│   ├── controls.js              # Puck, sliders, freeze button
+│   ├── presets.js               # Preset dropdown
+│   ├── elastic-slider.js        # Spring-physics slider
+│   └── shell.css                # Shared styles and theme tokens
+└── bridge/
+    └── juce-bridge.js           # createNativeFunctionBridge(), createParamSender()
 ```
 
 ---
@@ -381,6 +398,6 @@ Before release, verify:
 
 ---
 
-*Last updated: December 2024*
+*Last updated: March 2026*
 *JUCE version: 8.0.10*
 

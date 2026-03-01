@@ -35,11 +35,11 @@ Three emotional targets serve as the north star for all design decisions: **Weat
 | Product name          | waver                                                  |
 | Tagline               | broken but beautiful synthesis.                        |
 | Emotional targets     | Weathered · Tender · Breathing                         |
-| Surface base          | 7D8FA0 (coastal blue-gray — ocean viewed from above)   |
+| Surface base          | 9AADB8 (coastal blue-gray — ocean viewed from above)   |
 | Surface hover         | E8B8A8 (warm sand / blush)                             |
 | Panel ink soft        | E4E4D8 (cream / sea-foam)                              |
 | Text / panel ink      | 31312B (dark driftwood)                                |
-| Arp tint              | AD97B1 (muted lavender / twilight)                     |
+| Arp tint              | A896AA (muted lavender / twilight)                     |
 | Foundation background | 31312B (dark driftwood, via CSS)                       |
 | Plugin dimensions     | 380–420 px wide, 670–720 px tall                       |
 | CMake target          | ThreadbareWaver                                        |
@@ -474,10 +474,10 @@ waver’s primary visualization is a **slowly evolving waveform scope** rendered
 
 The @threadbare/shell expects a VizClass and a canvas element (it looks for orb in the DOM). For waver:
 
-- **VizClass:** Pass a WaverScope class that implements the same interface as Unravel’s orb viz. The shell doesn’t care what it draws; it just calls update() on each frame with the current state.
+- **VizClass:** Pass a `WaverViz` class (in `viz.js`) that implements the same interface as Unravel’s orb viz. The shell doesn’t care what it draws; it just calls update() on each frame with the current state.
 - **Canvas reuse:** Keep id="orb" for the canvas element the shell manages. No structural change to the shell DOM is required — just a different viz class.
 - **Theme tokens:** Apply waver’s accent color and palette via the shell’s themeTokens configuration (e.g. { accent: "C4A46C", bg: "241D19", text: "D3C7BB" }). The scope and all shell controls (sliders, preset browser, drawer) inherit these tokens automatically.
-- **No shell modifications required.** The shell is designed for pluggable viz and theming. waver’s frontend work is limited to: implementing the WaverScope viz class, writing a main.js entry that imports from @threadbare/shell and passes waver-specific config, and creating the params.js (auto-generated from params.json).
+- **No shell modifications required.** The shell is designed for pluggable viz and theming. waver’s frontend work is limited to: implementing the `WaverViz` class (in `viz.js`), writing a `main.js` entry that imports from `@threadbare/shell` and passes waver-specific config, and creating the `params.js` (auto-generated from `params.json`).
 
 ## **7.3 The Puck: RBF Interpolation in Perceptual Space**
 
@@ -535,7 +535,7 @@ macroShape acts as a macro: it drives a single non-linear curve that sets target
 | noiseLevel   | noise        | 0.0 – 1.0      | Noise generator level                                                                                                     |
 | noiseColor   | color        | White – Pink   | Noise spectrum                                                                                                            |
 | toyIndex     | fm depth     | 0.0 – 1.0      | Toy layer modulation index                                                                                                |
-| toyRatio     | fm ratio     | Quantized list | Modulator-to-carrier ratio                                                                                                |
+| toyRatio     | fm ratio     | float 0.0–1.0 (mapped to quantized ratios in DSP) | Modulator-to-carrier ratio                                                                                                |
 | layerDco     | analog       | 0.0 – 1.0      | DCO layer level                                                                                                           |
 | layerToy     | toy          | 0.0 – 1.0      | Toy layer level                                                                                                           |
 | layerOrgan   | organ        | 0.0 – 1.0      | Organ layer level                                                                                                         |
@@ -631,7 +631,7 @@ The alternative—encoding choices as float (0.0, 1.0, 2.0, 3.0) and documenting
 | outputGain | output       | float | 24 to 12     | 0.0     | dB   |
 
 
-*Plus the 40 drawer parameters defined in Section 7.5 (Tone: 5, Shape: 15, Motion: 13, Print: 8). Total parameter count: 46.*
+*Plus the drawer parameters defined in Section 7.5 (Tone: 5, Shape: 15, Motion: 13, Print: 8) and non-visible APVTS parameters (`momentTrigger`, `arpEnabled`, `qualityMode`). Actual parameter count in `params.json`: 47.*
 
 ## **8.2 Playable Surfaces**
 
