@@ -9,7 +9,7 @@ Complete Architectural Specification
 
 *Digital Signal Processing, Interface Design, and Development Methodology*
 
-Version 6.0  —  February 2026
+Version 6.0, February 2026
 
 threadbare audio
 
@@ -23,11 +23,11 @@ This specification defines the complete architecture for **waver**, a software s
 
 ## **1.1 Brand Identity and Product Metadata**
 
-**waver** — the name describes exactly what the instrument does. Oscillators waver. Tape speed wavers. Pitch drifts and pulls back. The word also captures the emotional register of the music this synthesizer exists to create: the constant hovering between hope and resignation, certainty and doubt.
+**waver**: the name describes exactly what the instrument does. Oscillators waver. Tape speed wavers. Pitch drifts and pulls back. The word also captures the emotional register of the music this synthesizer exists to create: the constant hovering between hope and resignation, certainty and doubt.
 
 The tagline: **"broken but beautiful synthesis."**
 
-Three emotional targets serve as the north star for all design decisions: **Weathered** (the tape, the drift, the controlled imperfection), **Tender** (the emotional register is never aggressive, even when distorted), and **Breathing** (the sound is never static—OU drift, chorus modulation, and flutter keep everything alive).
+Three emotional targets serve as the north star for all design decisions: **Weathered** (the tape, the drift, the controlled imperfection), **Tender** (the emotional register is never aggressive, even when distorted), and **Breathing** (the sound is never static; OU drift, chorus modulation, and flutter keep everything alive).
 
 
 | Element               | Value                                                  |
@@ -35,7 +35,7 @@ Three emotional targets serve as the north star for all design decisions: **Weat
 | Product name          | waver                                                  |
 | Tagline               | broken but beautiful synthesis.                        |
 | Emotional targets     | Weathered · Tender · Breathing                         |
-| Surface base          | 9AADB8 (coastal blue-gray — ocean viewed from above)   |
+| Surface base          | 9AADB8 (coastal blue-gray, ocean viewed from above)   |
 | Surface hover         | E8B8A8 (warm sand / blush)                             |
 | Panel ink soft        | E4E4D8 (cream / sea-foam)                              |
 | Text / panel ink      | 31312B (dark driftwood)                                |
@@ -58,16 +58,16 @@ The palette is conceptually a bird's-eye view of a beach with waves: coastal blu
 
 **Playability over programmability.** The instrument must be immediately rewarding to a musician who has never opened a synthesizer manual. The primary interface is a 2D morphing controller, not a parameter grid. Deep editing is available but hidden.
 
-**No reverb by design.** waver deliberately excludes built-in reverb. Spatial duties are handled by **unravel** or the user’s preferred reverb plugin. This keeps waver lean and reinforces the threadbare product ecosystem — each instrument has a focused purpose rather than duplicating functionality.
+**No reverb by design.** waver deliberately excludes built-in reverb. Spatial duties are handled by **unravel** or the user’s preferred reverb plugin. This keeps waver lean and reinforces the threadbare product ecosystem: each instrument has a focused purpose rather than duplicating functionality.
 
 ## **1.3 Sonic DNA: Deconstructing the Target Aesthetic**
 
 The "Lytle sound" is identifiable by several converging characteristics:
 
-- **Polyphonic pads with internal motion.** Sustained chords that shimmer and breathe, driven by BBD chorus artifacts and slow oscillator drift. The Juno-60 is the primary source, but the movement is never pristine—it passes through tape and room before reaching the listener.
+- **Polyphonic pads with internal motion.** Sustained chords that shimmer and breathe, driven by BBD chorus artifacts and slow oscillator drift. The Juno-60 is the primary source, but the movement is never pristine; it passes through tape and room before reaching the listener.
 - **Toy keyboard melodic lines.** Bright, nasal, slightly broken-sounding leads from consumer Yamaha FM keyboards (PSS-270, PSS-480). These sit on top of the pad layer with percussive attack and limited sustain.
-- **Organ beds providing harmonic gravity.** Dense, static, fully polyphonic organ tones (Baldwin-style divide-down) that anchor everything below. These never modulate—they simply exist as harmonic infrastructure.
-- **The "print" layer.** Everything passes through simulated budget recording gear: cassette saturation, wow and flutter, hiss, and the mid-focused compression of consumer tape. This is not optional post-processing—it is fundamental to the identity.
+- **Organ beds providing harmonic gravity.** Dense, static, fully polyphonic organ tones (Baldwin-style divide-down) that anchor everything below. These never modulate; they simply exist as harmonic infrastructure.
+- **The "print" layer.** Everything passes through simulated budget recording gear: cassette saturation, wow and flutter, hiss, and the mid-focused compression of consumer tape. This is not optional post-processing; it is fundamental to the identity.
 
 # **2 The Tri-Layer Sound Engine**
 
@@ -134,10 +134,10 @@ The final synthesis layer provides static harmonic infrastructure. No voice stea
 
 **2.3.1 Drawbar Controls**
 
-- **16′ Sub-fundamental** — one octave below the played note
-- **8′ Fundamental** — the primary pitch
-- **4′ Second harmonic** — one octave above, adding brightness
-- **Mixture** — upper partials (5⅓′, 2⅔′, 2′) as a combined registration
+- **16′ Sub-fundamental:** one octave below the played note
+- **8′ Fundamental:** the primary pitch
+- **4′ Second harmonic:** one octave above, adding brightness
+- **Mixture:** upper partials (5⅓′, 2⅔′, 2′) as a combined registration
 
 Each drawbar is a 0–8 level control (Hammond convention). Output is processed through a gentle fixed-bandpass formant filter (center 800–1200 Hz, Q 0.7–1.2).
 
@@ -162,7 +162,7 @@ When all 8 voices are active and a new note-on arrives, the allocator uses a pri
 
 ## **3.3 Portamento**
 
-**Restored from V3 — this is essential for the Lytle sound.** Melodic toy-keyboard lines and expressive pad transitions require pitch glide.
+**Restored from V3; this is essential for the Lytle sound.** Melodic toy-keyboard lines and expressive pad transitions require pitch glide.
 
 Portamento is implemented as a one-pole low-pass filter on the target pitch value, with a glide time controllable from 0 ms to 2000 ms. Two modes are provided:
 
@@ -191,7 +191,7 @@ The following MIDI mappings are supported:
 
 ## **3.5 Arpeggiator Mode**
 
-Arpeggiator mode is waver’s counterpart to Unravel’s disintegration looper: a single, distinctive bonus feature that extends the plugin without defining it. When enabled, held notes are arpeggiated in a pattern and rate derived from the **puck**, then fed into the existing voice allocator and print chain. The result is the same broken-but-beautiful character in a repeating, playable pattern—ideal for Lytle-style pad hooks and toy-keyboard figures. **No new sliders or drawer controls:** when the arp is on, the puck's X and Y axes drive arp parameters (rate, pattern, gate, swing) instead of—or in addition to—the usual RBF/presence/age mapping.
+Arpeggiator mode is waver’s counterpart to Unravel’s disintegration looper: a single, distinctive bonus feature that extends the plugin without defining it. When enabled, held notes are arpeggiated in a pattern and rate derived from the **puck**, then fed into the existing voice allocator and print chain. The result is the same broken-but-beautiful character in a repeating, playable pattern, ideal for Lytle-style pad hooks and toy-keyboard figures. **No new sliders or drawer controls:** when the arp is on, the puck's X and Y axes drive arp parameters (rate, pattern, gate, swing) instead of (or in addition to) the usual RBF/presence/age mapping.
 
 **Behavior**
 
@@ -200,7 +200,7 @@ Arpeggiator mode is waver’s counterpart to Unravel’s disintegration looper: 
 - **Patterns:** Up, Down, Up-Down, Down-Up, Random (deterministic, PRNG seeded by Moment so bounce-in-place matches). Pattern order is computed from the current set of held notes (sorted by pitch where applicable). Pattern selection is derived from puck position when arp is on.
 - **Rate:** Free-running (0.5–32 Hz) or host tempo sync (1/4, 1/8, 1/16, 1/32 note). Rate-dependent constants recalculated in prepareToPlay(sampleRate) per Section 4.1.1. Rate is derived from puck position when arp is on.
 - **Gate:** 5–95% of step length. Gate is derived from puck position when arp is on.
-- **Swing:** Even steps vs. swung (e.g. 60–75% delay on every other step). Subtle—never aggressive. Swing amount is derived from puck position when arp is on; higher Y can increase swing for a more “worn” feel, consistent with Age.
+- **Swing:** Even steps vs. swung (e.g. 60–75% delay on every other step). Subtle, never aggressive. Swing amount is derived from puck position when arp is on; higher Y can increase swing for a more “worn” feel, consistent with Age.
 - **Iron Law compliance:** The held-note buffer is a fixed-size array (e.g. max 16 notes). No dynamic allocation. Step phase and pattern index are state variables updated sample-accurately or block-accurately from a deterministic clock. Any “humanize” (e.g. micro-timing jitter) must use the same PRNG/seed as the rest of the engine and be saved in DeterminismState if it affects audio.
 
 **Puck mapping when arp on**
@@ -214,7 +214,7 @@ Implementations may use the raw puck coordinates (puckX, puckY) or the same RBF-
 
 **UI**
 
-- **Toggle only:** An arpeggiator button (e.g. in the bottom strip or near the puck, analogous to Unravel’s looper button). State (on/off) is saved in the DAW session; it may be a non-automatable preference or an APVTS bool, per product choice. When on, the user moves the puck to change rate, pattern, gate, and swing—no additional knobs or sliders (see **Puck mapping when arp on** below).
+- **Toggle only:** An arpeggiator button (e.g. in the bottom strip or near the puck, analogous to Unravel’s looper button). State (on/off) is saved in the DAW session; it may be a non-automatable preference or an APVTS bool, per product choice. When on, the user moves the puck to change rate, pattern, gate, and swing; no additional knobs or sliders (see **Puck mapping when arp on** below).
 
 **Determinism**
 
@@ -232,13 +232,13 @@ Drift is modeled using the Ornstein-Uhlenbeck (OU) process, a stationary Gauss-M
 
 **Determinism Rule:** The PRNG feeding the Wiener process must be seeded and advanced per-sample (not per-block), ensuring offline DAW renders perfectly match realtime playback. The PRNG seed and current OU state are saved in session state.
 
-**Age Coupling:** As the Age (Y-axis) parameter increases, the OU correlation time changes—the drift becomes slower, stickier, and exhibits deeper excursions before mean-reverting.
+**Age Coupling:** As the Age (Y-axis) parameter increases, the OU correlation time changes: the drift becomes slower, stickier, and exhibits deeper excursions before mean-reverting.
 
 **4.1.1 Sample-Rate Adaptation**
 
 **Critical addition.** The OU coefficients, LFO rates, SmoothedValue ramp times, and all rate-dependent constants must be recalculated in prepareToPlay(sampleRate). The WaverTuning.h header exposes a recalculate(double sampleRate) method:
 
-// WaverTuning.h — excerpt
+// WaverTuning.h, excerpt
 
 namespace threadbare::tuning::waver {
 
@@ -287,7 +287,7 @@ Fixed randomized offsets are assigned per voice based on the patch’s saved PRN
 
 # **5 The Print Chain: Tape Wear and Output Processing**
 
-A built-in effects chain at the output stage "prints" the synthesized sound to a simulated physical medium. This chain operates post-voice-mixdown (stereo, not per-voice), keeping CPU costs manageable. **The print chain is not optional post-processing — it is fundamental to waver’s identity.** The chain processes in this fixed order: Overdrive → Cassette Saturation → Wow/Flutter → Noise Floor.
+A built-in effects chain at the output stage "prints" the synthesized sound to a simulated physical medium. This chain operates post-voice-mixdown (stereo, not per-voice), keeping CPU costs manageable. **The print chain is not optional post-processing; it is fundamental to waver’s identity.** The chain processes in this fixed order: Overdrive → Cassette Saturation → Wow/Flutter → Noise Floor.
 
 ## **5.1 Overdrive and Mid-Push**
 
@@ -323,7 +323,7 @@ Both wow and flutter are implemented as modulation of a single stereo fractional
 - **Wow (0.5–2.0 Hz):** A low-frequency sine wave with added low-pass filtered noise (cutoff 3 Hz). Modulation depth: 0.5–3.0 ms. This produces the slow pitch undulation of irregular capstan rotation.
 - **Flutter (10–100 Hz):** A higher-frequency sine (typically 25 Hz primary) plus filtered noise (cutoff 120 Hz). Modulation depth: 0.02–0.15 ms. This produces the rapid, subtle pitch instability of tape scrape.
 
-The delay line must use **cubic Hermite interpolation** (per Iron Laws — linear interpolation is forbidden). The periodic components should have slightly randomized frequencies that drift by ±5–10% over time (using a slow OU process) to prevent the modulation from sounding artificially regular.
+The delay line must use **cubic Hermite interpolation** (per Iron Laws; linear interpolation is forbidden). The periodic components should have slightly randomized frequencies that drift by ±5–10% over time (using a slow OU process) to prevent the modulation from sounding artificially regular.
 
 **5.3.2 Age Coupling**
 
@@ -430,7 +430,7 @@ At 96 kHz the budget roughly doubles. At 4x oversampling, filter and tape costs 
 | HQ                 | 4x        | 4x        | 25%        | For final bounce / offline render     |
 
 
-Mode is selectable in a settings popover (not the drawer — it’s a global preference, not a sound design parameter). Changing mode triggers prepareToPlay() to reinitialize oversampling stages and update setLatencySamples(). The current mode is **not** saved in the preset — it is a user preference stored in the plugin’s global config.
+Mode is selectable in a settings popover (not the drawer; it’s a global preference, not a sound design parameter). Changing mode triggers prepareToPlay() to reinitialize oversampling stages and update setLatencySamples(). The current mode is **not** saved in the preset; it is a user preference stored in the plugin’s global config.
 
 # **7 User Interface: The Puck and Lovable Design**
 
@@ -443,7 +443,7 @@ The UI is built with standard web technologies via JUCE 8’s WebBrowserComponen
 - **Audio to UI:** The DSP thread constructs a trivially-copyable WaverState struct (puck position, output metering, waveform scope data) and pushes it to StateQueue. The UI thread uses juce::VBlankAttachment to pop this struct and emit an updateState event to the WebView.
 - **UI to Audio:** Standard parameter changes are handled via APVTS. Commands (Moment Mode, preset load) route through a dedicated command queue.
 
-**Frontend stack (per threadbare monorepo standards):** Vite 7 with vite-plugin-singlefile (bundles into a single index.html for JUCE embedding), vanilla JavaScript (ES modules), Motion for UI animation, and the shared @threadbare/shell package for common controls, presets UI, and elastic sliders. System sans-serif font stack (SF Pro on macOS, Segoe UI on Windows). No framework (React, Vue, etc.) — the shell provides all necessary UI primitives. Host communication uses JUCE 8’s native window.JUCE protocol (setParameter, juceinvoke / jucecomplete).
+**Frontend stack (per threadbare monorepo standards):** Vite 7 with vite-plugin-singlefile (bundles into a single index.html for JUCE embedding), vanilla JavaScript (ES modules), Motion for UI animation, and the shared @threadbare/shell package for common controls, presets UI, and elastic sliders. System sans-serif font stack (SF Pro on macOS, Segoe UI on Windows). No framework (React, Vue, etc.); the shell provides all necessary UI primitives. Host communication uses JUCE 8’s native window.JUCE protocol (setParameter, juceinvoke / jucecomplete).
 
 
 | Layer         | Tech                                                   |
@@ -466,7 +466,7 @@ waver’s primary visualization is a **slowly evolving waveform scope** rendered
 
 - **Data source.** The audio thread writes a rolling buffer of 256–512 post-mixdown samples into the WaverState struct. The scope reads from this buffer at the display refresh rate.
 - **Rendering.** Canvas 2D polyline with anti-aliased strokes. The waveform line uses the surface base color at 80% opacity, with a subtle glow/bloom effect (achieved via a second, blurred, lower-opacity copy of the polyline offset by 1–2px). A filled region below the waveform uses the cream palette color, reinforcing the coastal visual metaphor.
-- **Behavior.** The scope is not a traditional oscilloscope — it does not attempt zero-crossing trigger sync. Instead, it displays a continuous, free-running waveform that drifts and evolves, reinforcing the "breathing" emotional target. When no audio is playing, the scope shows a faint, slow sine-like idle animation rather than going blank.
+- **Behavior.** The scope is not a traditional oscilloscope; it does not attempt zero-crossing trigger sync. Instead, it displays a continuous, free-running waveform that drifts and evolves, reinforcing the "breathing" emotional target. When no audio is playing, the scope shows a faint, slow sine-like idle animation rather than going blank.
 - **Age coupling.** As the Y-axis increases, the scope’s visual treatment becomes more degraded: the line becomes slightly thicker and more diffuse, a subtle noise texture overlays the waveform, and the blue-gray tint shifts toward warmer cream tones.
 - **Reduced motion.** When prefers-reduced-motion is active, the scope displays a static waveform snapshot updated once per second rather than continuous animation.
 
@@ -475,7 +475,7 @@ waver’s primary visualization is a **slowly evolving waveform scope** rendered
 The @threadbare/shell expects a VizClass and a canvas element (it looks for orb in the DOM). For waver:
 
 - **VizClass:** Pass a `WaverViz` class (in `viz.js`) that implements the same interface as Unravel’s orb viz. The shell doesn’t care what it draws; it just calls update() on each frame with the current state.
-- **Canvas reuse:** Keep id="orb" for the canvas element the shell manages. No structural change to the shell DOM is required — just a different viz class.
+- **Canvas reuse:** Keep id="orb" for the canvas element the shell manages. No structural change to the shell DOM is required; just a different viz class.
 - **Theme tokens:** Apply waver’s accent color and palette via the shell’s themeTokens configuration (e.g. { accent: "C4A46C", bg: "241D19", text: "D3C7BB" }). The scope and all shell controls (sliders, preset browser, drawer) inherit these tokens automatically.
 - **No shell modifications required.** The shell is designed for pluggable viz and theming. waver’s frontend work is limited to: implementing the `WaverViz` class (in `viz.js`), writing a `main.js` entry that imports from `@threadbare/shell` and passes waver-specific config, and creating the `params.js` (auto-generated from `params.json`).
 
@@ -496,7 +496,7 @@ The puck traverses a continuous sound map populated by preset landmark states. R
 
 ## **7.4 Moment Mode (Always-On Recalibration)**
 
-Moment Mode is always active. Each new plugin instance receives a unique PRNG seed derived from the system clock, giving it subtly different voice-level component tolerances, slight ± shifts in RBF landmark radii (σ), and micro-changes to the morph surface character. There is no Moment button in the UI — the imperfection is automatic and invisible, like picking up a different physical instrument off the shelf.
+Moment Mode is always active. Each new plugin instance receives a unique PRNG seed derived from the system clock, giving it subtly different voice-level component tolerances, slight ± shifts in RBF landmark radii (σ), and micro-changes to the morph surface character. There is no Moment button in the UI; the imperfection is automatic and invisible, like picking up a different physical instrument off the shelf.
 
 The seed is saved in the DAW session state, so reloading a project restores the exact same "today's waver." On preset load, the frontend regenerates sigma offsets from the current seed, ensuring each preset change subtly reshapes the morph surface.
 
@@ -619,15 +619,15 @@ The generator must be extended with a **choice** type that emits juce::AudioPara
 
 }
 
-The alternative—encoding choices as float (0.0, 1.0, 2.0, 3.0) and documenting the mapping—is explicitly rejected. Float-encoded enums produce nonsensical intermediate values during automation, lose semantic meaning in the DAW parameter list, and create a maintenance burden.
+The alternative, encoding choices as float (0.0, 1.0, 2.0, 3.0) and documenting the mapping, is explicitly rejected. Float-encoded enums produce nonsensical intermediate values during automation, lose semantic meaning in the DAW parameter list, and create a maintenance burden.
 
 
 | ID         | Display Name | Type  | Range        | Default | Unit |
 | ---------- | ------------ | ----- | ------------ | ------- | ---- |
-| puckX      | presence     | float | 1.0 to 1.0   | 0.0     | —    |
-| puckY      | age          | float | 1.0 to 1.0   | 0.0     | —    |
-| blend      | blend        | float | 0.15 to 0.60 | 0.35    | —    |
-| momentSeed | moment       | float | 0.0 to 1.0   | 0.5     | —    |
+| puckX      | presence     | float | 1.0 to 1.0   | 0.0     | n/a    |
+| puckY      | age          | float | 1.0 to 1.0   | 0.0     | n/a    |
+| blend      | blend        | float | 0.15 to 0.60 | 0.35    | n/a    |
+| momentSeed | moment       | float | 0.0 to 1.0   | 0.5     | n/a    |
 | outputGain | output       | float | 24 to 12     | 0.0     | dB   |
 
 
@@ -635,7 +635,7 @@ The alternative—encoding choices as float (0.0, 1.0, 2.0, 3.0) and documenting
 
 ## **8.2 Playable Surfaces**
 
-Every factory preset ships as a JSON file defining a playable region with 8–16 intentional landmarks distributed across the X/Y axes. A preset is not a single point — it is a designed morphing surface.
+Every factory preset ships as a JSON file defining a playable region with 8–16 intentional landmarks distributed across the X/Y axes. A preset is not a single point; it is a designed morphing surface.
 
 **8.2.1 Preset JSON Schema**
 
@@ -960,4 +960,4 @@ Each phase produces a playable, DAW-loadable build that can be evaluated musical
 | Arpeggiator Mode        | Not addressed               | Bonus feature (waver’s analogue to Unravel’s disintegration looper): Section 3.5. When arp on, puck X/Y drive rate, pattern, gate, swing (no new drawer controls). Held-note buffer, Iron Law compliant, deterministic for bounce-in-place. |
 
 
-This specification is a living document. waver is ultimately an instrument of feel and character—weathered, tender, breathing—and no specification can substitute for the iterative process of playing, listening, and tuning that transforms a technical architecture into a musical instrument.
+This specification is a living document. waver is ultimately an instrument of feel and character (weathered, tender, breathing) and no specification can substitute for the iterative process of playing, listening, and tuning that transforms a technical architecture into a musical instrument.

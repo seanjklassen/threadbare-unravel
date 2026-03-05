@@ -1,8 +1,8 @@
-# Threadbare — Product Requirements Document
+# Threadbare: Product Requirements Document
 
-*Living reference for all Threadbare products. Version 1.0 — February 2026.*
+*Living reference for all Threadbare products. Version 1.0, February 2026.*
 
-**Document structure:** Sections 1-3 define global standards that apply to every Threadbare plugin (company identity, technical architecture, real-time safety rules, build system). Section 4 is the product spec for Unravel — every current and future product gets its own section here. Section 5 defines global quality standards. Section 6 is the step-by-step guide for building a new plugin. Section 7 is the documentation index.
+**Document structure:** Sections 1-3 define global standards that apply to every Threadbare plugin (company identity, technical architecture, real-time safety rules, build system). Section 4 is the product spec for Unravel; every current and future product gets its own section here. Section 5 defines global quality standards. Section 6 is the step-by-step guide for building a new plugin. Section 7 is the documentation index.
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### 1.1 Mission
 
-Make audio tools that feel like instruments — expressive, immediate, and sonically opinionated — rather than utility software.
+Make audio tools that feel like instruments (expressive, immediate, and sonically opinionated) rather than utility software.
 
 ### 1.2 Core Values
 
@@ -39,7 +39,7 @@ Threadbare occupies the space between boutique pedal makers (Chase Bliss, Meris)
 
 ## 2. Product Line
 
-### 2.1 Unravel (v0.7.0 — Current)
+### 2.1 Unravel (v0.7.0, Current)
 
 **Role:** Lush, characterful "memory cloud" reverb.
 **Status:** In active development.
@@ -47,9 +47,9 @@ Threadbare occupies the space between boutique pedal makers (Chase Bliss, Meris)
 **Platforms:** macOS (Universal binary arm64 + x86_64), Windows.
 **Price:** $45.
 
-### 2.2 Waver (v0.7.0 — Current)
+### 2.2 Waver (v0.7.0, Current)
 
-**Role:** Character-driven soft synthesizer — "broken but beautiful synthesis."
+**Role:** Character-driven soft synthesizer: "broken but beautiful synthesis."
 **Status:** In active development.
 **Formats:** VST3, AU, Standalone.
 **Platforms:** macOS (Universal binary arm64 + x86_64), Windows.
@@ -112,9 +112,9 @@ threadbare-unravel/
 All Threadbare plugins follow these patterns:
 
 **Separation of Concerns**
-- `Source/DSP/` — Pure C++ processing. No JUCE UI headers. Receives `std::span<float>` buffers. Pulls constants from a `Tuning.h` file. Testable in isolation.
-- `Source/Processors/` — JUCE `AudioProcessor` wrapper. Owns APVTS, factory presets, and state persistence. Bridges DSP to DAW.
-- `Source/UI/` — `WebBrowserComponent` editor. Loads embedded HTML. Communicates with C++ via native function protocol.
+- `Source/DSP/`: Pure C++ processing. No JUCE UI headers. Receives `std::span<float>` buffers. Pulls constants from a `Tuning.h` file. Testable in isolation.
+- `Source/Processors/`: JUCE `AudioProcessor` wrapper. Owns APVTS, factory presets, and state persistence. Bridges DSP to DAW.
+- `Source/UI/`: `WebBrowserComponent` editor. Loads embedded HTML. Communicates with C++ via native function protocol.
 
 **Lock-Free Audio/UI Communication**
 - Audio thread writes state structs to a `StateQueue` (FIFO-backed).
@@ -195,7 +195,7 @@ Note: local development builds may copy plugins into the user Library (see `docs
 
 ### 4.1 Concept
 
-I kept reaching for a reverb that sounded less like a room and more like something slipping away from me. Unravel holds onto a few seconds of what you just played and dissolves it into the tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb, which is what gives it that ache.
+I kept reaching for a reverb that sounded less like a room and more like something slipping away from me. Unravel holds onto a few seconds of what you just played and dissolves it into the tail: some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb, which is what gives it that ache.
 
 **What it's for:**
 - Shoegaze / dream pop / ambient guitars.
@@ -204,7 +204,7 @@ I kept reaching for a reverb that sounded less like a room and more like somethi
 
 ### 4.2 Emotional Targets
 
-Every design decision — tuning constants, preset names, UI color, copy — must lean toward:
+Every design decision (tuning constants, preset names, UI color, copy) must lean toward:
 
 | Target | Description |
 |---|---|
@@ -217,7 +217,7 @@ Every design decision — tuning constants, preset names, UI color, copy — mus
 - Smooth, non-metallic tails.
 - Frequency-dependent decay.
 - Gentle but persistent modulation.
-- Integrated ghost "memory" character (not decorative — the ghost *is* the tail).
+- Integrated ghost "memory" character (not decorative; the ghost *is* the tail).
 - Disintegration looper + ducking that feel instantly usable.
 - Subjectively comparable to Valhalla VintageVerb / TAL Reverb 4 in its lane.
 
@@ -226,11 +226,11 @@ Every design decision — tuning constants, preset names, UI color, copy — mus
 **Dimensions:** ~380-420 px wide, ~670-720 px tall.
 
 **Layout (top to bottom):**
-1. Preset bar — dropdown left.
-2. Main canvas — Lissajous orb visualization + draggable puck (48x48 px).
-3. Bottom strip — X/Y readouts (0.00-11.00), looper button (infinity symbol), settings gear.
+1. Preset bar: dropdown left.
+2. Main canvas: Lissajous orb visualization + draggable puck (48x48 px).
+3. Bottom strip: X/Y readouts (0.00-11.00), looper button (infinity symbol), settings gear.
 
-**Advanced Drawer** — slides open from bottom strip. Contains horizontal sliders with no numeric readout, each with a "pupil" indicator that lights when the puck is contributing a macro value. Sliders are keyboard-accessible with tall invisible hit areas.
+**Advanced Drawer**: slides open from bottom strip. Contains horizontal sliders with no numeric readout, each with a "pupil" indicator that lights when the puck is contributing a macro value. Sliders are keyboard-accessible with tall invisible hit areas.
 
 **Drawer Parameters:**
 1. Decay (0.4-50 s)
@@ -282,7 +282,7 @@ William Basinski-inspired loop degradation. Three-state: Idle, Recording, Loopin
 
 #### 4.5.3 Lissajous Orb
 
-Canvas-based visualization. Visual only — reflects plugin state.
+Canvas-based visualization. Visual only; reflects plugin state.
 
 **Inputs:** inLevel, tailLevel, puckX, puckY, decay, size, ghost, drift, looperState, entropy, tempo, isPlaying.
 **Mapping:** Radius grows with puckY/tailLevel/inLevel. Tangle grows with drift/ghost. Stroke follows tailLevel. Color shifts by looper state and entropy. Motion slows but never stops when transport is stopped.
@@ -323,7 +323,7 @@ Input (Stereo)
 
 #### 4.6.4 Ghost Engine
 
-The ghost engine is what makes Unravel different. It maintains a 2.0-second history buffer, spawns up to 8 granular grains at any time, and feeds them into the FDN — not on top of it.
+The ghost engine is what makes Unravel different. It maintains a 2.0-second history buffer, spawns up to 8 granular grains at any time, and feeds them into the FDN, not on top of it.
 
 **Grain Parameters:**
 - Duration: 50-300 ms, Hann window.
@@ -365,18 +365,18 @@ All magic numbers live in `plugins/unravel/Source/UnravelTuning.h`. DSP code pul
 
 | ID | Display Name | Type | Range | Default | Unit |
 |---|---|---|---|---|---|
-| `puckX` | Puck X | float | -1.0 to 1.0 | 0.0 | — |
-| `puckY` | Puck Y | float | -1.0 to 1.0 | 0.0 | — |
-| `mix` | Mix | float | 0.0 to 1.0 | 0.5 | — |
-| `size` | Size | float | 0.5 to 2.0 | 1.0 | — |
+| `puckX` | Puck X | float | -1.0 to 1.0 | 0.0 | (none) |
+| `puckY` | Puck Y | float | -1.0 to 1.0 | 0.0 | (none) |
+| `mix` | Mix | float | 0.0 to 1.0 | 0.5 | (none) |
+| `size` | Size | float | 0.5 to 2.0 | 1.0 | (none) |
 | `decay` | Decay | float | 0.4 to 50.0 | 5.0 | s |
-| `tone` | Brightness | float | -1.0 to 1.0 | 0.0 | — |
-| `drift` | Drift | float | 0.0 to 1.0 | 0.2 | — |
-| `ghost` | Ghost | float | 0.0 to 1.0 | 0.15 | — |
-| `glitch` | Glitch | float | 0.0 to 1.0 | 0.0 | — |
-| `duck` | Duck | float | 0.0 to 1.0 | 0.0 | — |
+| `tone` | Brightness | float | -1.0 to 1.0 | 0.0 | (none) |
+| `drift` | Drift | float | 0.0 to 1.0 | 0.2 | (none) |
+| `ghost` | Ghost | float | 0.0 to 1.0 | 0.15 | (none) |
+| `glitch` | Glitch | float | 0.0 to 1.0 | 0.0 | (none) |
+| `duck` | Duck | float | 0.0 to 1.0 | 0.0 | (none) |
 | `erPreDelay` | Distance | float | 0.0 to 100.0 | 0.0 | ms |
-| `freeze` | Looper | bool | — | false | — |
+| `freeze` | Looper | bool | (n/a) | false | (none) |
 | `output` | Output | float | -24.0 to 12.0 | 0.0 | dB |
 
 ### 4.9 Factory Presets
@@ -453,7 +453,7 @@ These apply to every Threadbare plugin. Product-specific quality targets (e.g., 
 - No console errors in browser dev tools.
 - Responsive within target dimensions.
 
-### 5.4 Testing Checklist (Per Release — All Plugins)
+### 5.4 Testing Checklist (Per Release, All Plugins)
 
 - [ ] UI loads in Standalone, VST3 (Reaper), AU (Logic).
 - [ ] All parameters update when moving controls.
@@ -470,7 +470,7 @@ Each product section should include its own supplemental testing checklist for p
 
 ## 6. New Plugin Guide
 
-This section is a step-by-step reference for adding a new plugin to the Threadbare monorepo. It covers every layer — CMake, DSP, processor, editor, frontend, params, assets, installers, and CI. Use Unravel as the working reference.
+This section is a step-by-step reference for adding a new plugin to the Threadbare monorepo. It covers every layer: CMake, DSP, processor, editor, frontend, params, assets, installers, and CI. Use Unravel as the working reference.
 
 ### 6.0 Scaffold Script (Recommended Starting Point)
 
@@ -531,7 +531,7 @@ add_subdirectory(plugins/unravel)
 add_subdirectory(plugins/{name})
 ```
 
-JUCE and `shared/core` are already available — every plugin shares them.
+JUCE and `shared/core` are already available; every plugin shares them.
 
 ### 6.3 Plugin CMakeLists.txt
 
@@ -542,7 +542,7 @@ Follow the Unravel pattern (`plugins/unravel/CMakeLists.txt`). The key sections:
 - Synths: `IS_SYNTH TRUE`, `NEEDS_MIDI_INPUT TRUE`, `NEEDS_MIDI_OUTPUT FALSE`, output-only audio bus.
 - `PLUGIN_CODE` must be unique across the monorepo (4-char ASCII). Validate before adding a new plugin.
 
-**Parameter generation** — wire `params.json` through the shared generator:
+**Parameter generation**: wire `params.json` through the shared generator:
 
 ```cmake
 set(PARAMS_JSON ${CMAKE_CURRENT_SOURCE_DIR}/config/params.json)
@@ -561,7 +561,7 @@ add_custom_command(
 add_custom_target({Name}GenerateParams DEPENDS ${PARAMS_CPP_OUTPUT} ${PARAMS_JS_OUTPUT})
 ```
 
-**DSP library** — static library, no JUCE UI dependencies:
+**DSP library**: static library, no JUCE UI dependencies:
 
 ```cmake
 add_library({name}_dsp STATIC ${DSP_SOURCES})
@@ -569,7 +569,7 @@ target_link_libraries({name}_dsp PUBLIC juce::juce_dsp)
 target_compile_features({name}_dsp PUBLIC cxx_std_20)
 ```
 
-**Frontend resources** — embedded as binary data:
+**Frontend resources**: embedded as binary data:
 
 ```cmake
 file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS
@@ -577,7 +577,7 @@ file(GLOB_RECURSE UI_RESOURCES CONFIGURE_DEPENDS
 juce_add_binary_data({Name}Resources NAMESPACE {Name}Resources SOURCES ${UI_RESOURCES})
 ```
 
-**Plugin target** — register with JUCE:
+**Plugin target**: register with JUCE:
 
 ```cmake
 juce_add_plugin(Threadbare{Name}
@@ -600,7 +600,7 @@ target_link_libraries(Threadbare{Name}
 )
 ```
 
-**Artefact output** — required for installer scripts to find built plugins:
+**Artefact output**: required for installer scripts to find built plugins:
 
 ```cmake
 if(DEFINED THREADBARE_ARTEFACTS_OUT)
@@ -642,19 +642,19 @@ The single source of truth for all parameters. `shared/scripts/generate_params.j
 **Constraints:**
 - `id` must be a valid camelCase identifier (used as C++ constant and JS key).
 - `type` is `"float"` or `"bool"`.
-- `skewCentre` is optional — sets the midpoint for logarithmic controls (e.g., decay).
-- `unit` is optional — `"s"`, `"ms"`, `"dB"`, or omit for dimensionless.
+- `skewCentre` is optional; sets the midpoint for logarithmic controls (e.g., decay).
+- `unit` is optional: `"s"`, `"ms"`, `"dB"`, or omit for dimensionless.
 
 **Generated C++ header** (`{Name}GeneratedParams.h`):
 - Namespace: `threadbare::{name}`
-- `createParameterLayout()` — returns `juce::AudioProcessorValueTreeState::ParameterLayout`.
-- `IDs` struct — string constants (e.g., `IDs::PARAM_ID`).
-- `Meta` struct — `k`-prefixed range constants (e.g., `Meta::kPARAM_ID_MIN`, `kPARAM_ID_MAX`, `kPARAM_ID_DEFAULT`).
+- `createParameterLayout()`: returns `juce::AudioProcessorValueTreeState::ParameterLayout`.
+- `IDs` struct: string constants (e.g., `IDs::PARAM_ID`).
+- `Meta` struct: `k`-prefixed range constants (e.g., `Meta::kPARAM_ID_MIN`, `kPARAM_ID_MAX`, `kPARAM_ID_DEFAULT`).
 
 **Generated JS module** (`generated/params.js`):
-- `PARAMS` — object mapping IDs to `{ name, type, min, max, default, ... }`.
-- `PARAM_IDS` — array of IDs in definition order.
-- `getParam(id)` — lookup helper.
+- `PARAMS`: object mapping IDs to `{ name, type, min, max, default, ... }`.
+- `PARAM_IDS`: array of IDs in definition order.
+- `getParam(id)`: lookup helper.
 
 ### 6.5 DSP Layer (Source/DSP/)
 
@@ -664,7 +664,7 @@ Pure C++ signal processing. No JUCE UI headers.
 - Pull constants from `{Name}Tuning.h` (namespace `threadbare::tuning`). Never hardcode magic numbers.
 - Accept `std::span<float>` buffers. Avoid passing `juce::AudioBuffer` into inner DSP classes.
 - Follow the Iron Laws (section 3.4): no allocations, no locks, no exceptions, `ScopedNoDenormals`, `SmoothedValue`, cubic interpolation, per-sample updates.
-- The DSP library links only against `juce::juce_dsp` — no `juce_gui_*` dependencies.
+- The DSP library links only against `juce::juce_dsp`, no `juce_gui_*` dependencies.
 
 **Tuning header pattern** (`{Name}Tuning.h`):
 
@@ -722,7 +722,7 @@ private:
 };
 ```
 
-**State struct** — must be trivially copyable (no strings, no pointers, no containers):
+**State struct**: must be trivially copyable (no strings, no pointers, no containers):
 
 ```cpp
 struct {Name}State
@@ -742,9 +742,9 @@ struct {Name}State
 4. Build state struct, push to `stateQueue`.
 
 **State persistence hooks** (optional, provided by ProcessorBase):
-- `onSaveState(juce::ValueTree&)` — save custom state (e.g., current preset index).
-- `onRestoreState(juce::ValueTree&)` — restore custom state.
-- `onStateRestored()` — post-restore actions (e.g., push state to UI).
+- `onSaveState(juce::ValueTree&)`: save custom state (e.g., current preset index).
+- `onRestoreState(juce::ValueTree&)`: restore custom state.
+- `onStateRestored()`: post-restore actions (e.g., push state to UI).
 
 **Presets:**
 - Store as a vector of structs (param values + name).
@@ -857,7 +857,7 @@ auto {Name}Editor::makeBrowserOptions()
 - If needed, fallback by comparing original filenames from binary data metadata.
 - Log misses with `DBG()` for fast diagnosis.
 
-**handleUpdate** — called at screen refresh rate via `VBlankAttachment`:
+**handleUpdate**: called at screen refresh rate via `VBlankAttachment`:
 
 ```cpp
 void {Name}Editor::handleUpdate()
@@ -875,7 +875,7 @@ void {Name}Editor::handleUpdate()
 }
 ```
 
-**Native functions** — the JS→C++ bridge. At minimum:
+**Native functions**: the JS→C++ bridge. At minimum:
 
 | Function | Purpose |
 |---|---|
@@ -965,11 +965,11 @@ const shell = initShell({
 ```
 
 **Shared UI shell** (`shared/ui/shell/src/`) provides:
-- `initShell()` — main initializer, wires everything together.
-- `Controls` — puck, settings overlay, elastic sliders.
-- `Presets` — dropdown preset manager.
-- `ElasticSlider` — spring-physics slider with rubber-band feel.
-- `shell.css` — all shared styles, theme tokens, animations, reduced-motion support.
+- `initShell()`: main initializer, wires everything together.
+- `Controls`: puck, settings overlay, elastic sliders.
+- `Presets`: dropdown preset manager.
+- `ElasticSlider`: spring-physics slider with rubber-band feel.
+- `shell.css`: all shared styles, theme tokens, animations, reduced-motion support.
 
 **Plugin-specific visualization** (`viz.js`):
 - Each plugin provides its own `VizClass` (Unravel has the Lissajous orb).
@@ -1028,19 +1028,19 @@ Installers currently live in a shared `installer/` directory with Unravel-specif
 }
 ```
 
-**macOS installer** — adapt from `installer/macos/`:
-- `Distribution.xml` — update bundle IDs and package references.
-- `scripts/preinstall` — update plugin bundle names to remove.
-- `scripts/postinstall` — update support directory name.
-- `resources/welcome.html`, `conclusion.html` — update product name and copy.
-- `resources/background.png` — plugin-specific branding.
+**macOS installer**: adapt from `installer/macos/`:
+- `Distribution.xml`: update bundle IDs and package references.
+- `scripts/preinstall`: update plugin bundle names to remove.
+- `scripts/postinstall`: update support directory name.
+- `resources/welcome.html`, `conclusion.html`: update product name and copy.
+- `resources/background.png`: plugin-specific branding.
 
-**Windows installer** — adapt from `installer/windows/`:
-- `Installer.iss` — update `AppName`, `AppVersion`, `OutputBaseFilename`, source paths, and bundle names.
-- `assets/` — plugin-specific wizard images.
-- `azure-metadata.json` — update certificate profile name if using separate signing identity.
+**Windows installer**: adapt from `installer/windows/`:
+- `Installer.iss`: update `AppName`, `AppVersion`, `OutputBaseFilename`, source paths, and bundle names.
+- `assets/`: plugin-specific wizard images.
+- `azure-metadata.json`: update certificate profile name if using separate signing identity.
 
-**Build scripts** — `scripts/build-installer.sh` and `scripts/build-installer.ps1` currently hardcode `product_name="unravel"`. For a second plugin, either:
+**Build scripts**: `scripts/build-installer.sh` and `scripts/build-installer.ps1` currently hardcode `product_name="unravel"`. For a second plugin, either:
 - Parameterize: accept a plugin name argument and read metadata from `installer/product.json`.
 - Duplicate: create plugin-specific build scripts (simpler short-term, harder to maintain).
 
@@ -1101,7 +1101,7 @@ Note: when using `shared/scripts/scaffold-plugin.js`, steps 1-10 are generated b
 |---|---|
 | `docs/threadbare-prd.md` | This file. Product requirements, architecture, and standards. |
 | `docs/threadbare-brand-guide.md` | Visual identity, voice, and design language. |
-| `docs/brand_strategy.md` | Strategic brand framework — purpose, positioning, messaging hierarchy. |
+| `docs/brand_strategy.md` | Strategic brand framework: purpose, positioning, messaging hierarchy. |
 | `docs/build_guide.md` | Build instructions and CI setup. |
 | `docs/webview_integration_guide.md` | JUCE 8 WebView setup and troubleshooting. |
 | `docs/installer_ux_completion_map.md` | Installer UX implementation status. |

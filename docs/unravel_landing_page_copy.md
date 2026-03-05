@@ -6,7 +6,7 @@
 
 I have reverbs I like. They simulate spaces like halls, plates, springs. But I started imagining one for one that sounded less like a room and more like something slipping away from me. What happens to a sound after you stop paying attention to it. The way it comes back softer, shifted, not quite right.
 
-Unravel holds onto fragments of what you just played and dissolves it into a reverb-like tail — some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
+Unravel holds onto fragments of what you just played and dissolves them into a reverb-like tail. Some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
 
 ---
 
@@ -50,7 +50,7 @@ Up reaches broken entropy in as short as two passes.
 The puck is the instrument. The drawer is the workbench. The puck maps across every parameter simultaneously and for most people, most of the time, it's the only control you need. But if you want to push the ghost engine harder than the puck allows, or you've decided at midnight that the decay needs to be exactly 7.2 seconds and you can't explain why, you can make that tweak. Open the drawer when you want precision. The puck keeps working either way, scaling relative to whatever you've set manually.
 
 ### ghost engine
-The reverb is always listening. It keeps a rolling memory of what you just played and pulls fragments back out as the tail evolves — some pitched up, some reversed, some barely recognizable. They feed into the reverb engine, not on top of it, so the ghost material becomes part of the tail itself. At low settings it adds a warmth you can't quite place. Push it further and the reverb starts to sound like your own playing coming apart at the edges.
+The reverb is always listening. It keeps a rolling memory of what you just played and pulls fragments back out as the tail evolves. Some pitched up, some reversed, some barely recognizable. They feed into the reverb engine, not on top of it, so the ghost material becomes part of the tail itself. At low settings it adds a warmth you can't quite place. Push it further and the reverb starts to sound like your own playing coming apart at the edges.
 
 ### scatter
 Four voices that trigger off your transients, grab ghost fragments, pitch-shift them, and fling them across the stereo field. At low amounts it adds texture, a glittering edge. Turn it up and the reverb sounds like it is coming apart at the seams.
@@ -123,7 +123,7 @@ At default settings, CPU is fine. If you max the ghost engine, scatter, and disi
 Threadbare -- Unravel
 
 **Short Description:**
-Reverb with a memory problem. Holds onto fragments of what you just played and dissolves them into the tail — some pitched up, some reversed, all fading. One 2D puck control reshapes the entire space. Disintegration looper with real-time entropy. For shoegaze, ambient, dream pop.
+Reverb with a memory problem. Holds onto fragments of what you just played and dissolves them into the tail. Some pitched up, some reversed, all fading. One 2D puck control reshapes the entire space. Disintegration looper with real-time entropy. For shoegaze, ambient, dream pop.
 
 **Full Description:**
 Every reverb plugin recreates a room. This one holds onto memory.
