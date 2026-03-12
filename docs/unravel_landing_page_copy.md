@@ -1,113 +1,121 @@
-# threadbare -- unravel
+# threadbare: unravel
 
 ---
+
+> [VISUAL] dark screen. one orb, breathing slowly. no controls yet.
+
+## meet unravel.
+
+---
+
+> [VISUAL] orb pulse reacts to a single sustained note.
 
 ## reverb with a memory problem.
 
-I have reverbs I like. They simulate spaces like halls, plates, springs. But I started imagining one for one that sounded less like a room and more like something slipping away from me. What happens to a sound after you stop paying attention to it. The way it comes back softer, shifted, not quite right.
+---
 
-Unravel holds onto fragments of what you just played and dissolves them into a reverb-like tail. Some pitched up, some reversed, all of it fading. The ghost material ends up woven into the reverb itself, which is what gives it that ache. The tail carries traces of your recent performance. Recognizable, but a little unreliable.
+> [VISUAL] waveform fragments begin to appear and dissolve inside the orb.
+
+I had reverbs I liked. They all gave me rooms. I kept reaching for something that felt less like architecture and more like recollection.
+
+unravel holds onto what you play and replays fragments of it.
+
+creating a tail that drifts over time, like a fading memory.
+
+it is recognizable, but a little unreliable.
+
+> [CAPTION] Some fragments shimmer. Some play backwards. All of it is woven into the decay.
 
 ---
 
-## one main control. you drag it.
+> [VISUAL] the puck appears. the rest of the interface is still hidden.
+> [INTERACTION] drag the puck on scroll-linked demo audio.
 
-**vivid to hazy.** 
-Left emphasizes presence and focus. 
+## one main control. 
 
-Right adds fog and stereo width. 
+**vivid to hazy**
+left stays present and focused. right adds fog and stereo spread.
 
-**recent to distant.** 
+**recent to distant**
+down stays short and close. up stretches time, memory, and movement.
 
-Down sounds short and close. 
+The thing I did not expect: playing the puck while music runs feels like performing the reverb itself. Drag across a held chord and the whole tail turns inside out.
 
-Up adds long tails, ghostly activity, and pitch warping.
-
-The thing I didn't expect: you can play the puck while the music runs. Drag it slowly from vivid to hazy during a chord and the whole reverb turns inside out. It can shift under your hand like you're reshaping the air around the sound. I've spent entire evenings just moving it, making weird sounds I couldn't have dialed in on purpose.
-
----
-
-### disintegration looper
-Record up to 60 seconds of your audio and loop it. Each pass degrades the signal. Filters converge, saturation builds, random dropouts appear where the oxide has shed. Pitch wanders downward. Left and right channels drift apart. Wow and flutter creep in, and a noise floor rises underneath until there's nothing left. The degrading loop runs through the same reverb engine, so as entropy builds, the two become the same thing.
-
-The idea came from listening to William Basinski's Disintegration Loops and wanting that process as something you could control in real time.
-
-**spectral to diffuse.** 
-Left emphasizes spectral thinning, like a photograph fading in the sun. 
-
-Right emphasizes diffuse smearing, like watching something through rain. 
-
-**lingering to fleeting.** 
-
-Down can loop for thousands of iterations, barely changing. 
-
-Up reaches broken entropy in as short as two passes. 
+> [INTERACTION] feature plan: add a lightweight, browser-side puck interaction so visitors can drag and hear before watching a full demo.
 
 ---
 
-## okay, fine
+> [VISUAL] looper button fades in. orb color shifts as entropy rises.
+> [INTERACTION] press and hold to record, then release into loop playback.
 
-The puck is the instrument. The drawer is the workbench. The puck maps across every parameter simultaneously and for most people, most of the time, it's the only control you need. But if you want to push the ghost engine harder than the puck allows, or you've decided at midnight that the decay needs to be exactly 7.2 seconds and you can't explain why, you can make that tweak. Open the drawer when you want precision. The puck keeps working either way, scaling relative to whatever you've set manually.
+## loops that disintegrate in real time.
 
-### ghost engine
-The reverb is always listening. It keeps a rolling memory of what you just played and pulls fragments back out as the tail evolves. Some pitched up, some reversed, some barely recognizable. They feed into the reverb engine, not on top of it, so the ghost material becomes part of the tail itself. At low settings it adds a warmth you can't quite place. Push it further and the reverb starts to sound like your own playing coming apart at the edges.
+Record up to 60 seconds. Let it loop. Each pass thins, wanders, and frays. Filters narrow. Saturation builds. Dropouts start appearing where the tape would have shed.
 
-### scatter
-Four voices that trigger off your transients, grab ghost fragments, pitch-shift them, and fling them across the stereo field. At low amounts it adds texture, a glittering edge. Turn it up and the reverb sounds like it is coming apart at the seams.
+It came from obsessing over *The Disintegration Loops* and wanting that process under your hand, not frozen in a recording.
 
-### decay
-How long the tail rings out. The puck's Y-axis scales this by roughly 3x in either direction.
+**spectral to diffuse**
+left feels like fading detail. right feels like blurred weather.
 
-### distance
-Low values put the reverb on top of your signal. Higher values push it back. Useful for keeping vocals intelligible in a long wash.
-
-### size
-Perceived space. Small is tight and close. Large is open and diffuse. The puck's Y-axis nudges this too, adding subtle pitch movement to the tail.
-
-### brightness
-How much high-end the reverb keeps. Left is muffled and warm. Right has air. Center is neutral.
-
-### blend
-Dry/wet mix. Most presets sit between 35% and 75%. On a send, set it to 100%.
-
-### loudness
-Output gain, -24 dB to +12 dB. Level compensation between presets. If the wet signal is too loud or too quiet relative to your session, this is where you fix it.
-
-### ducking
-Reverb pulls back while you play and swells when you stop, which is the difference between mud and breathing room on anything rhythmic.
-
-### drift
-Wandering modulation that keeps the tail from going static on sustained input. Subtle on the left side of the puck, increasingly woozy as you move right.
-
-### true stereo sound
-Left and right sides of the reverb develop independently -- not a mono reverb with widening applied after the fact. It costs more CPU, but the stereo image is real.
+**lingering to fleeting**
+down can run for ages. up can fall apart in two passes.
 
 ---
 
-## what it can sound like
+> [VISUAL] drawer icon appears, then opens when section enters viewport.
 
-1. **unravel** -- Balanced and smooth. Where most people start and a surprising number stay. [Play]
-2. **close** -- Tight and intimate. Scattered fragments add texture without adding space. Good for vocals. [Play]
-3. **tether** -- Moderate ducking, grounded. Reverb follows your dynamics. Finger-picked guitar, quiet piano. [Play]
-4. **pulse** -- Heavy ducking. Reverb pumps in the gaps between notes. Strummed parts, rhythmic synths. [Play]
-5. **bloom** -- Long decay, expanding wash, gentle scatter. The pad preset. [Play]
-6. **mist** -- Dark fog. Maximum diffusion, ghost reaching into distant memory. [Play]
-7. **rewind** -- Ghost engine turned up. High reverse probability, scattered fragments. Surreal on anything sustained. [Play]
-8. **halation** -- Bright, shimmery. Shimmer grains emphasized, bright tail. Like overexposed light. [Play]
-9. **stasis** -- Looper-ready. Long decay, max ghost. Hit the infinity button and let it degrade. [Play]
-10. **shiver** -- Maximum everything. [Play]
+## but wait, there is more.
+
+The puck is the instrument. The drawer is the workbench. Most of the time, you will stay on the puck. But if you want the decay at exactly 7.2 seconds at midnight, the drawer is there.
+
+### shape of the tail
+
+- **memory:** how much of your recent playing gets folded back in.
+- **scatter:** how much those fragments burst outward across stereo.
+- **decay and size:** how long and how wide the space feels.
+
+### clarity and placement
+
+- **brightness:** warm and muffled to airy and open.
+- **distance:** front-of-speaker to farther back in the mix.
+- **ducking:** tail steps back while you play, then returns.
+
+### movement and level
+
+- **drift:** subtle wandering that keeps sustained audio alive.
+- **blend:** dry and wet balance.
+- **loudness:** final output trim.
+- **true stereo:** left and right evolve independently, not widened after the fact.
 
 ---
+
+> [VISUAL] preset list slides in.  
+> [INTERACTION] click any preset name to audition one phrase.
+
+## listen to what it can become.
+
+1. **balanced** `unravel` smooth and centered. where most people start. [Play]
+2. **intimate** `close` tight and close-mic, with texture but not extra size. [Play]
+3. **grounded** `tether` follows your dynamics and stays out of the way. [Play]
+4. **rhythmic** `pulse` breathes in the gaps between notes. [Play]
+5. **expansive** `bloom` long, widening wash for pads and held chords. [Play]
+6. **fogged** `mist` dark and distant, like sound through rain. [Play]
+7. **surreal** `rewind` memory fragments step forward and time bends. [Play]
+8. **luminous** `halation` bright, glassy shimmer with lift. [Play]
+9. **erosive** `stasis` built for looper decay and long-form disintegration. [Play]
+10. **unstable** `shiver` everything in motion, right at the edge. [Play]
+
+---
+
+> [VISUAL] minimal footer card.
 
 ## specs
 
-**Formats:** VST3, AU, Standalone.
+**Formats:** VST3, AU, Standalone  
+**Platforms:** macOS (Universal binary, arm64 + x86_64), Windows  
+**Requirements:** macOS 10.13+ or Windows 10+, plus a DAW for plugin formats
 
-**Platforms:** macOS (Universal binary, arm64 + x86_64), Windows.
-
-**Requirements:** macOS 10.13+ or Windows 10+. A DAW for the plugin formats.
-
-At default settings, CPU is fine. If you max the ghost engine, scatter, and disintegration looper at the same time, which I do more often than I should, your laptop might let you know.
+At default settings, CPU is fine. If you max memory, scatter, and the looper together, your laptop may start negotiating terms.
 
 ---
 
@@ -117,34 +125,35 @@ At default settings, CPU is fine. If you max the ghost engine, scatter, and disi
 
 ---
 
-## store page description
+## appendix: store page description
 
-**Title:**
-Threadbare -- Unravel
+**Title:**  
+threadbare: unravel
 
-**Short Description:**
-Reverb with a memory problem. Holds onto fragments of what you just played and dissolves them into the tail. Some pitched up, some reversed, all fading. One 2D puck control reshapes the entire space. Disintegration looper with real-time entropy. For shoegaze, ambient, dream pop.
+**Short Description:**  
+Reverb with a memory problem. unravel holds onto fragments of what you just played and dissolves them into the tail. One puck reshapes the whole space. Add a disintegration looper for controlled entropy over time. For shoegaze, ambient, and dream pop.
 
-**Full Description:**
-Every reverb plugin recreates a room. This one holds onto memory.
+**Full Description:**  
+Most reverbs simulate a room. unravel simulates what happens to sound inside a memory.
 
-The Ghost Engine maintains a circular buffer of your input and spawns up to 8 simultaneous granular voices (Hann-windowed, micro-detuned, with Catmull-Rom interpolation). At high settings, ~25% of grains play in reverse with mirrored stereo panning. Shimmer grains pitch up +12 semitones. All granular output feeds directly into the FDN input, not mixed in post.
+The Ghost Engine maintains a circular buffer of your input and spawns up to 8 simultaneous granular voices (Hann-windowed, micro-detuned, with Catmull-Rom interpolation). At high settings, about 25% of grains play in reverse with mirrored stereo panning. Shimmer grains pitch up +12 semitones. Granular output feeds directly into the FDN input, not post-mixed on top.
 
-The reverb core is a true stereo 8x8 feedback delay network with a Householder mixing matrix, frequency-dependent damping (variable LPF + HPF), and per-line sinusoidal LFO modulation (0.1-3.0 Hz, randomized rates). Delay times are prime-based (31-97ms) with a user-controlled size multiplier (0.5x-2.0x).
+The reverb core is a true stereo 8x8 feedback delay network with a Householder mixing matrix, frequency-dependent damping (variable LPF + HPF), and per-line sinusoidal LFO modulation (0.1 to 3.0 Hz, randomized rates). Delay times are prime-based (31 to 97 ms) with a user-controlled size multiplier (0.5x to 2.0x).
 
-One 2D puck macro control maps across all parameters simultaneously. X-axis: Vivid/Hazy (ER gain, diffusion, ghost temporal depth 150-750ms, drift depth 20-80 samples). Y-axis: Recent/Distant (decay multiplier ~0.3x-3x, ghost amount, size modulation with Doppler pitch effect).
+One 2D puck macro control maps across all parameters simultaneously. X-axis: Vivid/Hazy (ER gain, diffusion, ghost temporal depth 150 to 750 ms, drift depth 20 to 80 samples). Y-axis: Recent/Distant (decay multiplier about 0.3x to 3x, ghost amount, size modulation with Doppler pitch effect).
 
-Disintegration Looper: input-gated recording up to 60 seconds. Entropy-based degradation model with ascending HPF (20-800 Hz), descending LPF (20k-2k Hz), resonant filter convergence, hysteresis tape saturation, stochastic oxide-shedding dropouts, Brownian pitch drag (±40 cents), azimuth drift (stereo decoupling), wow & flutter (0.5/6 Hz), and rising pink noise floor. Puck Y controls entropy rate (2 to 10,000+ iterations). Puck X controls degradation character (spectral thinning vs diffuse smearing). Transport-aware.
+Disintegration Looper: input-gated recording up to 60 seconds. Entropy degradation model with ascending HPF (20 to 800 Hz), descending LPF (20 kHz to 2 kHz), resonant filter convergence, hysteresis tape saturation, stochastic oxide-shedding dropouts, Brownian pitch drag (up to +/-40 cents), azimuth drift (stereo decoupling), wow and flutter (0.5 and 6 Hz), and rising pink noise floor. Puck Y controls entropy rate (2 to 10,000+ iterations). Puck X controls degradation character (spectral thinning vs diffuse smearing). Transport-aware.
 
 Additional features:
-- Glitch Sparkle: 4-voice transient-reactive granular looper with pitch palette (root, fifth, octave, double octave), reverse grains (30%), ping-pong stereo with LFO panning, Haas-effect micro-delays
-- Ducking: envelope follower (10ms attack, 250ms release) on dry signal, minimum 15% wet floor
-- Drift: per-line LFO modulation, randomized rates, puck-controlled depth
-- Early reflections: 6-tap stereo multi-tap delay with pre-delay (0-100ms)
-- Decay: 0.4s to 50s RT60
+
+- Glitch Sparkle: 4-voice transient-reactive granular looper with pitch palette (root, fifth, octave, double octave), reverse grains (30%), ping-pong stereo with LFO panning, Haas micro-delays
+- Ducking: envelope follower (10 ms attack, 250 ms release) on dry signal, minimum 15% wet floor
+- Drift: per-line LFO modulation with randomized rates, puck-controlled depth
+- Early reflections: 6-tap stereo multi-tap delay with pre-delay (0 to 100 ms)
+- Decay range: 0.4 s to 50 s RT60
 - 10 factory presets
 
 Formats: VST3, AU, Standalone. Platforms: macOS (Universal binary, arm64 + x86_64), Windows. Built with JUCE 8, C++20.
 
-**Keywords:**
+**Keywords:**  
 reverb, granular reverb, FDN reverb, feedback delay network, 8x8 FDN, Householder matrix, ghost engine, granular synthesis, reverse reverb, shimmer reverb, disintegration looper, tape degradation, tape decay, entropy, William Basinski, glitch sparkle, granular looper, ducking reverb, sidechain reverb, modulated reverb, drift modulation, true stereo, shoegaze, dream pop, ambient, lo-fi, indie, texture, drone, pad, VST3, AU, audio unit, standalone, macOS, Windows, JUCE, audio plugin, reverb plugin

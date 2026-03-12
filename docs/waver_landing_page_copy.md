@@ -1,110 +1,140 @@
-# threadbare -- waver
+# threadbare: waver
 
 ---
 
-## broken but beautiful synthesis.
+> [VISUAL] dark screen. one moving waveform scope. no controls.
 
-I kept trying to make modern synths sound like the keyboards on the records I love. Detuning things, adding noise, running the output through tape emulations. But it never quite landed because the imperfection wasn't coming from inside the instrument. It was always painted on after.
-
-Waver is a synthesizer where the life comes from inside. The drift is in the oscillators. The breathing is in the chorus. Every voice moves independently, every instance has its own personality. One control reshapes the whole instrument. The sound was never meant to sit still.
+## meet waver.
 
 ---
 
-## one main control. you drag it.
+> [VISUAL] scope motion gets slightly unstable as a held chord sustains.
 
-**focused to warm.**
-Left is present, bright, defined.
-
-Right adds chorus depth, tape hiss, and the slow warmth of everything starting to move.
-
-**steady to restless.**
-
-Down sounds focused and precise.
-
-Up makes the oscillators drift, the envelopes loosen, the wow deepen, and the whole instrument start breathing on its own.
-
-Presence and age. Two axes. Every parameter moves at once. I've found more sounds dragging the puck slowly across one diagonal than I ever have opening a menu. The synth reshapes itself under your hand.
+## a broken but beautiful polysynthesizer.
 
 ---
 
-### arpeggiator
+> [VISUAL] subtle detune and phase spread appear in the waveform.
 
-Hold a chord. Turn the arp on. The puck changes what it controls. X sweeps from slow arpeggios to fast scattered patterns, Y moves from tight staccato gates to long swung phrases. Same surface, different instrument. The waveform scope turns blue so you know you're in arp territory.
+I kept trying to make modern synths feel like the keyboards on records I love. I could add drift later. I could add hiss later. It still felt like makeup.
 
-No extra knobs. No rate dropdown. No swing slider. Just the puck.
+waver is a synthesizer where the life comes from inside.
 
----
+the drift is in the oscillators. the breathing is in the chorus.
 
-## okay, fine
-
-The puck is the instrument. The drawer is the workbench. Most of the time the puck is all you need. It maps across every parameter simultaneously and the morph between presets is musical by design. But if you want the filter at exactly 1.4 kHz at midnight for reasons you can't explain, the drawer is there. Open it, make the tweak, close it. The puck keeps working either way, scaling relative to whatever you've set.
-
-### the sound
-
-It can be warm and wide, with slow movement breathing underneath a pad. Bright and percussive, like nasal digital chimes that sound like they cost $40 new. Deep and still, with dense harmonic beds that everything else sits on top of. Or all three at once, blended through the puck.
-
-Its voice draws on analog polysynths, consumer FM keyboards, and divide-down organs. Not as separate modes you switch between, but fused into a single instrument the puck moves through continuously.
-
-### tone
-
-A filter that sings instead of screams. Softer resonance, warmer self-oscillation, a quality at high settings that feels musical rather than aggressive. A second, more aggressive filter model is there too if you want it. Cutoff, resonance, key tracking, envelope depth.
-
-### shape
-
-One macro sweeps from warm buzzy pads through bright nasal leads to deep organ beds. Or open the drawer and set each layer's level, the oscillator waveform blend, sub-oscillator octave, noise color, FM depth and ratio, and all four drawbars individually.
-
-### motion
-
-How alive the instrument feels. Vibrato depth, pulse-width movement, chorus mode, how far the oscillators drift before they remember where they're supposed to be. Stereo width. Portamento with legato detection for the melodic lines that need it. Full ADSR envelope.
-
-### etc.
-
-Overdrive with an SD-1-style mid-push, cassette tape saturation with hysteresis, wow and flutter from a tape transport mechanism, a noise floor made of tape hiss, mains hum, mechanical whir, and more buzzwords.
-
-### moment
-
-Every copy of Waver has its own personality. When you load it, the internal tolerances are randomly seeded. Every voice gets slightly different filter offsets, envelope timing, gain levels. The drift patterns are unique. The morph surface shifts. It's the same patch, but this particular version of it. Subtle, but you feel it. Like picking up a guitar that's been restrung.
-
-Save your session and it comes back exactly the same. Open a new one and it's subtly different again.
-
-### true stereo
-
-The chorus develops left and right independently. The tape processing runs both channels with their own drift characteristics. Stereo width is real, not a widening trick applied at the output.
+every voice moves independently.
 
 ---
 
-## what it can sound like
+> [VISUAL] puck appears. surrounding UI is still hidden.
+> [INTERACTION] drag puck over one sustained chord and one rhythmic phrase.
 
-1. **settle**: Warm pad, slow chorus, light tape. Where most people start. [Play]
-2. **glow**: Golden and sustained. Long attack, open filter, gentle drift. The sunset preset. [Play]
-3. **worn**: Heavy tape processing. Cassette compression, hiss floor, wow pulling at the pitch. Intimate and close. [Play]
-4. **flicker**: Bright, nasal, slightly broken digital melody tones. [Play]
-5. **anchor**: Deep harmonic bed, 16' and 8' drawbars, maximum gravity. Everything else sits on top of this. [Play]
-6. **sway**: Chorus depth turned up, drift wandering. The pad moves under your hands. [Play]
-7. **whisper**: Quiet, filtered, hiss-heavy. Like listening through a wall. [Play]
-8. **spark**: Bright digital chime, fast attack, short decay. Percussive and sharp. Arp-ready. [Play]
-9. **tide**: Slow arpeggio with long gates and heavy swing. Puck Y up. Patient and swung. [Play]
-10. **dusk**: Everything breathing together. Deep below, warm in the middle, bright on top. The whole instrument alive at once. [Play]
+## one main control. 
+
+**focused to warm**  
+left stays present and defined. right introduces chorus depth, tape tone, and softness.
+
+**steady to restless**  
+down stays controlled. up adds drift, wow, movement, and looseness.
+
+I have found more sounds by dragging one diagonal slowly than by opening ten menus.
 
 ---
 
-## no reverb
+> [VISUAL] three sonic states crossfade as the puck moves: warm pad, digital chime, organ bed.
 
-On purpose. Waver makes the sound. Unravel makes the space. They're designed to work together. Waver's tape artifacts feed beautifully into Unravel's reverb, the saturation and hiss dissolving into the decay. But any reverb you like will work. Waver stays focused on what it does.
+## three lineages. one instrument.
+
+Its voice draws on analog polysynths, consumer FM keyboards, and divide-down organs. Not as separate modes. Fused into one continuous surface you can move through in real time.
+
+> [CAPTION] warmth, edge, and weight from different decades. one gesture to move between them.
+
+---
+
+> [VISUAL] arp mode toggles on. scope tint shifts blue.
+> [INTERACTION] hold chord, then drag puck to change rhythm and gate.
+
+## hold a chord. turn arp on.
+
+Same puck, different job. X moves from slower patterns to scattered motion. Y moves from short gates to longer swung phrases.
+
+No extra knobs. No rate dropdown. No swing menu. it automatically adjusts based on the settings in your DAW.
+
+---
+
+> [VISUAL] seed value icon rolls, tiny per-voice offsets appear as animated micro-variance.
+
+## every instance has its own personality.
+
+Moment seeds internal tolerances so two fresh loads of the same patch are not identical. Subtle filter offsets. Slight envelope differences. Different drift paths.
+
+Like two takes from the same player on different days. Related. Not cloned.
+
+Save your session and it recalls exactly. Start a new one and it breathes a little differently.
+
+---
+
+> [VISUAL] drawer reveals in one clean panel.
+
+## but wait, there is more.
+
+The puck is the instrument. The drawer is the workbench. If you need exact values, it is there. If you do not, close it and keep moving.
+
+### tone and character
+
+- **filter:** cutoff, resonance, key tracking, envelope depth.
+- **drive and tape:** overdrive, saturation, hiss, wow, flutter.
+- **stereo life:** chorus depth and width that move per channel.
+
+### harmonic shape
+
+- **layer blend:** analog body, digital edge, organ weight.
+- **oscillator detail:** waveform blend, sub octave, noise color.
+- **fm color:** depth and ratio for toy-like or glassy motion.
+
+### movement and response
+
+- **drift:** how far voices wander before they settle.
+- **envelopes:** full ADSR for contour and punch.
+- **portamento:** glide behavior with legato support.
+
+---
+
+> [VISUAL] preset list appears with persistent play controls.
+> [INTERACTION] click name to audition phrase loops.
+
+## listen to it.
+
+1. **foundation** `settle` warm pad, slow chorus, light tape. [Play]
+2. **glow** `glow` sustained, golden, and patient. [Play]
+3. **wear** `worn` compressed, hissy, gently warped pitch. [Play]
+4. **edge** `flicker` bright, nasal, slightly wrong in the best way. [Play]
+5. **weight** `anchor` deep harmonic bed that everything else can sit on. [Play]
+6. **motion** `sway` wandering chorus and drifting center. [Play]
+7. **distance** `whisper` filtered and quiet, like sound through a wall. [Play]
+8. **attack** `spark` fast, percussive, chime-forward. [Play]
+9. **pattern** `tide` slow arp with longer gates and swing. [Play]
+10. **whole** `dusk` all layers breathing together at once. [Play]
+
+---
+
+> [VISUAL] simple pairing card with two product marks.
+
+## no reverb. on purpose.
+
+waver focuses on making the sound. Space is a separate choice. Pair it with unravel if you want the full threadbare lane, or use any reverb you already trust.
 
 ---
 
 ## specs
 
-**Formats:** VST3, AU, Standalone.
+**Formats:** VST3, AU, Standalone  
+**Platforms:** macOS (Universal binary, arm64 + x86_64), Windows  
+**Requirements:** macOS 10.13+ or Windows 10+; DAW for plugin formats (standalone works without one)  
+**Polyphony:** 8 voices (DCO and Toy layers) plus full organ polyphony with gentle voice stealing  
+**Quality modes:** Lite (1x), Standard (2x), HQ (4x)
 
-**Platforms:** macOS (Universal binary, arm64 + x86_64), Windows.
-
-**Requirements:** macOS 10.13+ or Windows 10+. A DAW and a MIDI controller for the plugin formats (standalone works without a DAW).
-
-**Polyphony:** 8 voices (DCO and Toy layers) plus full organ polyphony. Voice stealing is gentle: crossfaded, priority-weighted, quiet-voice-first.
-
-**Quality modes:** Lite (no oversampling, for tracking), Standard (2x, recommended), HQ (4x, for final bounce). At Standard settings with a full chord ringing out, CPU is fine. If you run HQ mode with all three layers at max polyphony and the tape processing cranked, your fans might have opinions.
+At Standard settings, CPU is fine. If you run HQ with every layer wide open, your fans may file a formal complaint.
 
 ---
 
@@ -114,34 +144,34 @@ On purpose. Waver makes the sound. Unravel makes the space. They're designed to 
 
 ---
 
-## store page description
+## appendix: store page description
 
-**Title:**
-Threadbare -- Waver
+**Title:**  
+threadbare: waver
 
-**Short Description:**
-A polyphonic synthesizer that sounds tenderly alive. One 2D puck control reshapes the entire sound: warm analog pads, bright digital chimes, deep harmonic beds, all breathing with independent drift and variation. Built-in tape processing. Puck-controlled arpeggiator. For indie, dream pop, shoegaze, lo-fi.
+**Short Description:**  
+A polysynthesizer that sounds tenderly alive. One 2D puck reshapes the entire instrument, from warm analog pads to bright digital chimes to deep harmonic beds, all with independent drift and built-in analog character. Includes puck-controlled arpeggiator. For indie, dream pop, shoegaze, and lo-fi.
 
-**Full Description:**
-Every soft synth tries to sound perfect. This one sounds alive, tuned for the emotional lane between Grandaddy records and old educational film soundtracks.
+**Full Description:**  
+Most soft synths optimize for perfect repeatability. waver optimizes for movement and personality.
 
-Sound engine with three fused layers: (1) DCO layer, PolyBLEP sawtooth + PolyBLAM pulse with continuous crossfade, sub-oscillator, noise generator, BBD ensemble chorus (3 modes with MN3009 bandwidth limiting, compander noise, 150 Hz sub-bass crossover mono). (2) Toy FM layer, 2-operator phase modulation referencing the YM2413/OPLL, 9-bit DAC quantization, 13 discrete operator ratios, age-coupled envelope stepping. (3) Organ layer, 12 pitch-class phase accumulators with octave division, 4 drawbars (16', 8', 4', mixture), formant bandpass (800-1200 Hz, Q 0.7-1.2), key-click transient, full polyphony with zero voice stealing.
+The engine fuses three layers: (1) DCO layer with PolyBLEP sawtooth, PolyBLAM pulse, sub oscillator, noise source, and BBD ensemble chorus. (2) Toy FM layer with 2-operator phase modulation inspired by YM2413/OPLL behavior, 9-bit DAC quantization, and stepped character. (3) Organ layer with divide-down topology, drawbar control, and key-click transient behavior.
 
-Filter: IR3109 OTA 4-pole lowpass (TPT implementation) as default, Huovilainen Moog ladder as alternate. Per-stage polynomial soft-clip. Oversampled (2x standard, 4x HQ).
+Filter section: IR3109 OTA 4-pole lowpass (TPT) as the default voice, plus Huovilainen Moog ladder as an alternate model. Per-stage polynomial soft clip. Oversampled at 2x Standard and 4x HQ.
 
-Analogization: Per-voice Ornstein-Uhlenbeck deterministic drift (sample-accurate PRNG, Euler-Maruyama discretization), component tolerances (filter cutoff ±3%, resonance ±2%, VCA gain ±0.8 dB, envelope timing ±6%), all seeded from Moment Mode for recallable imperfection.
+Analogization: per-voice Ornstein-Uhlenbeck deterministic drift with component tolerances (filter cutoff, resonance, VCA gain, envelope timing), seeded through Moment for recallable imperfection.
 
-Print chain (post-mixdown, stereo): SD-1-style asymmetric overdrive with 1 kHz mid-push, tape hysteresis saturation with one-pole 13 kHz head bandwidth, wow (0.5-2 Hz, 0.5-3 ms depth) + flutter (10-100 Hz, 0.02-0.15 ms) via cubic Hermite delay with OU-randomized rates, composite noise floor (tape hiss, 60/50 Hz mains hum, mechanical whir).
+Print chain (post mix, stereo): SD-1-style asymmetric overdrive, tape hysteresis saturation, wow and flutter via cubic Hermite delay with randomized rates, and a composite noise floor (tape hiss, mains hum, mechanical whir).
 
-One 2D puck macro control. X-axis: Presence (waveform brightness, drive, FM index). Y-axis: Age (tape wear, BBD depth, envelope stepping, OU drift correlation, organ leakage). RBF interpolation across 8-16 preset landmarks in perceptual space (log Hz, log seconds, dB, equal-power mix). Moment Mode re-rolls PRNG seed for new component tolerances and sigma offsets.
+One 2D puck macro control. X-axis: Presence (brightness, drive, FM index). Y-axis: Age (tape wear, chorus depth, drift character, leakage). RBF interpolation across preset landmarks in perceptual space.
 
-Arpeggiator mode: Puck-controlled rate, pattern (Up/Down/Up-Down/Down-Up/Random), gate, and swing. Fixed-size held-note buffer. Deterministic for bounce-in-place. Puck X drives rate and pattern, puck Y drives gate and swing. No additional controls.
+Arpeggiator mode is also puck-controlled: rate, pattern behavior, gate, and swing without separate controls.
 
-8-voice polyphony with priority-weighted quiet-voice stealing and 2-5 ms crossfade. Portamento (legato/always, log-frequency domain). Full MIDI expression: velocity, pitch bend, mod wheel, aftertouch, sustain. 46 automatable parameters. 15 curated factory presets across 5 categories (amber, drift, hush, signal, weight), voiced for strong contrast with a balanced grit profile (mostly clean/moderate, select intentionally gritty outliers).
+Polyphony and control: 8-voice polyphony with priority-weighted quiet-voice stealing and short crossfade, portamento (legato/always), full MIDI expression support, and 47 automatable parameters.
 
-No built-in reverb by design. Pairs with Threadbare Unravel or any reverb plugin.
+No built-in reverb by design. Pair with threadbare unravel or any reverb chain you prefer.
 
-Formats: VST3, AU, Standalone. Platforms: macOS (Universal binary, arm64 + x86_64), Windows. Built with JUCE 8, C++20. Quality modes: Lite (1x), Standard (2x OS), HQ (4x OS) with automatic latency reporting.
+Formats: VST3, AU, Standalone. Platforms: macOS (Universal binary, arm64 + x86_64), Windows. Built with JUCE 8, C++20.
 
-**Keywords:**
-synthesizer, soft synth, analog modeling, virtual analog, Juno-60, Roland Juno, DCO, BBD chorus, bucket brigade, FM synthesis, phase modulation, YM2413, OPLL, toy keyboard, Yamaha PSS, divide-down organ, Baldwin organ, drawbar organ, tape saturation, cassette, wow flutter, lo-fi synth, lo-fi, analog drift, Ornstein-Uhlenbeck, deterministic, PolyBLEP, PolyBLAM, OTA filter, IR3109, Moog ladder, TPT filter, oversampling, 2D puck, morph, RBF interpolation, arpeggiator, dream pop, shoegaze, indie, ambient, Grandaddy, Jason Lytle, retro synth, vintage synth, warm pad, character synth, VST3, AU, audio unit, standalone, macOS, Windows, JUCE, audio plugin, synth plugin
+**Keywords:**  
+synthesizer, soft synth, analog modeling, virtual analog, DCO, BBD chorus, FM synthesis, phase modulation, YM2413, OPLL, divide-down organ, drawbar organ, tape saturation, cassette tone, wow flutter, lo-fi synth, analog drift, Ornstein-Uhlenbeck, PolyBLEP, PolyBLAM, OTA filter, IR3109, Moog ladder, TPT filter, oversampling, 2D puck, morph, RBF interpolation, arpeggiator, dream pop, shoegaze, indie, ambient, retro synth, warm pad, character synth, VST3, AU, audio unit, standalone, macOS, Windows, JUCE, audio plugin, synth plugin
