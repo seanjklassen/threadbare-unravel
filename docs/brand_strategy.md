@@ -2,7 +2,7 @@
 
 *Positioning, purpose, and messaging hierarchy. Companion to the Brand Style Guide (visual identity, voice, and design language).*
 
-*Version 3.0, March 2026*
+*Version 3.1, March 2026*
 
 ---
 
@@ -53,7 +53,7 @@ Most soft synths model a single instrument from a single era. Waver fuses three 
 - Each voice breathes independently. Per-voice drift, component tolerances, envelope variation. Two instances of the same patch won't sound identical.
 - The puck reshapes the entire instrument in one gesture (presence × age).
 - Tape saturation, wow, flutter, and hiss aren't post-processing. They're part of the voice itself, shaping every note from the start.
-- Every instance gets its own seeded personality (called Moment). Recallable, but unique each time you load a new one.
+- Every fresh load gets its own seeded personality (called Moment). The same patch still sounds like itself, but tiny voice-level differences make it feel more like another take than a clone. Save the session and it recalls exactly.
 - The arpeggiator is controlled entirely from the puck. No separate controls, no menu diving.
 
 **Lineage (for deeper copy, not the headline):** Analog polysynths gave it warmth. Consumer FM keyboards gave it that slightly wrong, slightly beautiful digital character. Divide-down organs gave it the breath. None of those instruments sounded like this on their own.
@@ -99,7 +99,7 @@ Each level of messaging answers a different question. The order matters: purpose
 
 **Product promise.** Landing page hero, social media bios, one-line descriptions, store short descriptions. The sentence you say when someone asks "what is it?" One sentence. No hedging.
 
-**Product proof.** Landing page body, feature sections, demo videos. The proof makes the promise concrete. This is where you show the thing doing what you said it does, without becoming a spec sheet.
+**Product proof.** Landing page body, feature sections, demo videos. The proof makes the promise concrete. This is where you show the thing doing what you said it does, without becoming a spec sheet. For narrative pages, this can be a sequence of short standalone lines, captions, and visual notes that reveal one behavior at a time.
 
 **Lineage.** Deeper landing page copy, feature descriptions, blog posts, press material. What instruments influenced the sound, what circuits inspired the design. Context for the curious. Never the headline.
 
@@ -164,11 +164,13 @@ The core juxtaposition: old craft techniques meeting new technology. Broken thin
 | reactive, evocative                    | emulates, models, simulates       |
 
 
-"Broken but beautiful" works as a tagline precisely because it names the tension directly. But it's the exception, not the template. In most copy, the beauty should be the subject and the brokenness should be the texture underneath.
+"Broken but beautiful" works precisely because it names the tension directly. But it's the exception, not the template. In most copy, the beauty should be the subject and the brokenness should be the texture underneath.
 
 ---
 
 ## Changelog
+
+**v3.1** Clarified the Waver Moment proof bullet so "seeded personality" is tied to audible outcomes and recall behavior. Added guidance that product proof can be delivered as narrative sequences with standalone lines, captions, and visual notes.
 
 **v3.0** Rewrote Why/How/What and product positioning to follow updated voice guidelines. Revised copy principles to lead with tension, earn depth, and avoid declarative enthusiasm. Added explicit avoid list. Removed em dashes. Rewrote proof bullets to lead with what the listener hears, not internal feature names.
 
